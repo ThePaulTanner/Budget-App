@@ -86,7 +86,7 @@ These need the server's code, which isn't in this repo. Details are in [`SECURIT
 
 0. **Categorization rules (first version):**
     - **Rule fields:** `id`, `match_field` (`merchant_name` or `name`), `match_type` (`equals` or `contains`, ignoring case), `pattern`, optional `account_id`, `category`, `created_at`.
-    - **Priority:** a manual change to one transaction wins over a rule, and a rule wins over Plaid. If several rules match, an `equals` rule wins over a `contains` rule; after that, the newest rule wins.
+    - **Priority:** a manual change to one transaction wins over a rule, and a rule wins over Plaid. If several rules match, an `equals` rule wins over a `contains` rule; among `contains` rules the **longest pattern** wins (more specific beats generic), then the newest. Resetting a manual change falls back to the matching rule, then Plaid. A rule on `merchant_name` never matches a transaction where it is null (use `name` for those). The preview warns when a rule would move transactions into or out of the categories excluded from spending (transfers, loan payments, income), because that silently changes budgets. Proposed request and response shapes are in `api-fixtures/proposed/`.
     - **When rules run:** on every sync, for new and updated transactions. Also on request for past transactions.
     - **Endpoints:**
         - `GET /api/rules`, `POST /api/rules`, `PATCH /api/rules/{id}`, `DELETE /api/rules/{id}`

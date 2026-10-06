@@ -13,7 +13,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - `GET /health` needs no key and returns `{"ok":true,"plaid_env":"sandbox"|"production"}`. Use it for the "Test connection" button.
 - Linking and reconnecting banks happens on a web page at the server root (`GET /`), not in the app. The app never uses the Plaid SDK. When a bank needs reconnecting, the app opens the base URL in Safari (`openURL`).
 
-**`api-fixtures/` contains real responses captured from the server code for every endpoint.** Treat them as the source of truth for JSON shapes. Use them for model decoding tests, SwiftUI previews and Demo Mode.
+**`api-fixtures/` contains real responses captured from the server code for every endpoint.** The exception is `api-fixtures/proposed/`, which holds proposed shapes for endpoints that don't exist yet (categorization rules); treat those as a draft. Treat them as the source of truth for JSON shapes. Use them for model decoding tests, SwiftUI previews and Demo Mode.
 
 ## Tech choices
 
@@ -26,7 +26,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 ## JSON conventions (read carefully)
 
 - **Keys are snake_case.** Use `.convertFromSnakeCase`.
-- **Money comes as JSON numbers.** Decode as `Decimal`, not `Double`, and always format with the object's own `currency` field (`CAD` or `USD`) using `.formatted(.currency(code:))` in the device locale. English only (en-CA); no French localization is needed.
+- **Money comes as JSON numbers.** Decode as `Decimal`, not `Double`. **A plain `Decimal` property is not enough:** `JSONDecoder` converts a JSON number to `Decimal` by way of `Double`, so `132.47` can come out as `132.47000000000003`. Use a small custom decoding path (for example a `Money` property wrapper or a `decode(Decimal.self)` helper that decodes a `Double` and builds `Decimal(string: String(describing: value))`, because Swift prints the shortest exact form, `"132.47"`). Keep a test that asserts the decoded value equals `Decimal(string: "132.47")` exactly. Always format with the object's own `currency` field (`CAD` or `USD`) using `.formatted(.currency(code:))` in the device locale. English only (en-CA); no French localization is needed.
 - **Sign convention (Plaid's): `amount` positive = money LEFT the account. Negative = money came IN.**
   - Show spending as `−$132.47` in the normal text colour.
   - Show income and refunds as `+$2,850.00` in green.
@@ -45,7 +45,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 | `GET /api/accounts[?include_hidden=false]` | `accounts.json` | `type`: `depository`, `credit`, `loan`, `investment`, `other`. Credit and loan `current_balance` values are positive numbers meaning **owed**. |
 | `PATCH /api/accounts/{id}` `{"hidden":bool}` | — | Hides an account from totals and budgets. The response has `institution: null`, so keep the institution from the list. |
 | `GET /api/transactions` | `transactions.json` | Query parameters: `account_id`, `category`, `search`, `start`, `end` (YYYY-MM-DD), `limit` (≤1000, default 100), `offset`. Returns `{total, limit, offset, transactions}`. Paginate with infinite scroll. Sorted newest first. |
-| `PATCH /api/transactions/{id}` `{"category":"GROCERIES"}` or `{"category":null}` | `transaction_patch_response.json` | `null` reverts to Plaid's category. The server uppercases categories. `category` is the effective one, `plaid_category` the original, `category_overridden` a bool. |
+| `PATCH /api/transactions/{id}` `{"category":"GROCERIES"}` or `{"category":null}` | `transaction_patch_response.json` | `null` reverts to the automatic category: Plaid's today, and once categorization rules exist, the matching rule first and then Plaid's. The server uppercases categories. `category` is the effective one, `plaid_category` the original, `category_overridden` a bool. |
 | `GET /api/categories` | `categories.json` | Every category in the data. Use it for the category picker, and also allow typing a new custom one. |
 | `GET /api/spending?month=YYYY-MM` | `spending.json` | Spend by category for a month, sorted by largest first. It excludes transfers, loan and credit-card payments, and income. A category total can be negative if refunds exceeded spend. |
 | `GET /api/spending/monthly?months=12` | `spending_monthly.json` | Oldest first. For a bar chart. |
@@ -74,7 +74,7 @@ Use a tab bar with five tabs.
 **2. Transactions**
 - A searchable list grouped by date, with an account filter and a category filter.
 - Each row shows the merchant (or name), category icon and label, a "Pending" badge, and the signed amount.
-- Tapping a row opens a detail sheet where the category can be changed (picker plus custom entry, and "Reset to Plaid's").
+- Tapping a row opens a detail sheet where the category can be changed (picker plus custom entry, and "Reset to Plaid's"; relabel it "Reset to automatic" once categorization rules ship).
 
 **3. Budgets**
 - A month switcher (‹ October 2026 ›).
@@ -92,12 +92,12 @@ Use a tab bar with five tabs.
 - A "Sync now" button.
 - A list of linked banks with their status, and an "Open bank-linking page" link.
 - A Demo Mode toggle.
-- An optional Face ID lock.
+- A Face ID lock. **Required, not optional** (see Privacy).
 
 **General behaviour**
 - Pull-to-refresh re-fetches (GET). It does **not** trigger a sync.
 - If the server can't be reached, show: "Can't reach your server — is Tailscale connected?"
-- A 401 sends the user to Settings.
+- A 401 sends the user to Settings. Once server login ships, the app first tries one token refresh and only then goes to sign-in.
 - Category labels: convert Plaid's codes to readable text (`FOOD_AND_DRINK` → "Food & Drink", `RENT_AND_UTILITIES` → "Rent & Utilities"). Title-case custom ones (`GROCERIES` → "Groceries").
 - Map each known Plaid primary category to an SF Symbol, with a generic fallback icon. The known categories are `INCOME`, `TRANSFER_IN`, `TRANSFER_OUT`, `LOAN_PAYMENTS`, `BANK_FEES`, `ENTERTAINMENT`, `FOOD_AND_DRINK`, `GENERAL_MERCHANDISE`, `HOME_IMPROVEMENT`, `MEDICAL`, `PERSONAL_CARE`, `GENERAL_SERVICES`, `GOVERNMENT_AND_NON_PROFIT`, `TRANSPORTATION`, `TRAVEL`, `RENT_AND_UTILITIES`, `OTHER`.
 
@@ -105,7 +105,7 @@ Use a tab bar with five tabs.
 
 - This is financial data. Don't log response bodies or the key.
 - Blur the app content in the app switcher (`scenePhase` → `.inactive`/`.background` shows a privacy cover).
-- Face ID lock is optional, using `LocalAuthentication`.
+- **Face ID is required**, matching `docs/SECURITY.md`. Until the server ships login there is no refresh token to bind it to, so for now: the app is gated by a `LocalAuthentication` check on every launch and after auto-lock, and the API key is stored in the Keychain with a biometric access control (`.biometryCurrentSet`, this device only). When login ships, the Keychain token replaces the API key and the Settings "API key" field is replaced by sign-in.
 
 ## Demo mode and tests
 

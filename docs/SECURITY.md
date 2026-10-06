@@ -24,7 +24,7 @@ The current shared `X-API-Key` header is replaced by real user accounts.
 | **Passkey prerequisites** | Passkeys on iOS need (1) the **Associated Domains** capability in the app, with a `webcredentials:<domain>` entry, and (2) an `apple-app-site-association` file served over HTTPS from that domain, which becomes the passkey's relying party (RP) ID. The Associated Domains capability is **not available with a free Apple ID**, so passkeys require the paid developer account. Apple's CDN fetches the association file from the public internet, so a Tailscale-only `*.ts.net` host can't serve it; it must come from a publicly reachable hostname (for example the same public entry point as the webhook). Developer mode (`?mode=developer`) skips the CDN, but works only for development builds on a device. See open questions 2 and 5. |
 | **Backup sign-in** | A password **plus TOTP** two-factor (an authenticator app), and one-time recovery codes. |
 | **Password storage** | **Argon2id** with a per-user salt, at OWASP-recommended or stronger settings (for example 64 MiB memory, 3 iterations), plus an optional server-side "pepper" key stored outside the database. Passwords are never stored or logged in plain text. |
-| **Sessions** | A short-lived access token (about 15 minutes), plus a refresh token that is **replaced every time it is used**. Each device gets its own refresh token, so one device can be signed out without affecting the others. Refresh tokens are stored on the server only as hashes. |
+| **Sessions** | A short-lived access token (about 15 minutes), plus a refresh token that is **replaced every time it is used**. Each device gets its own refresh token, so one device can be signed out without affecting the others. Refresh tokens are stored on the server only as hashes. **Crash window:** the server accepts the previous refresh token for 60 seconds after rotating, so an app killed before it saved the new token can retry. **Reuse detection:** if an old token is used after that grace period, the server revokes that one device's token chain (not other devices) and alerts. **Face ID frequency:** the access token is kept in memory, so Face ID is needed once per unlock (launch or auto-lock), not on every refresh. |
 | **Brute-force protection** | Rate limits and increasing delays on failed logins. Alerts on new-device sign-ins. |
 | **Device management** | A "Signed-in devices" list in Settings, with **Revoke** on each device. |
 | **Bank-linking web page** | The `GET /` Plaid Link page also requires login. Today it is protected only by the network it's on. |
@@ -41,7 +41,7 @@ The current shared `X-API-Key` header is replaced by real user accounts.
 
 ## 3. Encryption in transit
 
-- **Tailscale (WireGuard):** ChaCha20-Poly1305. The server is not on the public internet.
+- **Tailscale (WireGuard):** ChaCha20-Poly1305. The API is not on the public internet; only the webhook receiver is (section 4).
 - **HTTPS inside the tailnet:** TLS 1.3 with a real certificate. No App Transport Security exceptions.
 - **Optional, for extra protection:** certificate or public-key pinning in the app. We can decide later. It adds work every time the certificate renews.
 
@@ -74,7 +74,7 @@ Webhooks need Plaid to reach the server from the internet. We open **only** the 
 - **No long-lived cache to start with.** Data is held in memory only, and `URLCache` is turned off for API responses.
 - **If offline caching is added later:** files will use `NSFileProtectionComplete` (encrypted by iOS while the phone is locked) and be excluded from backups.
 - **No financial data in logs, analytics or crash reports.** No third-party SDKs at all.
-- **No financial data on the lock screen.** Notifications such as webhook-driven alerts show generic text by default, for example "New transactions", not amounts.
+- **No financial data on the lock screen.** Push alerts are **future work, not in the first version**: they need remote push (APNs), which requires the paid developer account and an APNs key on the server. When added, they show generic text such as "New transactions", never amounts.
 
 ## 6. What this changes in the current spec
 
