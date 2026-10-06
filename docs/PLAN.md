@@ -26,7 +26,7 @@ HomeFinance/
     Budgets/      BudgetsView, BudgetRow, BudgetEditor, SpendingCharts
     Investments/  InvestmentsView, HoldingRow
     Settings/     SettingsView, LinkedBanksSection
-  Resources/      api-fixtures/*.json (bundled for Demo Mode and previews)
+  Resources/      api-fixtures/*.json and api-fixtures/proposed/*.json (bundled for Demo Mode and previews; the proposed ones are drafts)
 HomeFinanceTests/
   FixtureDecodingTests, DateDecodingTests, MoneyFormattingTests, CategoryLabelTests
 ```
@@ -45,7 +45,7 @@ Each milestone ends with a build and a Simulator run on the Mac. Screen mileston
 - Write a `YearMonth` type for `"YYYY-MM"`.
 - Write a timestamp decoder that accepts ISO-8601 both with and without fractional seconds.
 - Decode all money as `Decimal`, using `.convertFromSnakeCase`.
-- Write unit tests that decode **every** fixture and assert `Decimal` precision (for example 132.47 exactly), both timestamp forms, plain dates, nulls, a negative `net_worth`, and a `percent` above 100.
+- Write unit tests that decode **every** fixture, including `api-fixtures/proposed/` (labelled as draft shapes), and assert `Decimal` precision (for example 132.47 exactly), both timestamp forms, plain dates, nulls, a negative `net_worth`, and a `percent` above 100.
 - **Exit:** every test passes.
 
 ### M3: Networking, storage and Settings

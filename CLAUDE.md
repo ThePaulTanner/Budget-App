@@ -13,7 +13,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - `GET /health` needs no key and returns `{"ok":true,"plaid_env":"sandbox"|"production"}`. Use it for the "Test connection" button.
 - Linking and reconnecting banks happens on a web page at the server root (`GET /`), not in the app. The app never uses the Plaid SDK. When a bank needs reconnecting, the app opens the base URL in Safari (`openURL`).
 
-**`api-fixtures/` contains real responses captured from the server code for every endpoint.** The exception is `api-fixtures/proposed/`, which holds proposed shapes for endpoints that don't exist yet (categorization rules); treat those as a draft. Treat them as the source of truth for JSON shapes. Use them for model decoding tests, SwiftUI previews and Demo Mode.
+**`api-fixtures/` contains real responses captured from the server code for every existing endpoint.** Treat them as the source of truth for JSON shapes, and use them for model decoding tests, SwiftUI previews and Demo Mode. The one exception is `api-fixtures/proposed/`: drafts for endpoints that don't exist yet (categorization rules). Use those the same way, but they are proposals and may change.
 
 ## Tech choices
 
@@ -26,7 +26,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 ## JSON conventions (read carefully)
 
 - **Keys are snake_case.** Use `.convertFromSnakeCase`.
-- **Money comes as JSON numbers.** Decode as `Decimal`, not `Double`. **A plain `Decimal` property is not enough:** `JSONDecoder` converts a JSON number to `Decimal` by way of `Double`, so `132.47` can come out as `132.47000000000003`. Use a small custom decoding path (for example a `Money` property wrapper or a `decode(Decimal.self)` helper that decodes a `Double` and builds `Decimal(string: String(describing: value))`, because Swift prints the shortest exact form, `"132.47"`). Keep a test that asserts the decoded value equals `Decimal(string: "132.47")` exactly. Always format with the object's own `currency` field (`CAD` or `USD`) using `.formatted(.currency(code:))` in the device locale. English only (en-CA); no French localization is needed.
+- **Money comes as JSON numbers.** Decode as `Decimal`, not `Double`. **A plain `Decimal` property is not enough:** `JSONDecoder` converts a JSON number to `Decimal` by way of `Double`, so `132.47` can come out as `132.47000000000003`. Use a small custom decoding path (for example a `Money` property wrapper or a `decode(Decimal.self)` helper that decodes a `Double` and builds `Decimal(string: String(describing: value))`, because Swift prints the shortest form that round-trips, `"132.47"`). This is exact for normal money amounts (up to about 15 significant digits); it is not a general-purpose decimal parser. Keep a test that asserts the decoded value equals `Decimal(string: "132.47")` exactly. Always format with the object's own `currency` field (`CAD` or `USD`) using `.formatted(.currency(code:))` in the device locale. English only (en-CA); no French localization is needed.
 - **Sign convention (Plaid's): `amount` positive = money LEFT the account. Negative = money came IN.**
   - Show spending as `−$132.47` in the normal text colour.
   - Show income and refunds as `+$2,850.00` in green.
@@ -109,9 +109,9 @@ Use a tab bar with five tabs.
 
 ## Demo mode and tests
 
-- Bundle `api-fixtures/*.json` as resources.
+- Bundle `api-fixtures/*.json` and `api-fixtures/proposed/*.json` as resources (the proposed ones are drafts).
 - Add a `FixtureAPIClient` that conforms to the same protocol as the real client. Use it for SwiftUI previews and for the Demo Mode toggle.
-- Write unit tests that decode every fixture, covering `Decimal` amounts, both timestamp forms, plain dates, and null fields.
+- Write unit tests that decode every fixture, including the proposed ones (label those tests as draft shapes), covering `Decimal` amounts, both timestamp forms, plain dates, and null fields.
 
 ## Build order
 
