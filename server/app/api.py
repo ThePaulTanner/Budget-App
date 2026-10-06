@@ -385,7 +385,10 @@ def create_api_app(services: Services) -> FastAPI:
             where.append("a.hidden = 0")
         if category:
             where.append(f"{EFFECTIVE_CATEGORY_SQL} = ?")
-            params.append(category.strip().upper())
+            try:
+                params.append(normalize_category(category))
+            except ValueError:
+                params.append(category.strip().upper())  # not a valid name: matches nothing
         if search and search.strip():
             like = "%" + re.sub(r"([\\%_])", r"\\\1", search.strip()) + "%"
             where.append("(t.name LIKE ? ESCAPE '\\' OR t.merchant_name LIKE ? ESCAPE '\\')")
@@ -491,7 +494,11 @@ def create_api_app(services: Services) -> FastAPI:
 
     @app.delete("/api/budgets/{category}")
     def delete_budget(category: str, ctx: Auth):
-        if db.run("DELETE FROM budgets WHERE category=?", (category.strip().upper(),)) == 0:
+        try:
+            name = normalize_category(category)  # same cleanup as PUT, so "Eating Out" matches
+        except ValueError:
+            raise HTTPException(404, "budget not found") from None
+        if db.run("DELETE FROM budgets WHERE category=?", (name,)) == 0:
             raise HTTPException(404, "budget not found")
         return {"ok": True}
 

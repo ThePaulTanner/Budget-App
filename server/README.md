@@ -16,6 +16,10 @@ A private budgeting API for one person. It pulls balances, transactions and inve
 | Bank access | Read-only. The server only asks Plaid for transactions and investments. It never requests account numbers or the ability to move money. |
 | Container | Runs as a normal user, read-only filesystem, no extra privileges, no request logging. |
 
+**Other honest limits:**
+- Behind Tailscale every request reaches the container from the same address, so the failed-sign-in limiter cannot tell devices apart. The per-user lockout (5 failures, doubling up to 15 minutes) and a shared 20-failure lockout mean a device on your tailnet could lock you out of signing in for a while by guessing wrongly on purpose. Nobody can get in that way, and lockouts expire. Recovery codes do not bypass a lockout.
+- The public webhook port is rate limited (120 requests a minute) before signatures are checked, so a flood of junk could delay real webhooks. The hourly backup sync still collects the data.
+
 **Honest limit:** encryption protects you if the NAS disk, a backup or the database file is stolen. It cannot protect a NAS that an attacker already controls while it is running, because the key is in memory then. Keep DSM and Tailscale updated.
 
 ## What you need

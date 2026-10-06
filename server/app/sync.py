@@ -135,7 +135,15 @@ def sync_transactions(
         for tx in added + modified:
             account_id = tx["account_id"]
             if account_id not in account_currency:
-                continue
+                # Plaid did not list this account. Keep the transaction (the cursor moves
+                # on, so it would never be sent again) under a placeholder account.
+                log.warning("A transaction belongs to an account Plaid did not list; adding a placeholder")
+                db.run(
+                    "INSERT OR IGNORE INTO accounts(id, item_id, name, type, currency, updated_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (account_id, item["id"], "Unknown account", "other", base, now),
+                )
+                account_currency[account_id] = base
             pfc = tx.get("personal_finance_category") or {}
             tx_id = tx["transaction_id"]
             carried_override = None
@@ -305,6 +313,12 @@ def sync_item(db: Database, plaid: PlaidClient, keys: Keys, item: Any, base: str
             (exc.error_code, 1 if login_required else 0, item["id"]),
         )
         result.update(ok=False, error=exc.message)
+    except Exception:
+        # A corrupt token, a surprising Plaid payload, a full disk: record it for this bank
+        # and carry on with the others instead of failing the whole sync.
+        log.exception("Unexpected error syncing item %s", item["id"])
+        db.run("UPDATE items SET error_code=? WHERE id=?", ("INTERNAL_ERROR", item["id"]))
+        result.update(ok=False, error="Unexpected error while syncing this bank")
     return result
 
 

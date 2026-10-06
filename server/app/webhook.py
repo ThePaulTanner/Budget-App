@@ -33,6 +33,8 @@ log = logging.getLogger("homefinance.webhook")
 MAX_BODY_BYTES = 64 * 1024
 MAX_AGE_SECONDS = 5 * 60
 KEY_FETCH_MIN_INTERVAL = 10.0
+KEY_CACHE_SECONDS = 24 * 3600  # so a key Plaid later retires is noticed
+MAX_CLOCK_SKEW_SECONDS = 60
 RATE_LIMIT_PER_MINUTE = 120
 
 
@@ -49,26 +51,28 @@ class WebhookVerifier:
     ) -> None:
         self._fetch = key_fetcher or plaid.webhook_verification_key
         self._clock = clock
-        self._keys: dict[str, dict[str, Any]] = {}
+        self._keys: dict[str, tuple[dict[str, Any], float]] = {}  # kid -> (key, fetched at)
         self._last_fetch = 0.0
         self._lock = threading.Lock()
 
     def _key_for(self, kid: str) -> dict[str, Any]:
         with self._lock:
-            cached = self._keys.get(kid)
-            if cached is not None:
-                return cached
-            # Unknown key id: fetch at most once per interval, so junk requests with
-            # random key ids cannot make this server hammer Plaid.
             now = self._clock()
+            cached = self._keys.get(kid)
+            if cached is not None and now - cached[1] < KEY_CACHE_SECONDS:
+                return cached[0]
+            # Unknown or stale key id: fetch at most once per interval, so junk requests
+            # with random key ids cannot make this server hammer Plaid.
             if now - self._last_fetch < KEY_FETCH_MIN_INTERVAL:
+                if cached is not None:
+                    return cached[0]  # stale beats refusing a real webhook; refreshed soon
                 raise InvalidWebhook("key lookup rate limited")
             self._last_fetch = now
             try:
                 key = self._fetch(kid)
             except PlaidError as exc:
                 raise InvalidWebhook("unknown key") from exc
-            self._keys[kid] = key
+            self._keys[kid] = (key, now)
             return key
 
     def verify(self, body: bytes, token: str | None) -> None:
@@ -93,8 +97,11 @@ class WebhookVerifier:
         except (jwt.PyJWTError, ValueError) as exc:
             raise InvalidWebhook("bad signature") from exc
         issued = float(claims["iat"])
-        if self._clock() - issued > MAX_AGE_SECONDS:
+        age = self._clock() - issued
+        if age > MAX_AGE_SECONDS:
             raise InvalidWebhook("too old")
+        if age < -MAX_CLOCK_SKEW_SECONDS:
+            raise InvalidWebhook("from the future")
         if expired_at is not None and issued > float(expired_at):
             raise InvalidWebhook("key expired")
         expected = str(claims.get("request_body_sha256", ""))
