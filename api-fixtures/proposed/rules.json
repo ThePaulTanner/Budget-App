@@ -1,0 +1,20 @@
+[
+  {
+    "id": "rule_001",
+    "match_field": "merchant_name",
+    "match_type": "equals",
+    "pattern": "IGA",
+    "account_id": null,
+    "category": "GROCERIES",
+    "created_at": "2026-10-06T14:30:00.123456Z"
+  },
+  {
+    "id": "rule_002",
+    "match_field": "name",
+    "match_type": "contains",
+    "pattern": "Restaurant",
+    "account_id": "acc_visa",
+    "category": "FOOD_AND_DRINK",
+    "created_at": "2026-10-06T14:31:00Z"
+  }
+]

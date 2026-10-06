@@ -1,0 +1,639 @@
+[
+  {
+    "date": "2026-07-04",
+    "assets": 42875.0,
+    "liabilities": 317959.0,
+    "investments": 39750.0,
+    "net_worth": -275084.0
+  },
+  {
+    "date": "2026-07-05",
+    "assets": 42863.5,
+    "liabilities": 317903.9,
+    "investments": 39775.0,
+    "net_worth": -275040.4
+  },
+  {
+    "date": "2026-07-06",
+    "assets": 42852.0,
+    "liabilities": 317848.8,
+    "investments": 39800.0,
+    "net_worth": -274996.8
+  },
+  {
+    "date": "2026-07-07",
+    "assets": 42840.5,
+    "liabilities": 317793.7,
+    "investments": 39825.0,
+    "net_worth": -274953.2
+  },
+  {
+    "date": "2026-07-08",
+    "assets": 42829.0,
+    "liabilities": 317738.6,
+    "investments": 39850.0,
+    "net_worth": -274909.6
+  },
+  {
+    "date": "2026-07-09",
+    "assets": 42817.5,
+    "liabilities": 317683.5,
+    "investments": 39875.0,
+    "net_worth": -274866.0
+  },
+  {
+    "date": "2026-07-10",
+    "assets": 42806.0,
+    "liabilities": 317628.4,
+    "investments": 39900.0,
+    "net_worth": -274822.4
+  },
+  {
+    "date": "2026-07-11",
+    "assets": 43074.5,
+    "liabilities": 317573.3,
+    "investments": 39925.0,
+    "net_worth": -274498.8
+  },
+  {
+    "date": "2026-07-12",
+    "assets": 43063.0,
+    "liabilities": 317518.2,
+    "investments": 39950.0,
+    "net_worth": -274455.2
+  },
+  {
+    "date": "2026-07-13",
+    "assets": 43051.5,
+    "liabilities": 317463.1,
+    "investments": 39975.0,
+    "net_worth": -274411.6
+  },
+  {
+    "date": "2026-07-14",
+    "assets": 43040.0,
+    "liabilities": 317408.0,
+    "investments": 40000.0,
+    "net_worth": -274368.0
+  },
+  {
+    "date": "2026-07-15",
+    "assets": 43028.5,
+    "liabilities": 317352.9,
+    "investments": 40025.0,
+    "net_worth": -274324.4
+  },
+  {
+    "date": "2026-07-16",
+    "assets": 43017.0,
+    "liabilities": 317297.8,
+    "investments": 40050.0,
+    "net_worth": -274280.8
+  },
+  {
+    "date": "2026-07-17",
+    "assets": 43005.5,
+    "liabilities": 317242.7,
+    "investments": 40075.0,
+    "net_worth": -274237.2
+  },
+  {
+    "date": "2026-07-18",
+    "assets": 43274.0,
+    "liabilities": 317187.6,
+    "investments": 40100.0,
+    "net_worth": -273913.6
+  },
+  {
+    "date": "2026-07-19",
+    "assets": 43262.5,
+    "liabilities": 317132.5,
+    "investments": 40125.0,
+    "net_worth": -273870.0
+  },
+  {
+    "date": "2026-07-20",
+    "assets": 43251.0,
+    "liabilities": 317077.4,
+    "investments": 40150.0,
+    "net_worth": -273826.4
+  },
+  {
+    "date": "2026-07-21",
+    "assets": 43239.5,
+    "liabilities": 317022.3,
+    "investments": 40175.0,
+    "net_worth": -273782.8
+  },
+  {
+    "date": "2026-07-22",
+    "assets": 43228.0,
+    "liabilities": 316967.2,
+    "investments": 40200.0,
+    "net_worth": -273739.2
+  },
+  {
+    "date": "2026-07-23",
+    "assets": 43216.5,
+    "liabilities": 316912.1,
+    "investments": 40225.0,
+    "net_worth": -273695.6
+  },
+  {
+    "date": "2026-07-24",
+    "assets": 43205.0,
+    "liabilities": 316857.0,
+    "investments": 40250.0,
+    "net_worth": -273652.0
+  },
+  {
+    "date": "2026-07-25",
+    "assets": 43473.5,
+    "liabilities": 316801.9,
+    "investments": 40275.0,
+    "net_worth": -273328.4
+  },
+  {
+    "date": "2026-07-26",
+    "assets": 43462.0,
+    "liabilities": 316746.8,
+    "investments": 40300.0,
+    "net_worth": -273284.8
+  },
+  {
+    "date": "2026-07-27",
+    "assets": 43450.5,
+    "liabilities": 316691.7,
+    "investments": 40325.0,
+    "net_worth": -273241.2
+  },
+  {
+    "date": "2026-07-28",
+    "assets": 43439.0,
+    "liabilities": 316636.6,
+    "investments": 40350.0,
+    "net_worth": -273197.6
+  },
+  {
+    "date": "2026-07-29",
+    "assets": 43427.5,
+    "liabilities": 316581.5,
+    "investments": 40375.0,
+    "net_worth": -273154.0
+  },
+  {
+    "date": "2026-07-30",
+    "assets": 43416.0,
+    "liabilities": 316526.4,
+    "investments": 40400.0,
+    "net_worth": -273110.4
+  },
+  {
+    "date": "2026-07-31",
+    "assets": 43404.5,
+    "liabilities": 316471.3,
+    "investments": 40425.0,
+    "net_worth": -273066.8
+  },
+  {
+    "date": "2026-08-01",
+    "assets": 43673.0,
+    "liabilities": 316416.2,
+    "investments": 40450.0,
+    "net_worth": -272743.2
+  },
+  {
+    "date": "2026-08-02",
+    "assets": 43661.5,
+    "liabilities": 316361.1,
+    "investments": 40475.0,
+    "net_worth": -272699.6
+  },
+  {
+    "date": "2026-08-03",
+    "assets": 43650.0,
+    "liabilities": 316306.0,
+    "investments": 40500.0,
+    "net_worth": -272656.0
+  },
+  {
+    "date": "2026-08-04",
+    "assets": 43638.5,
+    "liabilities": 316250.9,
+    "investments": 40525.0,
+    "net_worth": -272612.4
+  },
+  {
+    "date": "2026-08-05",
+    "assets": 43627.0,
+    "liabilities": 316195.8,
+    "investments": 40550.0,
+    "net_worth": -272568.8
+  },
+  {
+    "date": "2026-08-06",
+    "assets": 43615.5,
+    "liabilities": 316140.7,
+    "investments": 40575.0,
+    "net_worth": -272525.2
+  },
+  {
+    "date": "2026-08-07",
+    "assets": 43604.0,
+    "liabilities": 316085.6,
+    "investments": 40600.0,
+    "net_worth": -272481.6
+  },
+  {
+    "date": "2026-08-08",
+    "assets": 43872.5,
+    "liabilities": 316030.5,
+    "investments": 40625.0,
+    "net_worth": -272158.0
+  },
+  {
+    "date": "2026-08-09",
+    "assets": 43861.0,
+    "liabilities": 315975.4,
+    "investments": 40650.0,
+    "net_worth": -272114.4
+  },
+  {
+    "date": "2026-08-10",
+    "assets": 43849.5,
+    "liabilities": 315920.3,
+    "investments": 40675.0,
+    "net_worth": -272070.8
+  },
+  {
+    "date": "2026-08-11",
+    "assets": 43838.0,
+    "liabilities": 315865.2,
+    "investments": 40700.0,
+    "net_worth": -272027.2
+  },
+  {
+    "date": "2026-08-12",
+    "assets": 43826.5,
+    "liabilities": 315810.1,
+    "investments": 40725.0,
+    "net_worth": -271983.6
+  },
+  {
+    "date": "2026-08-13",
+    "assets": 43815.0,
+    "liabilities": 315755.0,
+    "investments": 40750.0,
+    "net_worth": -271940.0
+  },
+  {
+    "date": "2026-08-14",
+    "assets": 43803.5,
+    "liabilities": 315699.9,
+    "investments": 40775.0,
+    "net_worth": -271896.4
+  },
+  {
+    "date": "2026-08-15",
+    "assets": 44072.0,
+    "liabilities": 315644.8,
+    "investments": 40800.0,
+    "net_worth": -271572.8
+  },
+  {
+    "date": "2026-08-16",
+    "assets": 44060.5,
+    "liabilities": 315589.7,
+    "investments": 40825.0,
+    "net_worth": -271529.2
+  },
+  {
+    "date": "2026-08-17",
+    "assets": 44049.0,
+    "liabilities": 315534.6,
+    "investments": 40850.0,
+    "net_worth": -271485.6
+  },
+  {
+    "date": "2026-08-18",
+    "assets": 44037.5,
+    "liabilities": 315479.5,
+    "investments": 40875.0,
+    "net_worth": -271442.0
+  },
+  {
+    "date": "2026-08-19",
+    "assets": 44026.0,
+    "liabilities": 315424.4,
+    "investments": 40900.0,
+    "net_worth": -271398.4
+  },
+  {
+    "date": "2026-08-20",
+    "assets": 44014.5,
+    "liabilities": 315369.3,
+    "investments": 40925.0,
+    "net_worth": -271354.8
+  },
+  {
+    "date": "2026-08-21",
+    "assets": 44003.0,
+    "liabilities": 315314.2,
+    "investments": 40950.0,
+    "net_worth": -271311.2
+  },
+  {
+    "date": "2026-08-22",
+    "assets": 44271.5,
+    "liabilities": 315259.1,
+    "investments": 40975.0,
+    "net_worth": -270987.6
+  },
+  {
+    "date": "2026-08-23",
+    "assets": 44260.0,
+    "liabilities": 315204.0,
+    "investments": 41000.0,
+    "net_worth": -270944.0
+  },
+  {
+    "date": "2026-08-24",
+    "assets": 44248.5,
+    "liabilities": 315148.9,
+    "investments": 41025.0,
+    "net_worth": -270900.4
+  },
+  {
+    "date": "2026-08-25",
+    "assets": 44237.0,
+    "liabilities": 315093.8,
+    "investments": 41050.0,
+    "net_worth": -270856.8
+  },
+  {
+    "date": "2026-08-26",
+    "assets": 44225.5,
+    "liabilities": 315038.7,
+    "investments": 41075.0,
+    "net_worth": -270813.2
+  },
+  {
+    "date": "2026-08-27",
+    "assets": 44214.0,
+    "liabilities": 314983.6,
+    "investments": 41100.0,
+    "net_worth": -270769.6
+  },
+  {
+    "date": "2026-08-28",
+    "assets": 44202.5,
+    "liabilities": 314928.5,
+    "investments": 41125.0,
+    "net_worth": -270726.0
+  },
+  {
+    "date": "2026-08-29",
+    "assets": 44471.0,
+    "liabilities": 314873.4,
+    "investments": 41150.0,
+    "net_worth": -270402.4
+  },
+  {
+    "date": "2026-08-30",
+    "assets": 44459.5,
+    "liabilities": 314818.3,
+    "investments": 41175.0,
+    "net_worth": -270358.8
+  },
+  {
+    "date": "2026-08-31",
+    "assets": 44448.0,
+    "liabilities": 314763.2,
+    "investments": 41200.0,
+    "net_worth": -270315.2
+  },
+  {
+    "date": "2026-09-01",
+    "assets": 44436.5,
+    "liabilities": 314708.1,
+    "investments": 41225.0,
+    "net_worth": -270271.6
+  },
+  {
+    "date": "2026-09-02",
+    "assets": 44425.0,
+    "liabilities": 314653.0,
+    "investments": 41250.0,
+    "net_worth": -270228.0
+  },
+  {
+    "date": "2026-09-03",
+    "assets": 44413.5,
+    "liabilities": 314597.9,
+    "investments": 41275.0,
+    "net_worth": -270184.4
+  },
+  {
+    "date": "2026-09-04",
+    "assets": 44402.0,
+    "liabilities": 314542.8,
+    "investments": 41300.0,
+    "net_worth": -270140.8
+  },
+  {
+    "date": "2026-09-05",
+    "assets": 44670.5,
+    "liabilities": 314487.7,
+    "investments": 41325.0,
+    "net_worth": -269817.2
+  },
+  {
+    "date": "2026-09-06",
+    "assets": 44659.0,
+    "liabilities": 314432.6,
+    "investments": 41350.0,
+    "net_worth": -269773.6
+  },
+  {
+    "date": "2026-09-07",
+    "assets": 44647.5,
+    "liabilities": 314377.5,
+    "investments": 41375.0,
+    "net_worth": -269730.0
+  },
+  {
+    "date": "2026-09-08",
+    "assets": 44636.0,
+    "liabilities": 314322.4,
+    "investments": 41400.0,
+    "net_worth": -269686.4
+  },
+  {
+    "date": "2026-09-09",
+    "assets": 44624.5,
+    "liabilities": 314267.3,
+    "investments": 41425.0,
+    "net_worth": -269642.8
+  },
+  {
+    "date": "2026-09-10",
+    "assets": 44613.0,
+    "liabilities": 314212.2,
+    "investments": 41450.0,
+    "net_worth": -269599.2
+  },
+  {
+    "date": "2026-09-11",
+    "assets": 44601.5,
+    "liabilities": 314157.1,
+    "investments": 41475.0,
+    "net_worth": -269555.6
+  },
+  {
+    "date": "2026-09-12",
+    "assets": 44870.0,
+    "liabilities": 314102.0,
+    "investments": 41500.0,
+    "net_worth": -269232.0
+  },
+  {
+    "date": "2026-09-13",
+    "assets": 44858.5,
+    "liabilities": 314046.9,
+    "investments": 41525.0,
+    "net_worth": -269188.4
+  },
+  {
+    "date": "2026-09-14",
+    "assets": 44847.0,
+    "liabilities": 313991.8,
+    "investments": 41550.0,
+    "net_worth": -269144.8
+  },
+  {
+    "date": "2026-09-15",
+    "assets": 44835.5,
+    "liabilities": 313936.7,
+    "investments": 41575.0,
+    "net_worth": -269101.2
+  },
+  {
+    "date": "2026-09-16",
+    "assets": 44824.0,
+    "liabilities": 313881.6,
+    "investments": 41600.0,
+    "net_worth": -269057.6
+  },
+  {
+    "date": "2026-09-17",
+    "assets": 44812.5,
+    "liabilities": 313826.5,
+    "investments": 41625.0,
+    "net_worth": -269014.0
+  },
+  {
+    "date": "2026-09-18",
+    "assets": 44801.0,
+    "liabilities": 313771.4,
+    "investments": 41650.0,
+    "net_worth": -268970.4
+  },
+  {
+    "date": "2026-09-19",
+    "assets": 45069.5,
+    "liabilities": 313716.3,
+    "investments": 41675.0,
+    "net_worth": -268646.8
+  },
+  {
+    "date": "2026-09-20",
+    "assets": 45058.0,
+    "liabilities": 313661.2,
+    "investments": 41700.0,
+    "net_worth": -268603.2
+  },
+  {
+    "date": "2026-09-21",
+    "assets": 45046.5,
+    "liabilities": 313606.1,
+    "investments": 41725.0,
+    "net_worth": -268559.6
+  },
+  {
+    "date": "2026-09-22",
+    "assets": 45035.0,
+    "liabilities": 313551.0,
+    "investments": 41750.0,
+    "net_worth": -268516.0
+  },
+  {
+    "date": "2026-09-23",
+    "assets": 45023.5,
+    "liabilities": 313495.9,
+    "investments": 41775.0,
+    "net_worth": -268472.4
+  },
+  {
+    "date": "2026-09-24",
+    "assets": 45012.0,
+    "liabilities": 313440.8,
+    "investments": 41800.0,
+    "net_worth": -268428.8
+  },
+  {
+    "date": "2026-09-25",
+    "assets": 45000.5,
+    "liabilities": 313385.7,
+    "investments": 41825.0,
+    "net_worth": -268385.2
+  },
+  {
+    "date": "2026-09-26",
+    "assets": 45269.0,
+    "liabilities": 313330.6,
+    "investments": 41850.0,
+    "net_worth": -268061.6
+  },
+  {
+    "date": "2026-09-27",
+    "assets": 45257.5,
+    "liabilities": 313275.5,
+    "investments": 41875.0,
+    "net_worth": -268018.0
+  },
+  {
+    "date": "2026-09-28",
+    "assets": 45246.0,
+    "liabilities": 313220.4,
+    "investments": 41900.0,
+    "net_worth": -267974.4
+  },
+  {
+    "date": "2026-09-29",
+    "assets": 45234.5,
+    "liabilities": 313165.3,
+    "investments": 41925.0,
+    "net_worth": -267930.8
+  },
+  {
+    "date": "2026-09-30",
+    "assets": 45223.0,
+    "liabilities": 313110.2,
+    "investments": 41950.0,
+    "net_worth": -267887.2
+  },
+  {
+    "date": "2026-10-01",
+    "assets": 45211.5,
+    "liabilities": 313055.1,
+    "investments": 41975.0,
+    "net_worth": -267843.6
+  },
+  {
+    "date": "2026-10-02",
+    "assets": 45200.5,
+    "liabilities": 312850.25,
+    "investments": 42000.0,
+    "net_worth": -267649.75
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "totals": {
+    "CAD": 42000.0
+  },
+  "holdings": [
+    {
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_veqt",
+      "name": "Vanguard All-Equity ETF Portfolio",
+      "ticker": "VEQT",
+      "type": "etf",
+      "quantity": 880.0,
+      "price": 47.2,
+      "value": 41536.0,
+      "cost_basis": 38000.0,
+      "gain": 3536.0,
+      "currency": "CAD"
+    },
+    {
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_cash",
+      "name": "Cash",
+      "ticker": null,
+      "type": "cash",
+      "quantity": 464.0,
+      "price": 1.0,
+      "value": 464.0,
+      "cost_basis": 464.0,
+      "gain": 0.0,
+      "currency": "CAD"
+    }
+  ]
+}

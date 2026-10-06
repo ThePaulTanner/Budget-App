@@ -1,0 +1,16 @@
+{
+  "id": "tx_001",
+  "account_id": "acc_visa",
+  "date": "2026-09-30",
+  "authorized_date": "2026-09-29",
+  "name": "Restaurant Le Local",
+  "merchant_name": "Restaurant Le Local",
+  "amount": 64.2,
+  "currency": "CAD",
+  "pending": false,
+  "category": "GROCERIES",
+  "plaid_category": "FOOD_AND_DRINK",
+  "category_detailed": "FOOD_AND_DRINK_OTHER",
+  "category_overridden": true,
+  "logo_url": null
+}

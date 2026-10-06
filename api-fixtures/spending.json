@@ -1,0 +1,11 @@
+{
+  "month": "2026-10",
+  "currency": "CAD",
+  "total": 132.47,
+  "categories": [
+    {
+      "category": "FOOD_AND_DRINK",
+      "spent": 132.47
+    }
+  ]
+}

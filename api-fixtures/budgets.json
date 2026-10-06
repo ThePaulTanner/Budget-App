@@ -1,0 +1,34 @@
+{
+  "month": "2026-10",
+  "currency": "CAD",
+  "budgets": [
+    {
+      "category": "ENTERTAINMENT",
+      "monthly_limit": 40.0,
+      "spent": 0.0,
+      "remaining": 40.0,
+      "percent": 0.0
+    },
+    {
+      "category": "FOOD_AND_DRINK",
+      "monthly_limit": 600.0,
+      "spent": 132.47,
+      "remaining": 467.53,
+      "percent": 22.1
+    },
+    {
+      "category": "GENERAL_MERCHANDISE",
+      "monthly_limit": 400.0,
+      "spent": 0.0,
+      "remaining": 400.0,
+      "percent": 0.0
+    },
+    {
+      "category": "TRANSPORTATION",
+      "monthly_limit": 150.0,
+      "spent": 0.0,
+      "remaining": 150.0,
+      "percent": 0.0
+    }
+  ]
+}

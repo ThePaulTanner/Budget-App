@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "body": {
+    "detail": "month must look like 2026-10"
+  }
+}
