@@ -1,0 +1,19 @@
+{
+  "as_of": "2026-10-02",
+  "base_currency": "CAD",
+  "net_worth": [
+    {
+      "currency": "CAD",
+      "assets": 45200.5,
+      "liabilities": 312850.25,
+      "investments": 42000.0,
+      "net_worth": -267649.75
+    }
+  ],
+  "month": "2026-10",
+  "spent_this_month": 132.47,
+  "budgeted_this_month": 1190.0,
+  "over_budget": [],
+  "items_needing_attention": [],
+  "last_synced_at": "2026-10-02T23:41:42.799072Z"
+}
