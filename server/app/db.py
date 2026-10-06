@@ -1,0 +1,231 @@
+"""SQLCipher-backed database (AES-256, per-page HMAC).
+
+A single connection guarded by a re-entrant lock is plenty for one user and keeps
+the cost of opening an encrypted database off the request path. Money is stored
+as TEXT decimals, never floats, and summed in Python with `Decimal`.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import threading
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Iterator
+
+SCHEMA_VERSION = 1
+
+SCHEMA = """
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  totp_secret BLOB NOT NULL,
+  totp_last_step INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE recovery_codes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL UNIQUE,
+  used_at TEXT
+);
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_name TEXT NOT NULL,
+  refresh_hash TEXT NOT NULL,
+  prev_refresh_hash TEXT,
+  prev_valid_until REAL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+CREATE TABLE items (
+  id TEXT PRIMARY KEY,
+  institution_id TEXT,
+  institution TEXT,
+  access_token BLOB NOT NULL,
+  cursor TEXT,
+  error_code TEXT,
+  needs_reauth INTEGER NOT NULL DEFAULT 0,
+  has_investments INTEGER NOT NULL DEFAULT 0,
+  last_synced_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE accounts (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  official_name TEXT,
+  mask TEXT,
+  type TEXT NOT NULL,
+  subtype TEXT,
+  current_balance TEXT,
+  available_balance TEXT,
+  credit_limit TEXT,
+  currency TEXT NOT NULL,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  authorized_date TEXT,
+  name TEXT NOT NULL,
+  merchant_name TEXT,
+  amount TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  pending INTEGER NOT NULL DEFAULT 0,
+  plaid_category TEXT NOT NULL,
+  category_detailed TEXT,
+  override_category TEXT,
+  rule_id INTEGER,
+  rule_category TEXT,
+  logo_url TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX transactions_date ON transactions(date DESC);
+CREATE INDEX transactions_account ON transactions(account_id);
+CREATE TABLE holdings (
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  security_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  ticker TEXT,
+  type TEXT,
+  quantity TEXT,
+  price TEXT,
+  value TEXT,
+  cost_basis TEXT,
+  currency TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (account_id, security_id)
+);
+CREATE TABLE budgets (
+  category TEXT PRIMARY KEY,
+  monthly_limit TEXT NOT NULL
+);
+CREATE TABLE rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_field TEXT NOT NULL CHECK (match_field IN ('merchant_name', 'name')),
+  match_type TEXT NOT NULL CHECK (match_type IN ('equals', 'contains')),
+  pattern TEXT NOT NULL,
+  account_id TEXT,
+  category TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE networth (
+  date TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  assets TEXT NOT NULL,
+  liabilities TEXT NOT NULL,
+  investments TEXT NOT NULL,
+  net_worth TEXT NOT NULL,
+  PRIMARY KEY (date, currency)
+);
+"""
+
+
+def utcnow() -> str:
+    """UTC ISO-8601 with microseconds and a trailing Z, like the fixtures."""
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+class DatabaseError(RuntimeError):
+    pass
+
+
+class Database:
+    def __init__(
+        self,
+        path: Path | str,
+        key_hex: str | None,
+        *,
+        insecure_plaintext: bool = False,
+    ) -> None:
+        self._lock = threading.RLock()
+        if key_hex is None and not insecure_plaintext:
+            raise DatabaseError("Refusing to open an unencrypted database.")
+        module: Any = sqlite3
+        if insecure_plaintext:
+            self._conn = sqlite3.connect(str(path), check_same_thread=False)
+        else:
+            try:
+                from sqlcipher3 import dbapi2 as sqlcipher
+            except ImportError as exc:  # pragma: no cover
+                raise DatabaseError("sqlcipher3 is not installed") from exc
+            module = sqlcipher
+            self._conn = sqlcipher.connect(str(path), check_same_thread=False)
+            # Raw key form: skips the passphrase KDF. Fine, the key is 256 random bits.
+            self._conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
+        self._conn.isolation_level = None  # explicit transactions below
+        self._conn.row_factory = module.Row
+        try:
+            self._conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+        except Exception as exc:
+            raise DatabaseError(
+                "Could not read the database. The master key is probably wrong."
+            ) from exc
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
+        self._migrate()
+
+    def _migrate(self) -> None:
+        with self._lock:
+            version = self._conn.execute("PRAGMA user_version").fetchone()[0]
+            if version == 0:
+                self._conn.execute("BEGIN")
+                try:
+                    for statement in SCHEMA.split(";\n"):
+                        if statement.strip():
+                            self._conn.execute(statement)
+                    self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                    self._conn.execute("COMMIT")
+                except Exception:
+                    self._conn.execute("ROLLBACK")
+                    raise
+            elif version != SCHEMA_VERSION:
+                raise DatabaseError(f"Unsupported database schema version {version}")
+
+    def query(self, sql: str, params: tuple | list = ()) -> list[Any]:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def one(self, sql: str, params: tuple | list = ()) -> Any | None:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
+
+    def run(self, sql: str, params: tuple | list = ()) -> int:
+        """Execute a write. Returns the row count (or last row id for INSERT)."""
+        with self._lock:
+            cur = self._conn.execute(sql, params)
+            if sql.lstrip().upper().startswith("INSERT"):
+                return cur.lastrowid
+            return cur.rowcount
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        with self._lock:
+            self._conn.execute("BEGIN")
+            try:
+                yield
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+            else:
+                self._conn.execute("COMMIT")
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+
+def placeholders(n: int) -> str:
+    return ",".join("?" * n)
+
+
+def as_dict(row: Any | None) -> dict[str, Any] | None:
+    return None if row is None else {k: row[k] for k in row.keys()}

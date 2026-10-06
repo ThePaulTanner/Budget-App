@@ -8,7 +8,7 @@ This document turns those requirements into concrete choices. It is a **plan**. 
 
 ## Principles
 
-- **Use proven, standard cryptography only.** That means AES-256, Argon2id, TLS 1.3 / WireGuard, and WebAuthn passkeys. No home-made crypto.
+- **Use proven, standard cryptography only.** That means AES-256, Argon2id, TLS 1.3 / WireGuard, and TOTP. No home-made crypto.
 - **Keys are kept away from the data they protect.** Encryption only helps if the key isn't stored next to it.
 - **Defence in depth.** Even if one layer fails (Tailscale, TLS, a stolen phone, a stolen NAS disk or backup), the data stays protected.
 - **Plaid access is read-only.** The server requests only the `transactions` and `investments` products (plus `liabilities` if loan details are wanted). **Auth** (full account numbers) and **Transfer / Payment Initiation** (moving money) stay off in the link token and in the Plaid dashboard. Then even a stolen access token can only read data. *(server: check the current link-token settings)*
@@ -16,13 +16,12 @@ This document turns those requirements into concrete choices. It is a **plan**. 
 
 ## 1. Server login *(server)*
 
-The current shared `X-API-Key` header is replaced by real user accounts.
+The shared `X-API-Key` header of the original handoff is replaced by a real login (the server in `server/` implements this).
 
 | Piece | Choice |
 |---|---|
-| **Primary sign-in** | **Passkeys (WebAuthn/FIDO2).** The private key never leaves the device's Secure Enclave or iCloud Keychain, so nothing can be phished or reused. iOS supports passkeys natively through `AuthenticationServices`, with no third-party library. |
-| **Passkey prerequisites** | Passkeys on iOS need (1) the **Associated Domains** capability in the app, with a `webcredentials:<domain>` entry, and (2) an `apple-app-site-association` file served over HTTPS from that domain, which becomes the passkey's relying party (RP) ID. The Associated Domains capability is **not available with a free Apple ID**, so passkeys require the paid developer account. Apple's CDN fetches the association file from the public internet, so a Tailscale-only `*.ts.net` host can't serve it; it must come from a publicly reachable hostname (for example the same public entry point as the webhook). Developer mode (`?mode=developer`) skips the CDN, but works only for development builds on a device. See open questions 2 and 5. |
-| **Backup sign-in** | A password **plus TOTP** two-factor (an authenticator app), and one-time recovery codes. |
+| **Sign-in** | **Password + authenticator code (TOTP).** A code works once and never an older one. One-time recovery codes cover a lost authenticator. **Decided: free Apple ID, so no passkeys.** |
+| **Passkeys (not used)** | Passkeys on iOS need the **Associated Domains** capability, which the free Apple ID does not have, and an `apple-app-site-association` file served from a publicly reachable host. They can be added later if the account is upgraded; the sign-in code is built so a second method can be added. |
 | **Password storage** | **Argon2id** with a per-user salt, at OWASP-recommended or stronger settings (for example 64 MiB memory, 3 iterations), plus an optional server-side "pepper" key stored outside the database. Passwords are never stored or logged in plain text. |
 | **Sessions** | A short-lived access token (about 15 minutes), plus a refresh token that is **replaced every time it is used**. Each device gets its own refresh token, so one device can be signed out without affecting the others. Refresh tokens are stored on the server only as hashes. **Crash window:** the server accepts the previous refresh token for 60 seconds after rotating, so an app killed before it saved the new token can retry. The trade-off is that a replayed old token still works for those 60 seconds; for a single-user setup behind Tailscale that is acceptable. **Reuse detection:** if an old token is used after that grace period, the server revokes that one device's token chain (not other devices) and alerts. **Face ID frequency:** the access token is kept in memory, so Face ID is needed once per unlock (launch or auto-lock), not on every refresh. |
 | **Brute-force protection** | Rate limits and increasing delays on failed logins. Alerts on new-device sign-ins. |
@@ -32,7 +31,7 @@ The current shared `X-API-Key` header is replaced by real user accounts.
 
 ## 2. App login (iOS)
 
-- **First sign-in:** the user signs in with a passkey (or password + TOTP) against the server.
+- **First sign-in:** the user signs in with password + authenticator code against the server.
 - **Every launch afterwards:** **Face ID is required, not optional.** The refresh token is stored in the Keychain behind an access control (`.biometryCurrentSet`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`). The token itself can't be read without Face ID, so this is real cryptographic protection rather than a lock screen drawn over the app.
 - **New Face ID enrolment:** if someone adds a new face or fingerprint to the phone, the stored token stops working and the user must sign in to the server again.
 - **No passcode fallback for the stored token.** `.biometryCurrentSet` can only be read with a currently enrolled biometric, and allowing the device passcode as an alternative would remove the guarantee above. If Face ID can't be used (for example it is locked out or was re-enrolled), the app asks the user to sign in to the server again with a passkey or password + TOTP. A passkey sign-in is itself approved with Face ID or the device passcode.
@@ -78,17 +77,17 @@ Webhooks need Plaid to reach the server from the internet. We open **only** the 
 
 ## 6. What this changes in the current spec
 
-- `CLAUDE.md`'s `X-API-Key` header becomes `Authorization: Bearer <access token>`, with refresh handled in `APIClient`.
+- `CLAUDE.md` already describes this: `Authorization: Bearer <access token>`, with refresh handled in `APIClient`.
 - Settings changes:
-  - **Server URL** and **Sign in** (passkey) replace the "API key" field.
+  - **Server URL** and a **Sign in** form (username, password, authenticator code) replace the "API key" field.
   - New **Signed-in devices** list and **Sign out**.
 - Face ID changes from optional to **required**.
 - `GET /health` stays unauthenticated, but must not reveal anything sensitive.
 
 ## Open questions
 
-1. **Server code:** where does the server's code live (a GitHub repo?), so these server changes can be planned against it?
-2. **Passkey-only:** would you rather sign in with passkeys only, with no password at all? That's the strongest option, but recovery then depends on your iCloud Keychain plus recovery codes. If the answer to question 5 is a free Apple ID, passkeys aren't possible, and the sign-in becomes password + TOTP.
-3. **Users:** just you, or will a partner or family member need their own login?
-4. **Webhook exposure:** is Tailscale Funnel acceptable, or do you prefer a Cloudflare Tunnel? The same public hostname would also have to serve the passkey association file, so the choice affects passkeys too.
-5. **Signing:** passkeys need the paid Apple developer account ($99/yr). Free Apple ID, or paid?
+1. ~~Server code~~ **Built in `server/`** (see `server/README.md`).
+2. ~~Passkey-only~~ **Decided: free Apple ID, so password + authenticator code.**
+3. **Users:** the server is built for exactly one user. Say if someone else needs a login.
+4. **Webhook exposure:** Tailscale Funnel on port 8443 is what the setup guide uses. Say if you prefer a Cloudflare Tunnel.
+5. ~~Signing~~ **Decided: free Apple ID** (reinstall every 7 days).

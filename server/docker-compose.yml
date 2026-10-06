@@ -1,0 +1,52 @@
+# HomeFinance server for a Synology NAS (Container Manager > Project).
+# Setup guide: server/README.md
+services:
+  homefinance:
+    image: ghcr.io/thepaultanner/budget-app-server:latest
+    build: .   # `docker compose build` also works if you cloned the repo onto the NAS
+    container_name: homefinance
+    restart: unless-stopped
+
+    # Run as the owner of ./data and ./secrets (the Synology admin is usually 1026:100).
+    user: "${PUID:-1026}:${PGID:-100}"
+
+    # Published on the NAS itself only. Tailscale is the way in (see the README).
+    ports:
+      - "127.0.0.1:8080:8080"   # the API: tailnet only, `tailscale serve`
+      - "127.0.0.1:8081:8081"   # signed Plaid webhooks only: the one thing `tailscale funnel` exposes
+
+    environment:
+      TZ: ${TZ:-America/Toronto}
+      PLAID_ENV: ${PLAID_ENV:-sandbox}        # sandbox first, production when Plaid approves you
+      PLAID_COUNTRY_CODES: ${PLAID_COUNTRY_CODES:-CA,US}
+      BASE_CURRENCY: ${BASE_CURRENCY:-CAD}
+      PUBLIC_WEBHOOK_URL: ${PUBLIC_WEBHOOK_URL:-}   # https://<nas>.<tailnet>.ts.net:8443/plaid/webhook
+      SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-60}   # backup timer; webhooks do the real work
+      HF_MASTER_KEY_FILE: /run/secrets/hf_master_key
+      PLAID_CLIENT_ID_FILE: /run/secrets/plaid_client_id
+      PLAID_SECRET_FILE: /run/secrets/plaid_secret
+
+    secrets:
+      - hf_master_key
+      - plaid_client_id
+      - plaid_secret
+
+    volumes:
+      - ./data:/data   # the encrypted database
+
+    # Hardening: nothing writable except the data folder, no extra privileges.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  hf_master_key:
+    file: ./secrets/hf_master_key
+  plaid_client_id:
+    file: ./secrets/plaid_client_id
+  plaid_secret:
+    file: ./secrets/plaid_secret
