@@ -2,7 +2,9 @@
 
 **HomeFinance** is a personal, read-mostly SwiftUI iPhone app. It shows balances, transactions, budgets, holdings and net worth from a self-hosted FastAPI and Plaid server on a Synology NAS, reached over Tailscale.
 
-- [`CLAUDE.md`](CLAUDE.md): the full spec covering server API, JSON conventions, screens and privacy.
+- [`server/`](server): **the server** (FastAPI + encrypted SQLite + Plaid) as a Docker image for a Synology NAS. Start with [`server/README.md`](server/README.md).
+- [`docs/SECURITY.md`](docs/SECURITY.md): login and encryption design.
+- [`CLAUDE.md`](CLAUDE.md): the full spec covering server API, JSON conventions, screens and privacy (the iPhone app is not built yet).
 - [`docs/PLAN.md`](docs/PLAN.md): milestones, project layout and open questions.
 - [`api-fixtures/`](api-fixtures): captured server responses, used for decoding tests, previews and Demo Mode.
 

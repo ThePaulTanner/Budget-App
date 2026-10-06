@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>HomeFinance</title>
+  <link rel="stylesheet" href="/static/link.css">
+</head>
+<body>
+  <main>
+    <h1>HomeFinance</h1>
+
+    <section id="login" aria-labelledby="login-title">
+      <h2 id="login-title">Sign in</h2>
+      <form id="login-form" autocomplete="on">
+        <label>Username <input name="username" autocomplete="username" required></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+        <label>Authenticator code or recovery code
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <section id="banks" hidden aria-labelledby="banks-title">
+      <h2 id="banks-title">Linked banks</h2>
+      <ul id="bank-list"></ul>
+      <button id="link-bank" type="button">Link a bank</button>
+      <button id="sign-out" type="button" class="secondary">Sign out</button>
+    </section>
+
+    <p id="message" role="status" aria-live="polite"></p>
+  </main>
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+  <script src="/static/link.js"></script>
+</body>
+</html>

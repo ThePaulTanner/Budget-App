@@ -18,7 +18,7 @@ HomeFinance/
   Decoding/       PlainDate (YYYY-MM-DD), YearMonth (YYYY-MM), flexible ISO-8601
                   timestamp decoding, JSONDecoder.api factory
   Networking/     APIClientProtocol, APIClient (actor), FixtureAPIClient, APIError
-  Storage/        Keychain (API key), Settings (base URL and demo flag in UserDefaults)
+  Storage/        Keychain (refresh token), Settings (base URL and demo flag in UserDefaults)
   Formatting/     Money (signed display and currency formatting), CategoryLabel, CategoryIcon
   Features/
     Overview/     OverviewView, NetWorthChart, AccountsSection, ReconnectBanner
@@ -49,11 +49,11 @@ Each milestone ends with a build and a Simulator run on the Mac. Screen mileston
 - **Exit:** every test passes.
 
 ### M3: Networking, storage and Settings
-- Define `APIClientProtocol` and build an `APIClient` actor that sends `X-API-Key`. Timeouts: 30 s by default, 180 s for `POST /api/sync`.
+- Define `APIClientProtocol` and build an `APIClient` actor that sends `Authorization: Bearer`, signs in, and refreshes the token once on a 401. Timeouts: 30 s by default, 180 s for `POST /api/sync`.
 - Map errors to `APIError`: no network gives the "Can't reach your server — is Tailscale connected?" message; 401 sends the user to Settings; 409 on sync is informational; `{"detail"}` bodies are surfaced.
 - Build `FixtureAPIClient` behind the same protocol.
-- Add a Keychain helper for the API key and store the base URL in `UserDefaults`.
-- Settings screen: URL and key fields, a Test connection button (`/health`, then `/api/summary`), Sync now, linked banks, an "Open bank-linking page" link, and the Demo Mode toggle.
+- Add a Keychain helper for the Face ID-protected refresh token and store the base URL in `UserDefaults`.
+- Settings screen: server URL and a sign-in form, signed-in devices, a Test connection button (`/health`, then `/api/summary`), Sync now, linked banks, an "Open bank-linking page" link, and the Demo Mode toggle.
 
 ### M4: Feature screens (fixtures in previews)
 1. **Overview:** net worth with assets, liabilities and investments; the net-worth chart with 1M/3M/1Y/All; spent against budgeted; over-budget chips; the reconnect banner; last synced; accounts grouped by type, opening that account's transactions.
@@ -80,24 +80,17 @@ Each milestone ends with a build and a Simulator run on the Mac. Screen mileston
 - **Currency:** always format with the object's own `currency` field. Never assume CAD.
 - **Privacy:** never log response bodies or the key, and add no ATS exceptions.
 
-## Planned server changes (approved in principle)
+## The server (built: `server/`)
 
-These need the server's code, which isn't in this repo. Details are in [`SECURITY.md`](SECURITY.md).
+The server now lives in this repo under [`server/`](../server). Its setup guide for the Synology DS423+ is [`server/README.md`](../server/README.md). What it implements:
 
-0. **Categorization rules (first version):**
-    - **Rule fields:** `id`, `match_field` (`merchant_name` or `name`), `match_type` (`equals` or `contains`, ignoring case), `pattern`, optional `account_id`, `category`, `created_at`.
-    - **Priority:** a manual change to one transaction wins over a rule, and a rule wins over Plaid. If several rules match, an `equals` rule wins over a `contains` rule; among `contains` rules the **longest pattern** wins (more specific beats generic), then the newest. Resetting a manual change falls back to the matching rule, then Plaid. A rule on `merchant_name` never matches a transaction where it is null (use `name` for those). The preview warns when a rule would move transactions into or out of the categories excluded from spending (transfers, loan payments, income), because that silently changes budgets. Proposed request and response shapes are in `api-fixtures/proposed/`.
-    - **When rules run:** on every sync, for new and updated transactions. Also on request for past transactions.
-    - **Endpoints:**
-        - `GET /api/rules`, `POST /api/rules`, `PATCH /api/rules/{id}`, `DELETE /api/rules/{id}`
-        - `POST /api/rules/preview` returns how many transactions would match
-        - `POST /api/rules/{id}/apply` re-categorizes past transactions; it skips manual changes unless asked
-    - **Transactions:** gain a `category_source` field (`plaid`, `rule` or `manual`) and `rule_id`. The existing `category_overridden` is kept for compatibility.
-    - Deleting a rule puts its transactions back to Plaid's category, unless they were also changed manually.
-1. **Login:** passkeys, plus password + TOTP as a backup. Passwords hashed with Argon2id. Short-lived access tokens with rotating per-device refresh tokens. This replaces the shared `X-API-Key`.
-2. **Encryption at rest:** SQLCipher for the whole database, plus AES-256-GCM envelope encryption for Plaid access tokens. The master key is stored outside the database.
-3. **Plaid webhooks:** a minimal public receiver (Tailscale Funnel) that accepts only `POST /plaid/webhook`, verifies Plaid's JWT signature, and then queues a sync. The backup sync runs hourly instead of every 6 hours.
-4. **Mint gaps (later):** splits, tags and notes, hiding a transaction, budget rollover, bills and subscriptions, alerts, manual transactions, and CSV/OFX import. See `reports/Intuit Mint feature research.md`.
+0. **Categorization rules.** Fields: `id`, `match_field` (`merchant_name` or `name`), `match_type` (`equals` or `contains`, ignoring case), `pattern`, optional `account_id`, `category`, `created_at`. A manual change to one transaction wins over a rule, and a rule wins over Plaid. If several rules match, an `equals` rule wins over a `contains` rule; among `contains` rules the **longest pattern** wins, then the newest. A rule on `merchant_name` never matches a transaction where it is null. Rules run on every sync for new and updated transactions, and on request for past ones (`apply_to_past` on create, or `POST /api/rules/{id}/apply`). `POST /api/rules/preview` shows what a rule would do, including a warning when it would move transactions into or out of the categories excluded from spending. Deleting a rule falls back to the next matching rule, then Plaid. Transactions gain `category_source` (`plaid`, `rule` or `manual`) and `rule_id`. Example shapes: `api-fixtures/proposed/`.
+1. **Login.** Password + authenticator code (TOTP), with one-time recovery codes. Argon2id passwords with a secret pepper, 15-minute access tokens, per-device refresh tokens that change on every use (60-second grace for a lost response; reuse after that revokes the device), a device list, lockouts. This replaces the shared `X-API-Key`. **Passkeys are not used** because they need the paid Apple developer account; they can be added later if that changes.
+2. **Encryption at rest.** SQLCipher for the whole database, plus AES-256-GCM envelope encryption for Plaid access tokens. The master key lives in a file outside the database.
+3. **Plaid webhooks.** A separate port that accepts only `POST /plaid/webhook`, verifies Plaid's signature, and queues a sync. Only this port is exposed to the internet (Tailscale Funnel). A backup sync runs hourly.
+4. **Later (Mint gaps):** splits, tags and notes, hiding a single transaction, budget rollover, bills and subscriptions, alerts, manual transactions, and CSV/OFX import. See `reports/Intuit Mint feature research.md`.
+
+**Verified:** 90+ automated tests run against a real SQLCipher database, including that the API reproduces every fixture, the database file holds no readable data, and forged or stale webhooks are refused. **Not yet verified:** the Docker image on a real Synology, and the Plaid Link page against live Plaid.
 
 ## Development environment
 
@@ -108,9 +101,10 @@ The cloud Claude Code session that wrote this plan runs on Linux and **can't run
 
 ## Open questions for Paul
 
-1. **Signing:** free Apple ID (installs expire after 7 days) or paid developer account ($99/yr, installs last a year, TestFlight)? **Passkey login requires the paid account** (Associated Domains is not available with a free Apple ID); with a free one, sign-in is password + TOTP.
+1. ~~Signing~~ **Decided: free Apple ID.** Installs expire after 7 days and must be reinstalled, there is no TestFlight, and sign-in is password + authenticator code (no passkeys).
 2. **Bundle ID and team:** e.g. `com.paultanner.HomeFinance`?
 3. **Naming:** the repo is `Budget-App` but the spec calls the app `HomeFinance`. Should "HomeFinance" be both the Xcode target and the name on the home screen?
 4. **Dev environment:** local Claude Code on the Mac, or the hybrid approach above?
 5. **App icon and accent colour:** any preference, or should I use a simple placeholder?
 6. **Security:** the open questions at the end of [`SECURITY.md`](SECURITY.md).
+7. **Plaid:** do you have a Plaid account yet, and does Plaid support Desjardins on your plan? Sandbox works for testing the whole system with fake banks.

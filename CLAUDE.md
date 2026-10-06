@@ -1,16 +1,18 @@
 # Home Finance — iOS app
 
-A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, transactions, budgets, investment holdings and net-worth history from a self-hosted server. The server is already built and running. **This repo is only the iOS client.** Don't build or change the server; if something seems to need a server change, stop and tell Paul.
+A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, transactions, budgets, investment holdings and net-worth history from a self-hosted server. The server is built and lives in this repo under `server/` (setup guide: `server/README.md`). The iPhone app is **not built yet**. When building the app, treat the server as fixed: if something seems to need a server change, stop and tell Paul.
 
-> **Planned changes:** server login, encryption at rest, and Plaid webhooks are planned. They're described in `docs/SECURITY.md` and `docs/PLAN.md`. Until the server ships them, build against the `X-API-Key` behaviour described below, and keep auth behind `APIClient` so it's easy to swap.
+> **Auth:** the server uses a login (password + authenticator code), not an API key. Design: `docs/SECURITY.md`. Plan: `docs/PLAN.md`.
 
-## The server (already exists)
+## The server (`server/`)
 
-- A FastAPI + SQLite app in Docker on a Synology NAS. It syncs from Plaid every 6 hours.
+- A FastAPI + encrypted SQLite (SQLCipher) app in Docker on a Synology NAS. It syncs from Plaid when Plaid sends a webhook, and on an hourly backup timer.
 - It's reached over **Tailscale HTTPS**, e.g. `https://tanner-nas.<tailnet>.ts.net`. The exact URL is entered in the app's Settings.
 - Because the URL is HTTPS with a real certificate, **don't add App Transport Security exceptions** (`NSAllowsArbitraryLoads`, etc.).
-- Every `/api/*` request needs the header `X-API-Key: <key>`.
-- `GET /health` needs no key and returns `{"ok":true,"plaid_env":"sandbox"|"production"}`. Use it for the "Test connection" button.
+- **Login:** `POST /auth/login` with `{"username", "password", "code", "device_name"}`, where `code` is the authenticator code (or a one-time recovery code). It returns `{access_token, refresh_token, token_type, expires_in, session_id}`. Every `/api/*` request needs `Authorization: Bearer <access_token>`. The access token lasts 15 minutes.
+- **Refresh:** `POST /auth/refresh` with `{"refresh_token"}` returns a new pair. **Every refresh token works once**: always store the new one. If the app is killed before saving it, retrying the old one within 60 seconds still works. After that, an old token revokes the device.
+- `POST /auth/logout`, `GET /auth/sessions` (signed-in devices) and `DELETE /auth/sessions/{id}` (revoke one) also need the bearer token. Too many failed sign-ins return `429` with `Retry-After`.
+- `GET /health` needs no login and returns `{"ok":true,"plaid_env":"sandbox"|"production"}`. Use it for the "Test connection" button.
 - Linking and reconnecting banks happens on a web page at the server root (`GET /`), not in the app. The app never uses the Plaid SDK. When a bank needs reconnecting, the app opens the base URL in Safari (`openURL`).
 
 **`api-fixtures/` contains real responses captured from the server code for every existing endpoint.** Treat them as the source of truth for JSON shapes, and use them for model decoding tests, SwiftUI previews and Demo Mode. The one exception is `api-fixtures/proposed/`: drafts for endpoints that don't exist yet (categorization rules). Use those the same way, but they are proposals and may change.
@@ -20,7 +22,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - SwiftUI and iOS 17+.
 - `@Observable` (Observation framework), `async`/`await` `URLSession`, Swift Charts.
 - **No third-party dependencies.**
-- Store the API key in the **Keychain** and the base URL in `UserDefaults`.
+- Store the **refresh token** in the Keychain (readable only after Face ID, `.biometryCurrentSet`, this device only), keep the access token in memory, and store the base URL in `UserDefaults`.
 - A single `APIClient` actor. Default request timeout is 30 s; `POST /api/sync` gets 180 s because a sync can take minutes.
 
 ## JSON conventions (read carefully)
@@ -35,7 +37,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - **Timestamps** (`last_synced_at`, `updated_at`) are UTC ISO-8601 with `Z`. They usually have fractional seconds (`2026-10-02T23:41:42.799072Z`) but sometimes don't, so the decoder must accept both forms.
 - **`month`** is `"YYYY-MM"`.
 - **Nullable fields:** `official_name`, `mask`, `subtype`, `available_balance`, `credit_limit`, `current_balance`, `authorized_date`, `merchant_name`, `logo_url`, `ticker`, `price`, `value`, `cost_basis`, `gain`, `percent`, `as_of`, `last_synced_at`, `institution`, `error_code`.
-- **Errors** are `{"detail": "message"}` with a status code: 400 bad input, 401 bad or missing key, 404 not found, 409 sync already running, 422 validation, 502 Plaid upstream error.
+- **Errors** are `{"detail": "message"}` with a status code: 400 bad input, 401 bad or missing credentials, 404 not found, 409 sync already running, 422 validation, 429 too many sign-in attempts, 502 Plaid upstream error, 503 Plaid not configured.
 
 ## Endpoints
 
@@ -56,6 +58,8 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 | `GET /api/networth?days=365[&currency=USD]` | `networth.json` | One point per day, oldest first. `net_worth` = assets − liabilities, so it **can be negative** (a mortgage counts as a liability). Also includes `assets`, `liabilities`, `investments`. |
 | `GET /api/items` | `items.json` | Linked banks. `needs_reauth` bool. |
 | `POST /api/sync` | `sync_response.json` | Array of per-bank results (`ok`, `error`). Slow. A 409 means a sync is already running. Show that as info, not an error. |
+| `GET/POST /api/rules`, `PATCH/DELETE /api/rules/{id}`, `POST /api/rules/preview`, `POST /api/rules/{id}/apply` | `proposed/rules.json`, `proposed/rules_preview.json` | Categorization rules. `POST /api/rules` also takes `apply_to_past` (bool). Transactions carry `category_source` (`plaid`, `rule`, `manual`) and `rule_id`. See `docs/PLAN.md`. |
+| `POST /api/link/token`, `POST /api/link/exchange`, `POST /api/link/complete`, `DELETE /api/items/{id}` | — | Used by the web page at `/` to link, reconnect and remove banks. The app does not call them; it opens the page in Safari. |
 
 ## Screens
 
@@ -74,7 +78,7 @@ Use a tab bar with five tabs.
 **2. Transactions**
 - A searchable list grouped by date, with an account filter and a category filter.
 - Each row shows the merchant (or name), category icon and label, a "Pending" badge, and the signed amount.
-- Tapping a row opens a detail sheet where the category can be changed (picker plus custom entry, and "Reset to Plaid's"; relabel it "Reset to automatic" once categorization rules ship).
+- Tapping a row opens a detail sheet where the category can be changed (picker plus custom entry, and "Reset to automatic", which falls back to the matching rule and then Plaid's category). After a change, offer "Always categorize *IGA* as Groceries?": call `POST /api/rules/preview` to show how many transactions it would change, then `POST /api/rules`. A small badge shows whether a category came from a rule, a manual change or Plaid. A Rules screen (from Settings) lists, edits and deletes rules.
 
 **3. Budgets**
 - A month switcher (‹ October 2026 ›).
@@ -88,7 +92,7 @@ Use a tab bar with five tabs.
 - Holdings grouped by account, each showing ticker or name, quantity, value, and gain in $ and %.
 
 **5. Settings**
-- Server URL and API key fields, plus a "Test connection" button that calls `/health` and then `/api/summary`.
+- Server URL and a sign-in form (username, password, authenticator code), plus a "Test connection" button that calls `/health` and then `/api/summary`. A list of signed-in devices with Revoke, and Sign out.
 - A "Sync now" button.
 - A list of linked banks with their status, and an "Open bank-linking page" link.
 - A Demo Mode toggle.
@@ -97,7 +101,7 @@ Use a tab bar with five tabs.
 **General behaviour**
 - Pull-to-refresh re-fetches (GET). It does **not** trigger a sync.
 - If the server can't be reached, show: "Can't reach your server — is Tailscale connected?"
-- A 401 sends the user to Settings. Once server login ships, the app first tries one token refresh and only then goes to sign-in.
+- On a 401 the app tries one token refresh and, if that fails, shows sign-in.
 - Category labels: convert Plaid's codes to readable text (`FOOD_AND_DRINK` → "Food & Drink", `RENT_AND_UTILITIES` → "Rent & Utilities"). Title-case custom ones (`GROCERIES` → "Groceries").
 - Map each known Plaid primary category to an SF Symbol, with a generic fallback icon. The known categories are `INCOME`, `TRANSFER_IN`, `TRANSFER_OUT`, `LOAN_PAYMENTS`, `BANK_FEES`, `ENTERTAINMENT`, `FOOD_AND_DRINK`, `GENERAL_MERCHANDISE`, `HOME_IMPROVEMENT`, `MEDICAL`, `PERSONAL_CARE`, `GENERAL_SERVICES`, `GOVERNMENT_AND_NON_PROFIT`, `TRANSPORTATION`, `TRAVEL`, `RENT_AND_UTILITIES`, `OTHER`.
 
@@ -105,7 +109,7 @@ Use a tab bar with five tabs.
 
 - This is financial data. Don't log response bodies or the key.
 - Blur the app content in the app switcher (`scenePhase` → `.inactive`/`.background` shows a privacy cover).
-- **Face ID is required**, matching `docs/SECURITY.md`. Until the server ships login there is no refresh token to bind it to, so for now: the app is gated by a `LocalAuthentication` check on every launch and after auto-lock, and the API key is stored in the Keychain with a biometric access control (`.biometryCurrentSet`, this device only). When login ships, the Keychain token replaces the API key and the Settings "API key" field is replaced by sign-in.
+- **Face ID is required**, matching `docs/SECURITY.md`. It unlocks the Keychain refresh token on every launch and after auto-lock. There is no passcode fallback for that token: if Face ID can't be used, the user signs in again. The access token stays in memory, so Face ID is needed once per unlock, not on every refresh.
 
 ## Demo mode and tests
 
@@ -117,7 +121,7 @@ Use a tab bar with five tabs.
 
 1. Create the Xcode project (`HomeFinance`, SwiftUI, iOS 17).
 2. Write the models, the date and decimal decoding, and the fixture decoding tests. Get these passing.
-3. Build `APIClient`, the Keychain helper, and the Settings screen with Test connection.
+3. Build `APIClient` (with sign-in and token refresh), the Keychain helper, and the Settings screen with Test connection.
 4. Build the Overview, Transactions, Budgets and Investments screens, using fixtures in previews.
 5. Add polish: the privacy cover, Face ID, empty states, and error states.
 
@@ -127,4 +131,4 @@ Build with `xcodebuild` and run in the Simulator after each step. Show Paul scre
 
 - With a free Apple ID, apps installed from Xcode expire after 7 days and must be reinstalled.
 - A paid developer account ($99/yr) makes installs last a year and enables TestFlight.
-- Ask Paul which account to use before setting up signing.
+- **Decided: free Apple ID.** Expect to reinstall every 7 days; there is no TestFlight or push.
