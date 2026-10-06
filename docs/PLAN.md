@@ -108,7 +108,7 @@ The cloud Claude Code session that wrote this plan runs on Linux and **can't run
 
 ## Open questions for Paul
 
-1. **Signing:** free Apple ID (installs expire after 7 days) or paid developer account ($99/yr, installs last a year, TestFlight)?
+1. **Signing:** free Apple ID (installs expire after 7 days) or paid developer account ($99/yr, installs last a year, TestFlight)? **Passkey login requires the paid account** (Associated Domains is not available with a free Apple ID); with a free one, sign-in is password + TOTP.
 2. **Bundle ID and team:** e.g. `com.paultanner.HomeFinance`?
 3. **Naming:** the repo is `Budget-App` but the spec calls the app `HomeFinance`. Should "HomeFinance" be both the Xcode target and the name on the home screen?
 4. **Dev environment:** local Claude Code on the Mac, or the hybrid approach above?

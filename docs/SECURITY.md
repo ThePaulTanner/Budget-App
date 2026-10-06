@@ -21,6 +21,7 @@ The current shared `X-API-Key` header is replaced by real user accounts.
 | Piece | Choice |
 |---|---|
 | **Primary sign-in** | **Passkeys (WebAuthn/FIDO2).** The private key never leaves the device's Secure Enclave or iCloud Keychain, so nothing can be phished or reused. iOS supports passkeys natively through `AuthenticationServices`, with no third-party library. |
+| **Passkey prerequisites** | Passkeys on iOS need (1) the **Associated Domains** capability in the app, with a `webcredentials:<domain>` entry, and (2) an `apple-app-site-association` file served over HTTPS from that domain, which becomes the passkey's relying party (RP) ID. The Associated Domains capability is **not available with a free Apple ID**, so passkeys require the paid developer account. Apple's CDN fetches the association file from the public internet, so a Tailscale-only `*.ts.net` host can't serve it; it must come from a publicly reachable hostname (for example the same public entry point as the webhook). Developer mode (`?mode=developer`) skips the CDN, but works only for development builds on a device. See open questions 2 and 5. |
 | **Backup sign-in** | A password **plus TOTP** two-factor (an authenticator app), and one-time recovery codes. |
 | **Password storage** | **Argon2id** with a per-user salt, at OWASP-recommended or stronger settings (for example 64 MiB memory, 3 iterations), plus an optional server-side "pepper" key stored outside the database. Passwords are never stored or logged in plain text. |
 | **Sessions** | A short-lived access token (about 15 minutes), plus a refresh token that is **replaced every time it is used**. Each device gets its own refresh token, so one device can be signed out without affecting the others. Refresh tokens are stored on the server only as hashes. |
@@ -34,7 +35,7 @@ The current shared `X-API-Key` header is replaced by real user accounts.
 - **First sign-in:** the user signs in with a passkey (or password + TOTP) against the server.
 - **Every launch afterwards:** **Face ID is required, not optional.** The refresh token is stored in the Keychain behind an access control (`.biometryCurrentSet`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`). The token itself can't be read without Face ID, so this is real cryptographic protection rather than a lock screen drawn over the app.
 - **New Face ID enrolment:** if someone adds a new face or fingerprint to the phone, the stored token stops working and the user must sign in to the server again.
-- **Device passcode:** the app falls back to the device passcode only if Face ID fails.
+- **No passcode fallback for the stored token.** `.biometryCurrentSet` can only be read with a currently enrolled biometric, and allowing the device passcode as an alternative would remove the guarantee above. If Face ID can't be used (for example it is locked out or was re-enrolled), the app asks the user to sign in to the server again with a passkey or password + TOTP. A passkey sign-in is itself approved with Face ID or the device passcode.
 - **Auto-lock:** after a configurable idle time and whenever the app goes to the background. The existing privacy cover in the app switcher stays.
 - **Phone backups:** the token is never included in iCloud or device backups (`ThisDeviceOnly`).
 
@@ -87,6 +88,7 @@ Webhooks need Plaid to reach the server from the internet. We open **only** the 
 ## Open questions
 
 1. **Server code:** where does the server's code live (a GitHub repo?), so these server changes can be planned against it?
-2. **Passkey-only:** would you rather sign in with passkeys only, with no password at all? That's the strongest option, but recovery then depends on your iCloud Keychain plus recovery codes.
+2. **Passkey-only:** would you rather sign in with passkeys only, with no password at all? That's the strongest option, but recovery then depends on your iCloud Keychain plus recovery codes. If the answer to question 5 is a free Apple ID, passkeys aren't possible, and the sign-in becomes password + TOTP.
 3. **Users:** just you, or will a partner or family member need their own login?
-4. **Webhook exposure:** is Tailscale Funnel acceptable, or do you prefer a Cloudflare Tunnel?
+4. **Webhook exposure:** is Tailscale Funnel acceptable, or do you prefer a Cloudflare Tunnel? The same public hostname would also have to serve the passkey association file, so the choice affects passkeys too.
+5. **Signing:** passkeys need the paid Apple developer account ($99/yr). Free Apple ID, or paid?
