@@ -7,3 +7,7 @@
 - [`api-fixtures/`](api-fixtures): captured server responses, used for decoding tests, previews and Demo Mode.
 
 Requirements: Xcode with iOS 17+ SDK. No third-party dependencies.
+
+## Code review
+
+Pull requests are reviewed automatically by Claude (`.github/workflows/claude-review.yml`). It needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY`, plus the Claude GitHub App installed on the repo. Without a secret, the review job is skipped.
