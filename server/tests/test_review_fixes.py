@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
+from app.plaid import PlaidError
 from app.webhook import KEY_CACHE_SECONDS
 
 from .test_sync import ACCOUNTS, add_item, page, run, tx
@@ -76,3 +77,41 @@ def test_webhook_timestamps_from_the_future_are_refused(hook, clock):
     body = json.dumps(EVENT).encode()
     assert post(client, body, signer.sign(body, iat=clock() + 30)).status_code == 200  # small clock skew is fine
     assert post(client, body, signer.sign(body, iat=clock() + 600)).status_code == 401
+
+
+def test_stale_webhook_key_still_works_when_plaid_is_unreachable(hook, clock):
+    client, signer, services = hook
+    body = json.dumps(EVENT).encode()
+    assert post(client, body, signer.sign(body)).status_code == 200  # key cached
+    clock.advance(KEY_CACHE_SECONDS + 60)
+    signer.fail = PlaidError(0, "NETWORK", "UNREACHABLE", "Could not reach Plaid")
+    assert post(client, body, signer.sign(body)).status_code == 200  # stale key beats refusing
+    signer.fail = PlaidError(500, "API_ERROR", "INTERNAL_SERVER_ERROR", "down")
+    clock.advance(30)
+    assert post(client, body, signer.sign(body)).status_code == 200
+
+
+def test_stale_webhook_key_is_refused_when_plaid_says_it_is_gone(hook, clock):
+    client, signer, services = hook
+    body = json.dumps(EVENT).encode()
+    assert post(client, body, signer.sign(body)).status_code == 200
+    clock.advance(KEY_CACHE_SECONDS + 60)
+    signer.fail = PlaidError(400, "INVALID_INPUT", "INVALID_KEY", "no such key")  # retired, not an outage
+    assert post(client, body, signer.sign(body)).status_code == 401
+
+
+def test_placeholder_account_is_filled_in_once_plaid_lists_it(services, plaid, client, auth):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page(added=[tx("lost", Decimal("9.99"), account="acc_late")], cursor="c1")]
+    run(services, item)
+    assert services.db.one("SELECT name FROM accounts WHERE id='acc_late'")["name"] == "Unknown account"
+    late = {"account_id": "acc_late", "name": "Savings", "mask": "4321", "type": "depository",
+            "subtype": "savings", "balances": {"current": Decimal("100.00"), "available": Decimal("100.00"),
+                                                 "limit": None, "iso_currency_code": "CAD"}}
+    plaid.accounts = [*ACCOUNTS, late]
+    plaid.pages = [page(cursor="c2")]
+    run(services, services.db.one("SELECT * FROM items"))
+    row = services.db.one("SELECT name, mask, type, current_balance FROM accounts WHERE id='acc_late'")
+    assert (row["name"], row["mask"], row["type"], row["current_balance"]) == ("Savings", "4321", "depository", "100.00")
+    assert services.db.one("SELECT count(*) AS n FROM transactions WHERE account_id='acc_late'")["n"] == 1

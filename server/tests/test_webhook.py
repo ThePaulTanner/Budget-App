@@ -23,9 +23,12 @@ class Signer:
         jwk = json.loads(jwt.algorithms.ECAlgorithm.to_jwk(self.private.public_key()))
         self.jwk = {**jwk, "alg": "ES256", "use": "sig", "kid": "key1", "created_at": 0, "expired_at": None}
         self.fetches = 0
+        self.fail: PlaidError | None = None
 
     def fetch(self, kid):
         self.fetches += 1
+        if self.fail is not None:
+            raise self.fail
         if kid != "key1":
             raise PlaidError(400, "INVALID_INPUT", "INVALID_KEY", "unknown")
         return self.jwk

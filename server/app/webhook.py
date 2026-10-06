@@ -71,6 +71,8 @@ class WebhookVerifier:
             try:
                 key = self._fetch(kid)
             except PlaidError as exc:
+                if cached is not None and (exc.status == 0 or exc.status >= 500):
+                    return cached[0]  # Plaid is down or unreachable: the key we hold still verifies
                 raise InvalidWebhook("unknown key") from exc
             self._keys[kid] = (key, now)
             return key
