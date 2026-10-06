@@ -1,0 +1,66 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    env:
+      # Set ONE of these repository secrets (Settings > Secrets and variables > Actions):
+      #   ANTHROPIC_API_KEY        - API key from console.anthropic.com
+      #   CLAUDE_CODE_OAUTH_TOKEN  - Claude subscription token from `claude setup-token`
+      HAS_CLAUDE_AUTH: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+    steps:
+      - name: Skip when no Claude credentials are configured
+        if: env.HAS_CLAUDE_AUTH != 'true'
+        run: echo "::notice::Claude review skipped - add ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN as a repository secret to enable it."
+
+      - name: Checkout
+        if: env.HAS_CLAUDE_AUTH == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Review pull request
+        if: env.HAS_CLAUDE_AUTH == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. The project is HomeFinance, a personal SwiftUI iPhone app
+            (iOS 17+, no third-party dependencies) for a self-hosted FastAPI + Plaid server.
+            Read CLAUDE.md, docs/PLAN.md and docs/SECURITY.md first; they are the source of truth.
+
+            Focus on, in order:
+            1. Correctness bugs and edge cases.
+            2. Security and privacy of financial data: no logging of response bodies, tokens or
+               keys; secrets only in the Keychain; no App Transport Security exceptions; Plaid
+               access stays read-only; anything that weakens docs/SECURITY.md.
+            3. The JSON rules in CLAUDE.md: money decoded as Decimal (never Double), amount sign
+               convention (positive = money out), plain YYYY-MM-DD dates parsed without a time
+               zone, timestamps with and without fractional seconds, nullable fields.
+            4. Missing tests for model decoding and formatting logic.
+            For documentation-only changes, check that the documents agree with each other and
+            flag contradictions or factual errors.
+
+            Use inline comments for specific issues and mark each one as blocking or a nit.
+            Finish with one short summary comment on the PR. Don't comment on style that
+            matches the surrounding code.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
