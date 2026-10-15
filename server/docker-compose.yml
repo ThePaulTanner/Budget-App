@@ -3,7 +3,7 @@
 services:
   homefinance:
     image: ghcr.io/thepaultanner/budget-app-server:latest
-    build: .   # `docker compose build` also works if you cloned the repo onto the NAS
+    # To build it yourself instead of pulling: add `build: .` here (only works with the repo cloned next to this file).
     container_name: homefinance
     restart: unless-stopped
 
@@ -12,7 +12,7 @@ services:
 
     # Published on the NAS itself only. Tailscale is the way in (see the README).
     ports:
-      - "127.0.0.1:8080:8080"   # the API: tailnet only, `tailscale serve`
+      - "127.0.0.1:18080:8080"  # the API: tailnet only, `tailscale serve` (18080 because DSM apps often use 8080)
       - "127.0.0.1:8081:8081"   # signed Plaid webhooks only: the one thing `tailscale funnel` exposes
 
     environment:

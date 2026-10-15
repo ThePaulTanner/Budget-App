@@ -32,26 +32,43 @@ A private budgeting API for one person. It pulls balances, transactions and inve
 
 ### 1. Folders and secrets (over SSH on the NAS)
 
+Turn on SSH temporarily (Control Panel → Terminal & SNMP) and **turn it off again when setup is done**. In the commands below, replace `volume1` with your volume (`ls /` shows it; the `docker` shared folder is created by Container Manager on whichever volume you chose). Use absolute paths, because a relative `secrets/...` path run from the wrong folder fails.
+
 ```sh
-mkdir -p /volume1/docker/homefinance/{data,secrets} && cd /volume1/docker/homefinance
-openssl rand -hex 32 > secrets/hf_master_key        # the master key: 64 hex characters
-printf '%s' 'YOUR_PLAID_CLIENT_ID' > secrets/plaid_client_id
-printf '%s' 'YOUR_PLAID_SANDBOX_SECRET' > secrets/plaid_secret
-chmod 600 secrets/*
+sudo mkdir -p /volume1/docker/homefinance/data /volume1/docker/homefinance/secrets
+cd /volume1/docker/homefinance
+sudo sh -c 'umask 077; openssl rand -hex 32 > /volume1/docker/homefinance/secrets/hf_master_key'   # 64 hex characters
 ```
 
-Copy `docker-compose.yml` and `.env.example` (rename it to `.env`) into that folder. Set `PUID` and `PGID` in `.env` to the numbers shown by `id YOUR_ADMIN_USER`, then make the folders theirs: `chown -R PUID:PGID data secrets`.
+Enter the Plaid credentials without echoing them to the screen (paste one command at a time):
+
+```sh
+read -rs -p "Plaid client_id: " V; echo; printf '%s' "$V" | sudo tee /volume1/docker/homefinance/secrets/plaid_client_id >/dev/null; unset V
+read -rs -p "Plaid sandbox secret: " V; echo; printf '%s' "$V" | sudo tee /volume1/docker/homefinance/secrets/plaid_secret >/dev/null; unset V
+```
+
+Copy `docker-compose.yml` and `.env.example` (rename it to `.env`) into that folder. Set `PUID` and `PGID` in `.env` to the numbers shown by `id YOUR_ADMIN_USER`, then give the container user those folders:
+
+```sh
+sudo chown -R PUID:PGID /volume1/docker/homefinance/data /volume1/docker/homefinance/secrets
+sudo chmod 700 /volume1/docker/homefinance/data /volume1/docker/homefinance/secrets
+sudo chmod 600 /volume1/docker/homefinance/secrets/*
+```
+
+**Synology permission trap:** DSM's own access list (ACL) can override these Unix permissions and leave the folder read-only for the container, which shows up as `unable to open database file` in the logs. If it does, clear the ACL on the data folder and set the mode again: `sudo synoacltool -del /volume1/docker/homefinance/data && sudo chmod 700 /volume1/docker/homefinance/data`.
 
 > **Back up the master key somewhere safe and separate from the NAS** (your password manager). Without it the database cannot be opened, by you or anyone. With it next to the backups, the encryption would protect nothing.
 
 ### 2. Start it
 
-In **Container Manager → Project → Create**, point it at `/volume1/docker/homefinance` and use the existing `docker-compose.yml`. The image comes from GitHub: `ghcr.io/thepaultanner/budget-app-server:latest`, built by the **Publish server image** workflow. New packages on GitHub are private, so either:
+In **Container Manager → Project → Create**, point it at `/volume1/docker/homefinance` and use the existing `docker-compose.yml`. Or over SSH: `sudo docker compose up -d`. The image comes from GitHub: `ghcr.io/thepaultanner/budget-app-server:latest`, built by the **Publish server image** workflow. New packages on GitHub are private, so either:
 
 - make the package public (Package settings → Change visibility; the image holds no secrets), or
 - run once on the NAS: `docker login ghcr.io -u YOUR_GITHUB_NAME` with a personal access token that has `read:packages`.
 
-Check it is healthy: `curl http://127.0.0.1:8080/health` should print `{"ok":true,"plaid_env":"sandbox"}`.
+The API is published on the NAS at `127.0.0.1:18080` (not 8080, which other DSM containers commonly use). Check it is healthy: `curl http://127.0.0.1:18080/health` should print `{"ok":true,"plaid_env":"sandbox"}`.
+
+**Changing `.env` later:** `docker compose restart` does not re-read it. Use `sudo docker compose up -d --force-recreate`.
 
 ### 3. Create your login
 
@@ -65,7 +82,7 @@ Choose a password of at least 12 characters. It prints a QR code to scan with an
 
 ```sh
 # The API, only for devices on your tailnet:
-tailscale serve --bg --https=443 http://127.0.0.1:8080
+tailscale serve --bg --https=443 http://127.0.0.1:18080
 
 # Plaid's webhooks, the only thing on the internet (Funnel allows ports 443, 8443, 10000):
 tailscale funnel --bg --https=8443 http://127.0.0.1:8081
@@ -73,13 +90,13 @@ tailscale funnel --bg --https=8443 http://127.0.0.1:8081
 
 On DSM the `tailscale` command lives inside the Tailscale package, so you may need its full path or `sudo`. If a flag differs on your version, `tailscale serve --help` and `tailscale funnel --help` are authoritative. Funnel also has to be allowed for the NAS in your tailnet policy; the command tells you if it is not. See Tailscale's docs for [Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) and [Funnel](https://tailscale.com/docs/reference/tailscale-cli/funnel).
 
-Then set `PUBLIC_WEBHOOK_URL=https://YOUR-NAS.YOUR-TAILNET.ts.net:8443/plaid/webhook` in `.env` and restart the project. Without it everything still works, but new transactions arrive on the hourly backup timer instead of within minutes.
+Then set `PUBLIC_WEBHOOK_URL=https://YOUR-NAS.YOUR-TAILNET.ts.net:8443/plaid/webhook` in `.env` and recreate the project (`sudo docker compose up -d --force-recreate`). Without it everything still works, but new transactions arrive on the hourly backup timer instead of within minutes.
 
 Port 8081 is safe to expose because it serves exactly one route. Every other path returns 404, and a request without a valid Plaid signature is refused.
 
 ### 5. Link your banks
 
-Open `https://YOUR-NAS.YOUR-TAILNET.ts.net` on a device on your tailnet, sign in, and press **Link a bank**. In the sandbox, Plaid's test login is `user_good` / `pass_good`. Linked banks are listed there with a **Reconnect** button when one needs attention.
+Open `https://YOUR-NAS.YOUR-TAILNET.ts.net` on a device on your tailnet, sign in, and press **Link a bank**. In the sandbox, Plaid's test login is `user_good` / `pass_good`, and if it asks for a phone number, no text message is sent: enter the code `123456`. The sandbox TD Canada Trust test bank has no investment support, so Investments stays empty until you link a real brokerage. Linked banks are listed there with a **Reconnect** button when one needs attention.
 
 ## Settings
 
@@ -112,6 +129,8 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 | "Could not read the database. The master key is probably wrong." | A different master key than the one that created the database |
 | Link page shows an error after signing in | Plaid credentials or `PLAID_ENV` do not match (sandbox secret with production, or the reverse) |
 | New transactions are slow to appear | `PUBLIC_WEBHOOK_URL` unset or Funnel not running; the hourly timer still catches up |
+| `unable to open database file` | Synology ACL made `data` read-only for the container user (see step 1) |
+| A `.env` change has no effect | The container was only restarted; recreate it with `--force-recreate` |
 | `429 Too many attempts` | Five failed sign-ins; wait for the lockout (it doubles each time, up to 15 minutes) |
 
 ## Developing
@@ -125,11 +144,11 @@ python -m pytest
 
 The tests use a real SQLCipher database and check, among other things, that the API reproduces every file in `api-fixtures/`, that the database file contains no readable data, and that forged or stale webhooks are refused. GitHub Actions runs them and smoke-tests the built image on every change.
 
-## Not verified yet
+## Verified on a real NAS
 
-Honest list, so nothing surprises you:
+Set up end to end on a DS423+ (October 2026): the image runs hardened (read-only, non-root), the Tailscale Serve and Funnel doors work, a sandbox bank links and syncs, and a Plaid webhook (`/sandbox/item/fire_webhook`) triggers an automatic sync about 10 seconds later.
 
-- The Docker image is built and smoke-tested by GitHub Actions, but it has not yet been run on a real Synology.
-- The bank-linking page has not been tried against live Plaid. Everything around it (token exchange, sealing, sync) is tested against a stand-in for Plaid's replies.
-- Plaid's behaviour with Desjardins, and your Plaid production approval, are outside this code.
-- The Tailscale commands come from Tailscale's documentation and have not been run on your NAS.
+Still not verified:
+
+- Plaid production access, and its behaviour with Desjardins, are outside this code.
+- Rejected webhooks are not logged, so a silent failure is hard to diagnose; a forged request is simply refused with 401.

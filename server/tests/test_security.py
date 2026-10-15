@@ -15,7 +15,8 @@ def test_database_files_contain_no_readable_data(services, tmp_path):
     assert blobs, "expected database files"
     for blob in blobs:
         assert not blob.startswith(b"SQLite format 3")
-        for secret in (b"Desjardins", b"IGA", b"Restaurant Le Local", b"access-sandbox-SECRET", b"paul"):
+        # Needles of 4+ bytes only: a 3-byte one ("IGA") turns up in random ciphertext by chance.
+        for secret in (b"Desjardins", b"Restaurant Le Local", b"access-sandbox-SECRET", b"paul"):
             assert secret not in blob, secret
 
 
