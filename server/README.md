@@ -37,7 +37,7 @@ Turn on SSH temporarily (Control Panel → Terminal & SNMP) and **turn it off ag
 ```sh
 sudo mkdir -p /volume1/docker/homefinance/data /volume1/docker/homefinance/secrets
 cd /volume1/docker/homefinance
-sudo sh -c 'openssl rand -hex 32 > /volume1/docker/homefinance/secrets/hf_master_key'   # 64 hex characters
+sudo sh -c 'umask 077; openssl rand -hex 32 > /volume1/docker/homefinance/secrets/hf_master_key'   # 64 hex characters
 ```
 
 Enter the Plaid credentials without echoing them to the screen (paste one command at a time):
@@ -50,8 +50,9 @@ read -rs -p "Plaid sandbox secret: " V; echo; printf '%s' "$V" | sudo tee /volum
 Copy `docker-compose.yml` and `.env.example` (rename it to `.env`) into that folder. Set `PUID` and `PGID` in `.env` to the numbers shown by `id YOUR_ADMIN_USER`, then give the container user those folders:
 
 ```sh
-sudo chown -R PUID:PGID data secrets
-sudo chmod 700 data secrets && sudo chmod 600 secrets/*
+sudo chown -R PUID:PGID /volume1/docker/homefinance/data /volume1/docker/homefinance/secrets
+sudo chmod 700 /volume1/docker/homefinance/data /volume1/docker/homefinance/secrets
+sudo chmod 600 /volume1/docker/homefinance/secrets/*
 ```
 
 **Synology permission trap:** DSM's own access list (ACL) can override these Unix permissions and leave the folder read-only for the container, which shows up as `unable to open database file` in the logs. If it does, clear the ACL on the data folder and set the mode again: `sudo synoacltool -del /volume1/docker/homefinance/data && sudo chmod 700 /volume1/docker/homefinance/data`.
