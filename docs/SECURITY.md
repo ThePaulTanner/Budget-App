@@ -26,8 +26,21 @@ The shared `X-API-Key` header of the original handoff is replaced by a real logi
 | **Sessions** | A short-lived access token (about 15 minutes), plus a refresh token that is **replaced every time it is used**. Each device gets its own refresh token, so one device can be signed out without affecting the others. Refresh tokens are stored on the server only as hashes. **Crash window:** the server accepts the previous refresh token for 60 seconds after rotating, so an app killed before it saved the new token can retry. The trade-off is that a replayed old token still works for those 60 seconds; for a single-user setup behind Tailscale that is acceptable. **Reuse detection:** if an old token is used after that grace period, the server revokes that one device's token chain (not other devices) and alerts. **Face ID frequency:** the access token is kept in memory, so Face ID is needed once per unlock (launch or auto-lock), not on every refresh. |
 | **Brute-force protection** | Rate limits and increasing delays on failed logins. Alerts on new-device sign-ins. |
 | **Device management** | A "Signed-in devices" list in Settings, with **Revoke** on each device. |
-| **Bank-linking web page** | The `GET /` Plaid Link page also requires login. Today it is protected only by the network it's on. |
+| **Bank-linking web page** | The `GET /` Plaid Link page shows nothing until you sign in. If you are already signed in to the web app (section 1b), its cookie signs this page in too. |
 | **Accounts** | Built for one user (Paul) to start. The design allows more household users later. |
+
+## 1b. Web app login (browser) *(server)*
+
+The web app at `/app` uses the same password + authenticator code, but keeps its session in a cookie instead of the iPhone's Keychain.
+
+| Piece | Choice |
+|---|---|
+| **Refresh token** | Lives only in an **HttpOnly** cookie that page script cannot read. Named `__Host-hf_rt`, which makes browsers insist on `Secure`, `Path=/` and no `Domain`, so a sibling site cannot plant or overwrite it. `SameSite=Strict`. Lasts 30 days and is renewed on every use (the refresh token rotates like the app's). |
+| **Access token** | Returned in the response body and held in the page's memory only (15 minutes). The page sends it as a bearer token, so `/api/*` is unchanged and not exposed to cross-site request forgery: a browser never adds a bearer header by itself. The cookie alone opens nothing. |
+| **Cookie routes** | Only `/web/login`, `/web/refresh` and `/web/logout` read or set the cookie. They refuse requests without the custom header `X-Requested-With: HomeFinance` (which forces a cross-origin preflight that the server never grants) and requests the browser marks as cross-site (`Sec-Fetch-Site`). |
+| **Script safety (XSS)** | A strict Content-Security-Policy: scripts and styles only from the server itself, no inline code, nothing loaded from other sites, no framing. The page never inserts server data as HTML (tests enforce this) and uses no third-party libraries, so there is nothing to compromise from outside. |
+| **Devices** | Shows up as "Web browser" in the signed-in devices list and can be revoked like any device. Signing out revokes the session on the server and clears the cookie. |
+| **Honest limits** | A browser cookie is easier to steal from a compromised computer than a Face-ID-locked Keychain item, and there is no idle lock on an open page. Use the web app only on computers you trust, and revoke it from Settings when you stop. |
 
 ## 2. App login (iOS)
 

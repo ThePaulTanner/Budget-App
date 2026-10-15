@@ -39,6 +39,19 @@ LINK_PAGE_CSP = (
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 
+# The web app has no inline script or style, loads nothing from other sites, and
+# cannot be framed. That is what keeps injected script (XSS) out of your data.
+APP_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+# `__Host-` makes browsers insist on Secure, Path=/ and no Domain, so a sibling site
+# cannot plant or overwrite it.
+WEB_COOKIE = "__Host-hf_rt"
+WEB_COOKIE_MAX_AGE = 30 * 24 * 3600  # renewed each time the page refreshes
+WEB_HEADER = "x-requested-with"
+WEB_HEADER_VALUE = "HomeFinance"
+
 
 def num(value: Any) -> float | None:
     """Money out as a JSON number (the app decodes it exactly; see CLAUDE.md)."""
@@ -57,6 +70,12 @@ class LoginBody(BaseModel):
 
 class RefreshBody(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=200)
+
+
+class WebLoginBody(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=1000)
+    code: str = Field(min_length=1, max_length=64)
 
 
 class HiddenBody(BaseModel):
@@ -218,7 +237,7 @@ def create_api_app(services: Services) -> FastAPI:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        if request.url.path.startswith(("/api/", "/auth/")):
+        if request.url.path.startswith(("/api/", "/auth/", "/web/", "/app")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -274,6 +293,75 @@ def create_api_app(services: Services) -> FastAPI:
         if not auth.revoke(ctx, session_id):
             raise HTTPException(404, "session not found")
         return {"ok": True}
+
+    # -- web page sign-in (cookie session) ------------------------------------
+    # The refresh token lives only in an HttpOnly cookie that page script cannot read.
+    # The page keeps the short-lived access token in memory and sends it as a bearer
+    # token, exactly like the iPhone app, so /api/* needs no changes and is not exposed
+    # to cross-site request forgery (a browser never adds a bearer header by itself).
+    # These three routes are the only ones that accept the cookie, so they also demand a
+    # custom header and refuse requests the browser marks as cross-site.
+
+    def require_same_site(request: Request) -> None:
+        site = request.headers.get("sec-fetch-site")
+        if request.headers.get(WEB_HEADER) != WEB_HEADER_VALUE or site not in (None, "same-origin"):
+            raise AuthError(403, "Cross-site request refused")
+
+    def web_tokens(tokens: dict) -> JSONResponse:
+        response = JSONResponse(
+            {
+                "access_token": tokens["access_token"],
+                "token_type": tokens["token_type"],
+                "expires_in": tokens["expires_in"],
+                "session_id": tokens["session_id"],
+            }
+        )
+        response.set_cookie(
+            WEB_COOKIE,
+            tokens["refresh_token"],
+            max_age=WEB_COOKIE_MAX_AGE,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
+    def web_signed_out(status: int, detail: str) -> JSONResponse:
+        response = JSONResponse({"detail": detail}, status_code=status)
+        response.delete_cookie(WEB_COOKIE, path="/", secure=True, httponly=True, samesite="strict")
+        return response
+
+    @app.post("/web/login")
+    def web_login(body: WebLoginBody, request: Request):
+        require_same_site(request)
+        ip = request.client.host if request.client else "-"
+        return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip))
+
+    @app.post("/web/refresh")
+    def web_refresh(request: Request):
+        require_same_site(request)
+        token = request.cookies.get(WEB_COOKIE)
+        if not token:
+            raise AuthError(401, "Not signed in")
+        try:
+            return web_tokens(auth.refresh(token))
+        except AuthError as exc:
+            if exc.status == 401:
+                return web_signed_out(401, exc.detail)
+            raise
+
+    @app.post("/web/logout")
+    def web_logout(request: Request):
+        require_same_site(request)
+        token = request.cookies.get(WEB_COOKIE)
+        if token:
+            auth.revoke_refresh(token)
+        return web_signed_out(200, "Signed out")
+
+    @app.get("/app", include_in_schema=False)
+    def web_app():
+        return FileResponse(STATIC_DIR / "web" / "index.html", headers={"Content-Security-Policy": APP_CSP})
 
     # -- summary -------------------------------------------------------------
 

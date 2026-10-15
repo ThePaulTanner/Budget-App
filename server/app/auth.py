@@ -299,6 +299,15 @@ class AuthService:
             raise AuthError(401, "Invalid or missing credentials")
         return AuthContext(user_id=int(claims["sub"]), session_id=claims["sid"])
 
+    def revoke_refresh(self, refresh_token: str) -> None:
+        """Sign out the device that holds this refresh token (used by the web page's cookie)."""
+        digest = _sha256(refresh_token)
+        self.db.run(
+            "UPDATE sessions SET revoked_at=? "
+            "WHERE (refresh_hash=? OR prev_refresh_hash=?) AND revoked_at IS NULL",
+            (utcnow(), digest, digest),
+        )
+
     # -- devices -----------------------------------------------------------
 
     def sessions(self, ctx: AuthContext) -> list[dict]:

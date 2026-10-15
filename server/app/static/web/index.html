@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light dark">
+  <title>HomeFinance</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/web/app.css">
+</head>
+<body>
+  <section id="login" class="login" hidden>
+    <form id="login-form" autocomplete="on">
+      <h1>HomeFinance</h1>
+      <label>Username <input name="username" autocomplete="username" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <label>Authenticator code or recovery code
+        <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+      <button type="submit" class="primary">Sign in</button>
+      <p id="login-message" class="error" role="alert"></p>
+    </form>
+  </section>
+
+  <div id="shell" hidden>
+    <header>
+      <strong class="brand">HomeFinance</strong>
+      <nav id="tabs" aria-label="Sections">
+        <a href="#/overview" data-tab="overview">Overview</a>
+        <a href="#/transactions" data-tab="transactions">Transactions</a>
+        <a href="#/budgets" data-tab="budgets">Budgets</a>
+        <a href="#/investments" data-tab="investments">Investments</a>
+        <a href="#/settings" data-tab="settings">Settings</a>
+      </nav>
+      <button id="refresh" type="button" class="secondary" title="Reload this page's data (does not sync banks)">Refresh</button>
+    </header>
+    <p id="banner" class="banner" hidden></p>
+    <main id="view" aria-live="polite"></main>
+  </div>
+
+  <dialog id="sheet"></dialog>
+  <p id="toast" role="status" aria-live="polite" hidden></p>
+  <div id="cover" class="cover" hidden>HomeFinance</div>
+  <script src="/static/web/app.js"></script>
+</body>
+</html>

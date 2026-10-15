@@ -1,5 +1,5 @@
 // Sign in, then link or reconnect banks with Plaid Link.
-// Tokens live only in memory: reloading the page signs you out.
+// Tokens live only in memory; the web app's sign-in cookie signs you back in after a reload.
 (() => {
   let access = null;
   let refresh = null;
@@ -10,11 +10,26 @@
     $("message").className = isError ? "error" : "";
   };
 
+  // If you are already signed in on the web app, its cookie signs this page in too.
+  async function cookieRenew() {
+    try {
+      const response = await fetch("/web/refresh", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } });
+      if (!response.ok) return false;
+      access = (await response.json()).access_token;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function request(path, { method = "GET", body, auth = true } = {}) {
     const headers = { "Content-Type": "application/json" };
     if (auth && access) headers.Authorization = `Bearer ${access}`;
     let response = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-    if (response.status === 401 && auth && refresh) {
+    if (response.status === 401 && auth && !refresh && (await cookieRenew())) {
+      headers.Authorization = `Bearer ${access}`;
+      response = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    } else if (response.status === 401 && auth && refresh) {
       const renewed = await fetch("/auth/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,6 +142,12 @@
     } catch (err) {
       message(err.message, true);
     }
+  });
+
+  cookieRenew().then(async (signedIn) => {
+    if (!signedIn) return;
+    showSignedIn(true);
+    try { await loadBanks(); } catch (err) { message(err.message, true); }
   });
 
   $("link-bank").addEventListener("click", () => openLink(null));

@@ -98,6 +98,12 @@ Port 8081 is safe to expose because it serves exactly one route. Every other pat
 
 Open `https://YOUR-NAS.YOUR-TAILNET.ts.net` on a device on your tailnet, sign in, and press **Link a bank**. In the sandbox, Plaid's test login is `user_good` / `pass_good`, and if it asks for a phone number, no text message is sent: enter the code `123456`. The sandbox TD Canada Trust test bank has no investment support, so Investments stays empty until you link a real brokerage. Linked banks are listed there with a **Reconnect** button when one needs attention.
 
+### 6. Use the web app
+
+Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and sign in with your password and authenticator code. It has the same five sections as the iPhone app will: Overview (net worth, chart, accounts), Transactions (search, filters, re-categorize, "always categorize" rules), Budgets, Investments and Settings (sync now, linked banks, devices, rules, hiding accounts).
+
+Signing in sets a cookie that keeps you signed in for 30 days from last use (see `docs/SECURITY.md`, section 1b). Sign out from Settings to end it, and use only computers you trust. The bank-linking page at `/` uses the same sign-in. There is no separate setup: it ships inside the same container.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -127,6 +133,7 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 |---|---|
 | Container exits: "Cannot start: ... master key" | The key file is missing, unreadable by `PUID`, or not exactly 64 hex characters |
 | "Could not read the database. The master key is probably wrong." | A different master key than the one that created the database |
+| Web app signs you out right after login | Opened over plain `http`: the cookie is `Secure`, so use the `https://` tailnet address |
 | Link page shows an error after signing in | Plaid credentials or `PLAID_ENV` do not match (sandbox secret with production, or the reverse) |
 | New transactions are slow to appear | `PUBLIC_WEBHOOK_URL` unset or Funnel not running; the hourly timer still catches up |
 | `unable to open database file` | Synology ACL made `data` read-only for the container user (see step 1) |
