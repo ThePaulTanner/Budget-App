@@ -727,7 +727,14 @@
   }
 
   async function signOut() {
-    try { await plainFetch("/web/logout", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } }); } catch (_) { /* cookie stays; revoke it in Settings elsewhere */ }
+    try {
+      const response = await plainFetch("/web/logout", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } });
+      if (!response.ok) throw new Error(`Could not sign out (${response.status}). You are still signed in.`);
+    } catch (err) {
+      // Stay signed in: pretending otherwise would leave a live cookie that signs you straight back in.
+      toast(err.message, true);
+      return;
+    }
     budgetMonth = null;
     showLogin("Signed out.");
   }
