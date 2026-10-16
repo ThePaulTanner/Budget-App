@@ -292,6 +292,23 @@
   }
   const closeSheet = () => { if ($("sheet").open) $("sheet").close(); };
 
+  // A centered question box. Resolves true only when the confirm button is pressed; closing it
+  // any other way (Cancel, Esc) resolves false. The box is closed again before this resolves.
+  function confirmBox({ title, intro, points = [], confirmText = "Continue", cancelText = "Cancel", mark = "!" }) {
+    return new Promise((resolve) => {
+      let answer = false;
+      const sheet = openSheet(el("div", { class: "confirm" },
+        el("div", { class: "confirm-mark", "aria-hidden": "true", text: mark }),
+        el("h2", { text: title }),
+        intro && el("p", { text: intro }),
+        points.length > 0 && el("ul", {}, points.map((point) => el("li", { text: point }))),
+        el("div", { class: "actions" },
+          el("button", { type: "button", class: "primary", text: confirmText, onclick: () => { answer = true; closeSheet(); } }),
+          el("button", { type: "button", class: "secondary", text: cancelText, onclick: closeSheet }))));
+      sheet.addEventListener("close", () => resolve(answer), { once: true });
+    });
+  }
+
   function guard(promise) {
     return promise.catch((err) => {
       if (err instanceof SignedOut) { showLogin(); return undefined; }
@@ -316,7 +333,7 @@
     if (!log || (!log.locked && recent === 0)) { node.hidden = true; return; }
     node.replaceChildren(
       log.locked ? "New sign-ins are locked after too many failed attempts. " : `${recent} failed sign-in attempt${recent === 1 ? "" : "s"} in the last 24 hours. `,
-      el("a", { href: "#/settings", text: "See the sign-in activity" }));
+      el("a", { href: "#/settings?tab=log", text: "See the sign-in activity" }));
     node.hidden = false;
   }
 
@@ -1023,8 +1040,18 @@
   async function startLink(item, done) {
     let environment = null;
     try { environment = (await (await plainFetch("/health")).json()).plaid_env; } catch (_) { /* the link call will report a real problem */ }
-    if (!item && environment === "production" && !confirm(
-      "This links a real bank. Each real bank uses one slot of your Plaid plan (the free Trial plan allows 10), and removing a bank does not give the slot back.\n\nContinue?")) return;
+    if (!item && environment === "production" && !(await confirmBox({
+      title: "Link a real bank?",
+      intro: "This connects a real bank account through Plaid. It is read-only: HomeFinance can look at your accounts but can never move money.",
+      points: [
+        "It uses one of the 10 bank slots on your free Plaid plan.",
+        "Removing a bank later does not give its slot back, so link each bank only once.",
+        "If a bank later needs attention, use Reconnect instead of removing it.",
+        "Have your bank login and your phone ready. The bank may text you a code.",
+      ],
+      confirmText: "Link this bank",
+      cancelText: "Not now",
+    }))) return;
     let linkToken;
     try {
       await loadPlaidLink();
@@ -1078,7 +1105,11 @@
     return card;
   }
 
-  async function viewSettings(id) {
+  const SETTINGS_TABS = [["banks", "Banks"], ["accounts", "Accounts"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  let settingsTab = "banks";
+
+  async function viewSettings(id, params = new URLSearchParams()) {
+    if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
     const [items, sessions, rules, accounts, choices, log] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
     if (id !== navId) return;
@@ -1116,7 +1147,7 @@
     // A bank still waiting for its first sync: check again every 6 seconds, at most 10 times,
     // and never while a dialog is open.
     if (items.some((i) => !i.last_synced_at && !i.needs_reauth) && syncPolls < 10) {
-      const timer = setTimeout(() => { if ($("sheet").open) return; syncPolls += 1; reload(); }, 6000);
+      const timer = setTimeout(() => { if ($("sheet").open || settingsTab !== "banks") return; syncPolls += 1; reload(); }, 6000);
       cleanups.push(() => clearTimeout(timer));
     }
 
@@ -1159,8 +1190,8 @@
           el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })), message);
     }
 
-    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Hide accounts" }),
-      el("p", { class: "muted", text: "Hidden accounts are left out of totals and budgets." }),
+    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+      el("p", { class: "muted", text: "Tick an account to hide it. Hidden accounts are left out of totals and budgets." }),
       accounts.map((a) => el("label", { class: "row" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
         try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
         catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
@@ -1179,7 +1210,15 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    view().replaceChildren(appearanceCard(), banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
+    const sections = { banks: [banks], accounts: [accountsCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
+    const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
+      SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
+        onclick: () => { settingsTab = key; show(); } })));
+    function show() {
+      for (const [i, [key]] of SETTINGS_TABS.entries()) tabs.children[i].setAttribute("aria-pressed", String(key === settingsTab));
+      view().replaceChildren(el("div", { class: "toolbar" }, tabs), ...sections[settingsTab]);
+    }
+    show();
   }
 
   // ---------------------------------------------------------------- shell: routes, sign-in
@@ -1192,7 +1231,7 @@
     budgets: ["Budgets", "Limits and spending by month"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
-    settings: ["Settings", "Banks, sign-in activity and appearance"],
+    settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
   };
   const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
@@ -1223,7 +1262,7 @@
     const banner = $("banner");
     if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
     banner.replaceChildren(`${institutions.join(", ")} needs to be reconnected. `,
-      el("a", { href: "#/settings", text: "Reconnect it in Settings" }));
+      el("a", { href: "#/settings?tab=banks", text: "Reconnect it in Settings" }));
     banner.hidden = false;
   }
 

@@ -109,6 +109,8 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .toolbar input, .toolbar select { width: auto; flex: 1 1 160px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.seg.wide { max-width: 100%; overflow-x: auto; }
+.seg.wide button { white-space: nowrap; }
 .seg button { border: 0; border-radius: 0; background: transparent; padding: .35rem .85rem; }
 .seg button + button { border-left: 1px solid var(--border); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
@@ -216,6 +218,12 @@ svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 /* ---- dialogs, toast, privacy cover ------------------------------------------------------- */
 dialog { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
 dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.confirm { text-align: center; }
+.confirm h2 { margin: 6px 0 10px; font-size: 1.35rem; }
+.confirm p { margin: 0 auto 12px; max-width: 42ch; }
+.confirm ul { text-align: left; margin: 0 auto 16px; padding-left: 1.2rem; max-width: 42ch; display: grid; gap: 8px; }
+.confirm .actions { justify-content: center; margin-top: 18px; }
+.confirm-mark { width: 52px; height: 52px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; font-weight: 800; background: var(--amber-bg); color: var(--amber-text); }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 18px; border-radius: 99px; z-index: 40; max-width: 90vw; box-shadow: var(--shadow); }
 #toast.error { background: var(--red); color: #fff; }
 .cover { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; }
