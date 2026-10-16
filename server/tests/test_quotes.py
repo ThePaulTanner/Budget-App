@@ -551,6 +551,26 @@ def test_a_live_price_fixes_a_position_the_bank_could_not_price(live, services):
     assert veqt["live"] is True and veqt["price"] == 47.85 and veqt["value"] == 42108.0
 
 
+def test_the_bank_price_and_value_are_judged_separately(seeded, services):
+    client, auth = seeded
+
+    def veqt(price, value):
+        services.db.run("UPDATE holdings SET price=?, value=? WHERE ticker='VEQT'", (price, value))
+        body = client.get("/api/holdings", headers=auth).json()
+        return next(h for h in body["holdings"] if h["ticker"] == "VEQT")
+
+    h = veqt("0", "41536.00")  # a real value with no usable price: keep the value, show no price
+    assert (h["price"], h["value"]) == (None, 41536.0)
+    h = veqt("47.20", "0")  # a real price with no usable value: the value is worked out (880 x 47.20)
+    assert (h["price"], h["value"]) == (47.2, 41536.0)
+    h = veqt(None, "41536.00")
+    assert (h["price"], h["value"]) == (None, 41536.0)
+    h = veqt("0", "0")
+    assert (h["price"], h["value"], h["gain"]) == (None, None, None)
+    h = veqt("47.20", "41536.00")  # nothing wrong: untouched
+    assert (h["price"], h["value"]) == (47.2, 41536.0)
+
+
 # -- the quote-test command --------------------------------------------------------------
 
 
