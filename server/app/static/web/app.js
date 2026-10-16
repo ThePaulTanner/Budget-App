@@ -781,9 +781,8 @@
               el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} \u00B7 ${names[tx.account_id] || ""}` })),
             el("div", { class: `amount ${amount.cls}`, text: amount.text })));
         }
-        const shown = page.total > page.transactions.length ? ` (showing the newest ${page.transactions.length})` : "";
         detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }),
-          el("p", { class: "muted", text: page.total === 0 ? "No transactions." : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total${shown}.` }),
+          el("p", { class: "muted", text: page.total === 0 ? "No transactions." : (page.total > page.transactions.length ? `${page.total} transactions. The newest ${page.transactions.length} add up to ${money(net, cur)}.` : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total.`) }),
           ...rows,
           el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", text: "Search all transactions" })));
       } catch (err) {
@@ -791,7 +790,7 @@
       }
     }
     detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
-    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.key === "Enter") showTransactions(category); } });
+    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showTransactions(category); } } });
 
     const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
     if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
