@@ -311,10 +311,9 @@
   let nwDays = 365;
 
   async function viewOverview(id) {
-    const [summary, accounts, log] = await Promise.all([
-      api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null)]);
-    if (id !== navId) return;
-    const spending = await api(`/api/spending?month=${summary.month}`).catch(() => ({ categories: [] }));
+    const [summary, accounts, log, spending] = await Promise.all([
+      api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null),
+      api("/api/spending").catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -1104,7 +1103,7 @@
   async function refreshStatus() {
     try {
       const items = await api("/api/items");
-      const newest = items.map((i) => i.last_synced_at).filter(Boolean).sort().pop();
+      const newest = items.map((i) => i.last_synced_at).filter(Boolean).sort((a, b) => new Date(a) - new Date(b)).pop();
       $("foot-sync").textContent = items.length === 0 ? "No banks linked yet" : newest ? `Last synced ${ago(newest)}` : "Waiting for the first sync\u2026";
       setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
     } catch (err) {

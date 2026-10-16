@@ -100,7 +100,7 @@ Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet, sig
 
 ### 6. Use the web app
 
-Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and sign in with your password and authenticator code. It has the same five sections as the iPhone app will: Overview (net worth, chart, accounts), Transactions (search, filters, re-categorize, "always categorize" rules), Budgets, Investments and Settings (sync now, linked banks, devices, rules, hiding accounts).
+Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and sign in with your password and authenticator code. It has six sections: Overview (net worth, chart, top categories, accounts), Transactions (search, filters, re-categorize, "always categorize" rules), Merchants, Budgets, Investments and Settings (appearance, sync now, linked banks, devices, rules, sign-in activity, hiding accounts).
 
 **Layout and appearance.** On a computer there is a sidebar with the sections, a top bar with the page title, a colour-scheme button and a reload button, and a footer showing when your banks last synced. On a phone the sidebar becomes a bar of tabs along the bottom, like an app. In **Settings, Appearance** you can choose a colour scheme (System, Light or Dark), one of six accent colours, and Comfortable or Compact spacing. Those choices are saved in that browser only (a few harmless words in its local storage, nothing from your accounts), so a phone and a computer can look different. A small badge in the sidebar says whether the server is connected to Plaid's sandbox or to live banks.
 
