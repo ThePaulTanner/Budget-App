@@ -264,6 +264,25 @@ def account_json(row: Any, institution: str | None, owner_ids: list[int] | None 
     }
 
 
+def bank_price_and_value(row: Any) -> tuple[Decimal | None, Decimal | None]:
+    """The bank's (price, value) for a holding, with anything unusable treated as missing.
+    Some banks send 0 as the price or value of a position they cannot price. That is not a real
+    $0, and would show the position as worthless. Each is judged on its own: a missing price
+    stays missing, and a missing value is worked out from the quantity and a good price."""
+    price = None if row["price"] is None else Decimal(row["price"])
+    value = None if row["value"] is None else Decimal(row["value"])
+    quantity = None if row["quantity"] is None else Decimal(row["quantity"])
+    if quantity is None or quantity <= 0:
+        return price, value
+    if price is not None and price <= 0:
+        price = None
+    if value is not None and value <= 0:
+        value = None
+    if value is None and price is not None:
+        value = (quantity * price).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    return price, value
+
+
 def rule_json(row: Any) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -924,7 +943,7 @@ def create_api_app(services: Services) -> FastAPI:
         totals: dict[str, Decimal] = {}
         out = []
         for r in rows:
-            value = Decimal(r["value"]) if r["value"] is not None else None
+            price, value = bank_price_and_value(r)
             cost = Decimal(r["cost_basis"]) if r["cost_basis"] is not None else None
             if value is not None:
                 totals[r["currency"]] = totals.get(r["currency"], Decimal(0)) + value
@@ -938,7 +957,7 @@ def create_api_app(services: Services) -> FastAPI:
                     "ticker": r["ticker"],
                     "type": r["type"],
                     "quantity": num(r["quantity"]),
-                    "price": num(r["price"]),
+                    "price": num(price),
                     "value": num(value),
                     "cost_basis": num(cost),
                     "gain": num(value - cost) if value is not None and cost is not None else None,
@@ -972,10 +991,9 @@ def create_api_app(services: Services) -> FastAPI:
         out, totals = [], {}
         for r in rows:
             qty = Decimal(r["quantity"]) if r["quantity"] is not None else None
-            plaid_value = Decimal(r["value"]) if r["value"] is not None else None
+            price, plaid_value = bank_price_and_value(r)
             cost = Decimal(r["cost_basis"]) if r["cost_basis"] is not None else None
             live = found.live.get(wanted[r["security_id"]]) if found is not None and r["security_id"] in wanted else None
-            price = Decimal(r["price"]) if r["price"] is not None else None
             value, changes = plaid_value, {p: None for p in PERIODS}
             if live is not None and qty is not None:
                 price = live.quote.price

@@ -12,6 +12,7 @@ and one-year changes.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -34,6 +35,8 @@ CLOSED_QUOTE_TTL = 600.0  # the last price is older than FRESH_SECONDS: nothing 
 HISTORY_TTL = 3600.0
 UNKNOWN_TTL = 3600.0  # remember that a ticker was not found, so it is not retried every minute
 COOLDOWN = 300.0  # after Yahoo throttles or fails, leave it alone for this long
+MAX_COOLDOWN = 1800.0  # repeated failures double the rest, up to this
+REQUEST_SPACING = 0.5  # seconds between any two requests to Yahoo: bursts are what get throttled
 FRESH_SECONDS = 30 * 60
 DEADLINE = 12.0  # one request never waits longer than this for all symbols together
 MAX_WORKERS = 4
@@ -47,9 +50,10 @@ PERIODS = ("day", "open", "1w", "1m", "3m", "ytd", "1y")
 class QuoteError(Exception):
     """`kind` is "unknown" (no such symbol) or "unavailable" (throttled, down, unreadable)."""
 
-    def __init__(self, kind: str, message: str) -> None:
+    def __init__(self, kind: str, message: str, retry_after: float | None = None) -> None:
         super().__init__(message)
         self.kind = kind
+        self.retry_after = retry_after  # seconds Yahoo asked us to wait, if it said
 
 
 @dataclass(frozen=True)
@@ -86,10 +90,25 @@ def _day(epoch: float, gmt_offset: int) -> date:
 
 
 class YahooProvider:
-    def __init__(self, client: httpx.Client | None = None) -> None:
+    def __init__(self, client: httpx.Client | None = None, spacing: float = REQUEST_SPACING) -> None:
         self._client = client or httpx.Client(timeout=8.0)
+        self._spacing = spacing
+        self._pace_lock = threading.Lock()
+        self._next_slot = 0.0
+
+    def _pace(self) -> None:
+        """Hand out request slots at least `spacing` seconds apart, whichever thread asks."""
+        if self._spacing <= 0:
+            return
+        with self._pace_lock:
+            now = time.monotonic()
+            slot = max(now, self._next_slot)
+            self._next_slot = slot + self._spacing
+        if slot > now:
+            time.sleep(slot - now)
 
     def _chart(self, symbol: str, range_: str) -> dict[str, Any]:
+        self._pace()
         try:
             response = self._client.get(
                 YAHOO_CHART.format(symbol=symbol),
@@ -100,6 +119,13 @@ class YahooProvider:
             raise QuoteError("unavailable", f"could not reach Yahoo Finance ({type(exc).__name__})") from None
         if response.status_code == 404:
             raise QuoteError("unknown", "symbol not found")
+        if response.status_code == 429:
+            try:
+                asked = float(response.headers.get("Retry-After", ""))
+            except ValueError:
+                asked = float("nan")
+            wait = min(asked, MAX_COOLDOWN) if math.isfinite(asked) and asked > 0 else None  # "nan", "-5" and dates are ignored
+            raise QuoteError("unavailable", "Yahoo Finance answered 429 (too many requests)", retry_after=wait)
         if response.status_code != 200:
             raise QuoteError("unavailable", f"Yahoo Finance answered {response.status_code}")
         try:
@@ -244,6 +270,7 @@ class QuoteService:
         self._quotes: dict[str, tuple[float, Quote]] = {}
         self._bars: dict[str, tuple[float, Bars]] = {}
         self._cooldown_until = 0.0
+        self._failures = 0  # in a row: each one doubles the rest, a success resets it
         self._last_error: str | None = None
 
     def _quote_fresh(self, symbol: str, now: float) -> bool:
@@ -307,19 +334,27 @@ class QuoteService:
             futures = {pool.submit(self._refresh, w): w for w in unique}
             done, not_done = wait(futures, timeout=DEADLINE)
             pool.shutdown(wait=False, cancel_futures=True)
+            asked = 0.0
             for future in done:
                 exc = future.exception()
                 if isinstance(exc, QuoteError):
                     problem = str(exc)
+                    asked = max(asked, exc.retry_after or 0.0)
                 elif exc is not None:
                     log.warning("quote refresh failed: %s", type(exc).__name__)
                     problem = "unexpected error while fetching prices"
-            if not_done and problem is None:
+            # Slow but moving is fine: what was fetched is kept and the next look carries on.
+            if not_done and problem is None and not done:
                 problem = "Yahoo Finance was too slow"
-            if problem:
-                self._last_error = problem
-                self._cooldown_until = self.clock() + COOLDOWN
-                log.warning("live prices unavailable: %s", problem)
+            with self._lock:  # two requests can be here at once
+                if problem:
+                    self._failures += 1
+                    rest = min(max(COOLDOWN * 2 ** (self._failures - 1), asked), MAX_COOLDOWN)
+                    self._last_error = problem
+                    self._cooldown_until = self.clock() + rest
+                    log.warning("live prices unavailable: %s (resting %d s)", problem, rest)
+                else:
+                    self._failures = 0
         live: dict[Wanted, Live] = {}
         stale = False
         with self._lock:
