@@ -13,6 +13,7 @@ from .config import Settings
 from .crypto import Keys, unseal
 from .db import Database, utcnow
 from .plaid import PlaidClient, PlaidError
+from .merchants import assign_merchants
 from .rules import assign_rules
 
 log = logging.getLogger("homefinance.sync")
@@ -188,6 +189,8 @@ def sync_transactions(
         db.run("UPDATE items SET cursor=? WHERE id=?", (next_cursor, item["id"]))
     if touched:
         assign_rules(db, touched)
+    if touched or removed:
+        assign_merchants(db, touched)  # also tidies automatic merchants whose transactions were removed
     return len(added) + len(modified) + len(removed)
 
 

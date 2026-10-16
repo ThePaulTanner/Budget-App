@@ -12,5 +12,10 @@
   "plaid_category": "FOOD_AND_DRINK",
   "category_detailed": "FOOD_AND_DRINK_OTHER",
   "category_overridden": true,
-  "logo_url": null
+  "logo_url": null,
+  "category_source": "manual",
+  "rule_id": null,
+  "merchant_id": 3,
+  "merchant": "Restaurant Le Local",
+  "display_name": "Restaurant Le Local"
 }

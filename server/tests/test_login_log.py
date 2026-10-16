@@ -185,13 +185,16 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
           totp_secret BLOB NOT NULL, totp_last_step INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
         INSERT INTO users(username, password_hash, totp_secret, created_at) VALUES ('paul', 'h', x'00', 't');
         CREATE TABLE holdings (account_id TEXT, security_id TEXT, ticker TEXT);
+        CREATE TABLE transactions (id TEXT PRIMARY KEY, name TEXT);
         PRAGMA user_version = 1;
         """
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 3
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 4
     assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
+    assert "merchant_id" in [c[1] for c in db.query("PRAGMA table_info(transactions)")]
+    assert db.query("SELECT * FROM merchants") == [] and db.query("SELECT * FROM merchant_aliases") == []
     user = db.one("SELECT username, failed_streak, locked_at FROM users")
     assert (user["username"], user["failed_streak"], user["locked_at"]) == ("paul", 0, None)
     assert db.query("SELECT * FROM login_events") == []

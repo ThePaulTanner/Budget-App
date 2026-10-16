@@ -8,6 +8,7 @@ from .auth import AuthService
 from .config import Settings
 from .crypto import Keys, parse_master_key
 from .db import Database
+from .merchants import assign_merchants
 from .plaid import PlaidClient
 from .quotes import QuoteService, YahooProvider
 from .sync import SyncManager
@@ -34,6 +35,7 @@ def build_services(
         None if settings.insecure_plaintext_db else keys.db_hex,
         insecure_plaintext=settings.insecure_plaintext_db,
     )
+    assign_merchants(db)  # names for transactions saved before merchants existed; a no-op otherwise
     if plaid is None and settings.plaid_client_id and settings.plaid_secret:
         plaid = PlaidClient(
             settings.plaid_client_id, settings.plaid_secret, settings.plaid_url

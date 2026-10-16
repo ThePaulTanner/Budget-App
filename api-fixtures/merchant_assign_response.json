@@ -1,0 +1,16 @@
+{
+  "merchant": {
+    "id": 8,
+    "name": "Corner Store"
+  },
+  "alias": {
+    "id": 8,
+    "merchant_id": 8,
+    "match_field": "name",
+    "match_type": "contains",
+    "pattern": "POS PURCHASE 4521",
+    "source": "user",
+    "created_at": "2026-10-16T01:11:15.279438Z"
+  },
+  "updated_transactions": 2
+}

@@ -17,7 +17,12 @@
       "plaid_category": "FOOD_AND_DRINK",
       "category_detailed": "FOOD_AND_DRINK_OTHER",
       "category_overridden": false,
-      "logo_url": null
+      "logo_url": null,
+      "category_source": "plaid",
+      "rule_id": null,
+      "merchant_id": 1,
+      "merchant": "IGA",
+      "display_name": "IGA"
     },
     {
       "id": "tx_006",
@@ -33,7 +38,12 @@
       "plaid_category": "LOAN_PAYMENTS",
       "category_detailed": "LOAN_PAYMENTS_OTHER",
       "category_overridden": false,
-      "logo_url": null
+      "logo_url": null,
+      "category_source": "plaid",
+      "rule_id": null,
+      "merchant_id": 2,
+      "merchant": "Mortgage payment",
+      "display_name": "Mortgage payment"
     },
     {
       "id": "tx_001",
@@ -49,7 +59,12 @@
       "plaid_category": "FOOD_AND_DRINK",
       "category_detailed": "FOOD_AND_DRINK_OTHER",
       "category_overridden": false,
-      "logo_url": null
+      "logo_url": null,
+      "category_source": "plaid",
+      "rule_id": null,
+      "merchant_id": 3,
+      "merchant": "Restaurant Le Local",
+      "display_name": "Restaurant Le Local"
     },
     {
       "id": "tx_002",
@@ -65,7 +80,12 @@
       "plaid_category": "INCOME",
       "category_detailed": "INCOME_OTHER",
       "category_overridden": false,
-      "logo_url": null
+      "logo_url": null,
+      "category_source": "plaid",
+      "rule_id": null,
+      "merchant_id": 4,
+      "merchant": "Payroll",
+      "display_name": "Payroll"
     },
     {
       "id": "tx_003",
@@ -81,7 +101,12 @@
       "plaid_category": "LOAN_PAYMENTS",
       "category_detailed": "LOAN_PAYMENTS_OTHER",
       "category_overridden": false,
-      "logo_url": null
+      "logo_url": null,
+      "category_source": "plaid",
+      "rule_id": null,
+      "merchant_id": 5,
+      "merchant": "Visa payment",
+      "display_name": "Visa payment"
     }
   ]
 }

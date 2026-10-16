@@ -246,6 +246,9 @@ def seed_fixture_data(services) -> None:
                 h["currency"], "2026-10-02T00:00:00Z",
             ),
         )
+    from app.merchants import assign_merchants
+
+    assign_merchants(db)  # as after a sync: Plaid's merchant names become merchants
     for p in fixture("networth.json"):
         db.run(
             "INSERT INTO networth(date, currency, assets, liabilities, investments, net_worth) "

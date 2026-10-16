@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, condecimal
 
+from . import merchants as merchants_mod
 from . import rules as rules_mod
 from .auth import AuthContext, AuthError
 from .bootstrap import Services
@@ -59,6 +60,10 @@ WEB_COOKIE = "__Host-hf_rt"
 WEB_COOKIE_MAX_AGE = 30 * 24 * 3600  # renewed each time the page refreshes
 WEB_HEADER = "x-requested-with"
 WEB_HEADER_VALUE = "HomeFinance"
+
+
+def _norm_search(text: str | None) -> str:
+    return " ".join((text or "").casefold().split())
 
 
 def origin_of(request: Request) -> str:
@@ -127,6 +132,25 @@ class RulePatchBody(BaseModel):
     pattern: str | None = Field(default=None, min_length=1, max_length=200)
     account_id: str | None = None
     category: str | None = Field(default=None, min_length=1, max_length=60)
+
+
+class MerchantNameBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class AliasBody(BaseModel):
+    match_field: Literal["merchant_name", "name"]
+    match_type: Literal["equals", "contains"]
+    pattern: str = Field(min_length=1, max_length=200)
+
+
+class AssignBody(AliasBody):
+    name: str | None = Field(default=None, max_length=200)  # a merchant name, new or existing
+    merchant_id: int | None = None  # or an existing merchant's id
+
+
+class MergeBody(BaseModel):
+    into_id: int
 
 
 class LinkTokenBody(BaseModel):
@@ -198,6 +222,9 @@ def tx_json(row: Any) -> dict[str, Any]:
         "logo_url": row["logo_url"],
         "category_source": category_source(row),
         "rule_id": row["rule_id"] if row["rule_category"] is not None else None,
+        "merchant_id": row["merchant_id"],
+        "merchant": row["merchant_display"],
+        "display_name": row["merchant_display"] or row["merchant_name"] or row["name"],
     }
 
 
@@ -484,6 +511,7 @@ def create_api_app(services: Services) -> FastAPI:
         account_id: str | None = None,
         category: str | None = None,
         search: str | None = None,
+        merchant_id: int | None = None,
         start: str | None = None,
         end: str | None = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
@@ -503,8 +531,11 @@ def create_api_app(services: Services) -> FastAPI:
                 params.append(category.strip().upper())  # not a valid name: matches nothing
         if search and search.strip():
             like = "%" + re.sub(r"([\\%_])", r"\\\1", search.strip()) + "%"
-            where.append("(t.name LIKE ? ESCAPE '\\' OR t.merchant_name LIKE ? ESCAPE '\\')")
-            params += [like, like]
+            where.append("(t.name LIKE ? ESCAPE '\\' OR t.merchant_name LIKE ? ESCAPE '\\' OR m.name LIKE ? ESCAPE '\\')")
+            params += [like, like, like]
+        if merchant_id is not None:
+            where.append("t.merchant_id = ?")
+            params.append(merchant_id)
         if (s := parse_day(start, "start")) is not None:
             where.append("t.date >= ?")
             params.append(s)
@@ -512,10 +543,13 @@ def create_api_app(services: Services) -> FastAPI:
             where.append("t.date <= ?")
             params.append(e)
         clause = " AND ".join(where)
-        join = "FROM transactions t JOIN accounts a ON a.id = t.account_id"
+        join = (
+            "FROM transactions t JOIN accounts a ON a.id = t.account_id "
+            "LEFT JOIN merchants m ON m.id = t.merchant_id"
+        )
         total = db.one(f"SELECT count(*) AS n {join} WHERE {clause}", params)["n"]
         rows = db.query(
-            f"SELECT t.*, {EFFECTIVE_CATEGORY_SQL} AS category {join} WHERE {clause} "
+            f"SELECT t.*, {EFFECTIVE_CATEGORY_SQL} AS category, m.name AS merchant_display {join} WHERE {clause} "
             "ORDER BY t.date DESC, t.id LIMIT ? OFFSET ?",
             [*params, limit, offset],
         )
@@ -535,7 +569,9 @@ def create_api_app(services: Services) -> FastAPI:
         if db.run("UPDATE transactions SET override_category=? WHERE id=?", (category, tx_id)) == 0:
             raise HTTPException(404, "transaction not found")
         row = db.one(
-            f"SELECT *, {EFFECTIVE_CATEGORY_SQL} AS category FROM transactions WHERE id=?", (tx_id,)
+            f"SELECT t.*, {EFFECTIVE_CATEGORY_SQL} AS category, m.name AS merchant_display "
+            "FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id WHERE t.id=?",
+            (tx_id,),
         )
         return tx_json(row)
 
@@ -946,5 +982,311 @@ def create_api_app(services: Services) -> FastAPI:
         if db.one("SELECT 1 FROM rules WHERE id=?", (rule_id,)) is None:
             raise HTTPException(404, "rule not found")
         return {"updated_transactions": rules_mod.assign_rules(db)}
+
+
+    # -- merchants -----------------------------------------------------------
+
+    def period_start(period: str) -> str | None:
+        current = today_str()[:7]
+        offsets = {"month": 0, "3m": -2, "12m": -11}
+        return None if period == "all" else f"{add_months(current, offsets[period])}-01"
+
+    def alias_json(row: Any) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "merchant_id": row["merchant_id"],
+            "match_field": row["match_field"],
+            "match_type": row["match_type"],
+            "pattern": row["pattern"],
+            "source": row["source"],
+            "created_at": row["created_at"],
+        }
+
+    def merchant_activity(since: str | None, merchant_id: int | None = None) -> dict[int, dict[str, Any]]:
+        """Per merchant: what you spent, paid out and received, in the base currency."""
+        where, params = ["a.hidden = 0", "t.merchant_id IS NOT NULL"], []
+        if since is not None:
+            where.append("t.date >= ?")
+            params.append(since)
+        if merchant_id is not None:
+            where.append("t.merchant_id = ?")
+            params.append(merchant_id)
+        rows = db.query(
+            f"SELECT t.merchant_id, t.date, t.amount, t.currency, {EFFECTIVE_CATEGORY_SQL} AS category "
+            "FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE " + " AND ".join(where),
+            params,
+        )
+        out: dict[int, dict[str, Any]] = {}
+        for r in rows:
+            m = out.setdefault(
+                r["merchant_id"],
+                {"count": 0, "spent": Decimal(0), "outflow": Decimal(0), "outflow_count": 0, "inflow": Decimal(0), "other": 0, "cats": {}},
+            )
+            if r["currency"] != base:
+                m["other"] += 1
+                continue
+            amount = Decimal(r["amount"])
+            m["count"] += 1
+            if amount > 0:
+                m["outflow"] += amount
+                m["outflow_count"] += 1
+            m["inflow"] += -amount if amount < 0 else Decimal(0)
+            if r["category"] not in EXCLUDED_FROM_SPENDING:
+                m["spent"] += amount
+            m["cats"][r["category"]] = m["cats"].get(r["category"], Decimal(0)) + amount
+        return out
+
+    def top_category(cats: dict[str, Decimal]) -> str | None:
+        return max(cats, key=lambda c: abs(cats[c])) if cats else None
+
+    def merchant_json(row: Any, activity: dict[str, Any] | None, span: Any, alias_count: int) -> dict[str, Any]:
+        a = activity or {"count": 0, "spent": Decimal(0), "outflow": Decimal(0), "outflow_count": 0, "inflow": Decimal(0), "other": 0, "cats": {}}
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "auto": bool(row["auto"]),
+            "aliases": alias_count,
+            "transactions": a["count"],
+            "spent": num(a["spent"]),
+            "outflow": num(a["outflow"]),
+            "inflow": num(a["inflow"]),
+            "other_currency_transactions": a["other"],
+            "top_category": top_category(a["cats"]),
+            "first_date": span["first"] if span else None,
+            "last_date": span["last"] if span else None,
+        }
+
+    def merchant_spans() -> dict[int, Any]:
+        return {
+            r["merchant_id"]: r
+            for r in db.query(
+                "SELECT t.merchant_id, min(t.date) AS first, max(t.date) AS last "
+                "FROM transactions t JOIN accounts a ON a.id = t.account_id "
+                "WHERE a.hidden = 0 AND t.merchant_id IS NOT NULL GROUP BY t.merchant_id"
+            )
+        }
+
+    def merchant_or_404(merchant_id: int) -> Any:
+        row = db.one("SELECT * FROM merchants WHERE id=?", (merchant_id,))
+        if row is None:
+            raise HTTPException(404, "merchant not found")
+        return row
+
+    @app.get("/api/merchants")
+    def list_merchants(
+        ctx: Auth,
+        period: Literal["month", "3m", "12m", "all"] = "12m",
+        search: Annotated[str | None, Query(max_length=100)] = None,
+    ):
+        """The master list. `spent`, `outflow`, `inflow` and `transactions` are for the period
+        (base currency); first and last dates are over all time. Sorted by spent, largest first."""
+        activity = merchant_activity(period_start(period))
+        spans = merchant_spans()
+        counts = {r["merchant_id"]: r["n"] for r in db.query("SELECT merchant_id, count(*) AS n FROM merchant_aliases GROUP BY merchant_id")}
+        needle = _norm_search(search)
+        rows = [
+            merchant_json(r, activity.get(r["id"]), spans.get(r["id"]), counts.get(r["id"], 0))
+            for r in db.query("SELECT * FROM merchants")
+            if not needle or needle in _norm_search(r["name"])
+        ]
+        rows.sort(key=lambda m: (-(m["spent"] or 0), -m["transactions"], m["name"].casefold()))
+        return {"period": period, "currency": base, "merchants": rows}
+
+    @app.get("/api/merchants/unassigned")
+    def unassigned_merchants(ctx: Auth):
+        """Raw transaction names nobody has named yet (Plaid gave no clean merchant name).
+        Most frequent first. Name one with POST /api/merchants/aliases."""
+        groups: dict[str, dict[str, Any]] = {}
+        for r in db.query(
+            "SELECT t.name, t.date, t.amount, t.currency, a.name AS account_name "
+            "FROM transactions t JOIN accounts a ON a.id = t.account_id "
+            "WHERE a.hidden = 0 AND t.merchant_id IS NULL ORDER BY t.date DESC"
+        ):
+            g = groups.setdefault(
+                r["name"],
+                {"name": r["name"], "transactions": 0, "outflow": Decimal(0), "last_date": r["date"], "account_name": r["account_name"], "currency": r["currency"]},
+            )
+            g["transactions"] += 1
+            if r["currency"] == g["currency"] and Decimal(r["amount"]) > 0:
+                g["outflow"] += Decimal(r["amount"])
+        ranked = sorted(groups.values(), key=lambda g: (-g["transactions"], g["name"].casefold()))
+        return [{**g, "outflow": num(g["outflow"])} for g in ranked]
+
+    @app.post("/api/merchants/aliases/preview")
+    def preview_alias(body: AliasBody, ctx: Auth):
+        candidate = {"match_field": body.match_field, "match_type": body.match_type, "pattern": body.pattern.strip()}
+        if not candidate["pattern"]:
+            raise HTTPException(400, "pattern cannot be empty")
+        rows = merchants_mod.matching_transactions(db, candidate)
+        return {
+            "matching_transactions": len(rows),
+            "currently_unassigned": sum(1 for r in rows if r["merchant_id"] is None),
+            "samples": [
+                {
+                    "date": r["date"],
+                    "name": r["name"],
+                    "merchant_name": r["merchant_name"],
+                    "amount": num(r["amount"]),
+                    "currency": r["currency"],
+                    "account_name": r["account_name"],
+                }
+                for r in rows[:5]
+            ],
+        }
+
+    @app.post("/api/merchants/aliases", status_code=201)
+    def assign_alias(body: AssignBody, ctx: Auth):
+        """Give raw transaction text a merchant: an existing one (merchant_id) or a name
+        (reused if it exists, created if not). Existing and future transactions follow."""
+        pattern = body.pattern.strip()
+        if not pattern:
+            raise HTTPException(400, "pattern cannot be empty")
+        if (body.merchant_id is None) == (body.name is None or not body.name.strip()):
+            raise HTTPException(400, "give either merchant_id or name")
+        if body.merchant_id is not None:
+            merchant = merchant_or_404(body.merchant_id)
+        else:
+            try:
+                merchant = merchants_mod.get_or_create_merchant(db, body.name, auto=False)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+        db.run("UPDATE merchants SET auto=0 WHERE id=?", (merchant["id"],))  # you chose it: keep it
+        existing = db.one(
+            "SELECT id FROM merchant_aliases WHERE match_field=? AND match_type=? AND lower(pattern)=lower(?)",
+            (body.match_field, body.match_type, pattern),
+        )
+        if existing is not None:
+            db.run("UPDATE merchant_aliases SET merchant_id=?, source='user' WHERE id=?", (merchant["id"], existing["id"]))
+            alias_id = existing["id"]
+        else:
+            alias_id = db.run(
+                "INSERT INTO merchant_aliases(merchant_id, match_field, match_type, pattern, source, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (merchant["id"], body.match_field, body.match_type, pattern, "user", utcnow()),
+            )
+        changed = merchants_mod.assign_merchants(db)
+        fresh = db.one("SELECT * FROM merchants WHERE id=?", (merchant["id"],))
+        return {
+            "merchant": {"id": fresh["id"], "name": fresh["name"]},
+            "alias": alias_json(db.one("SELECT * FROM merchant_aliases WHERE id=?", (alias_id,))),
+            "updated_transactions": changed,
+        }
+
+    @app.delete("/api/merchants/aliases/{alias_id}")
+    def delete_alias(alias_id: int, ctx: Auth):
+        if db.run("DELETE FROM merchant_aliases WHERE id=?", (alias_id,)) == 0:
+            raise HTTPException(404, "alias not found")
+        merchants_mod.assign_merchants(db)
+        return {"ok": True}
+
+    @app.post("/api/merchants", status_code=201)
+    def create_merchant(body: MerchantNameBody, ctx: Auth):
+        try:
+            name = merchants_mod.clean_name(body.name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        if merchants_mod.find_merchant(db, name) is not None:
+            raise HTTPException(409, f"A merchant named {name} already exists.")
+        row = merchants_mod.get_or_create_merchant(db, name, auto=False)
+        return merchant_json(row, None, None, 0)
+
+    @app.get("/api/merchants/{merchant_id}")
+    def merchant_detail(
+        merchant_id: int, ctx: Auth, months: Annotated[int, Query(ge=1, le=60)] = 12
+    ):
+        """One merchant over time: totals for the window, a month-by-month series (oldest
+        first, zero months included), the raw names that map to it, and recent transactions."""
+        row = merchant_or_404(merchant_id)
+        current = today_str()[:7]
+        first = add_months(current, -(months - 1))
+        window = merchant_activity(f"{first}-01", merchant_id).get(merchant_id)
+        lifetime = merchant_activity(None, merchant_id).get(merchant_id)
+        span = merchant_spans().get(merchant_id)
+        aliases = db.query("SELECT * FROM merchant_aliases WHERE merchant_id=? ORDER BY source, id", (merchant_id,))
+        monthly: dict[str, dict[str, Any]] = {}
+        cats: dict[str, Decimal] = {}
+        for r in db.query(
+            f"SELECT t.date, t.amount, {EFFECTIVE_CATEGORY_SQL} AS category FROM transactions t "
+            "JOIN accounts a ON a.id = t.account_id WHERE a.hidden = 0 AND t.merchant_id = ? "
+            "AND t.currency = ? AND t.date >= ?",
+            (merchant_id, base, f"{first}-01"),
+        ):
+            bucket = monthly.setdefault(r["date"][:7], {"total": Decimal(0), "count": 0})
+            bucket["count"] += 1
+            if r["category"] not in EXCLUDED_FROM_SPENDING:
+                bucket["total"] += Decimal(r["amount"])
+            cats[r["category"]] = cats.get(r["category"], Decimal(0)) + Decimal(r["amount"])
+        recent = db.query(
+            f"SELECT t.*, {EFFECTIVE_CATEGORY_SQL} AS category, m.name AS merchant_display "
+            "FROM transactions t JOIN accounts a ON a.id = t.account_id LEFT JOIN merchants m ON m.id = t.merchant_id "
+            "WHERE t.merchant_id = ? AND a.hidden = 0 ORDER BY t.date DESC, t.id LIMIT 50",
+            (merchant_id,),
+        )
+        out = merchant_json(row, window, span, len(aliases))
+        out["months"] = months
+        out["lifetime"] = {
+            "transactions": lifetime["count"] if lifetime else 0,
+            "spent": num(lifetime["spent"]) if lifetime else 0.0,
+            "outflow": num(lifetime["outflow"]) if lifetime else 0.0,
+            "inflow": num(lifetime["inflow"]) if lifetime else 0.0,
+        }
+        out["average_transaction"] = (
+            num((window["outflow"] / window["outflow_count"]).quantize(Decimal("0.01")))
+            if window and window["outflow_count"]
+            else None
+        )
+        out["monthly"] = [
+            {
+                "month": m,
+                "total": num(monthly.get(m, {}).get("total", Decimal(0))),
+                "transactions": monthly.get(m, {}).get("count", 0),
+            }
+            for m in (add_months(first, i) for i in range(months))
+        ]
+        out["categories"] = [
+            {"category": c, "amount": num(v)}
+            for c, v in sorted(cats.items(), key=lambda kv: -abs(kv[1]))
+            if c not in EXCLUDED_FROM_SPENDING and v != 0
+        ]
+        out["alias_list"] = [alias_json(a) for a in aliases]
+        out["recent_transactions"] = [tx_json(r) for r in recent]
+        return out
+
+    @app.patch("/api/merchants/{merchant_id}")
+    def rename_merchant(merchant_id: int, body: MerchantNameBody, ctx: Auth):
+        merchant_or_404(merchant_id)
+        try:
+            name = merchants_mod.clean_name(body.name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        clash = db.one("SELECT id FROM merchants WHERE lower(name)=lower(?) AND id != ?", (name, merchant_id))
+        if clash is not None:
+            raise HTTPException(409, f"A merchant named {name} already exists. Merge them instead.")
+        db.run("UPDATE merchants SET name=?, auto=0 WHERE id=?", (name, merchant_id))
+        row = db.one("SELECT * FROM merchants WHERE id=?", (merchant_id,))
+        count = db.one("SELECT count(*) AS n FROM merchant_aliases WHERE merchant_id=?", (merchant_id,))["n"]
+        return merchant_json(row, merchant_activity(None, merchant_id).get(merchant_id), merchant_spans().get(merchant_id), count)
+
+    @app.post("/api/merchants/{merchant_id}/merge")
+    def merge_merchant(merchant_id: int, body: MergeBody, ctx: Auth):
+        """Fold this merchant into another: its names and transactions move across."""
+        merchant_or_404(merchant_id)
+        merchant_or_404(body.into_id)
+        if body.into_id == merchant_id:
+            raise HTTPException(400, "cannot merge a merchant into itself")
+        db.run("UPDATE merchant_aliases SET merchant_id=? WHERE merchant_id=?", (body.into_id, merchant_id))
+        db.run("UPDATE merchants SET auto=0 WHERE id=?", (body.into_id,))
+        db.run("DELETE FROM merchants WHERE id=?", (merchant_id,))
+        merchants_mod.assign_merchants(db)
+        return {"ok": True, "into_id": body.into_id}
+
+    @app.delete("/api/merchants/{merchant_id}")
+    def delete_merchant(merchant_id: int, ctx: Auth):
+        """Forget a merchant and the names you gave it. Transactions with a Plaid merchant
+        name get an automatic merchant again; the rest become unassigned."""
+        merchant_or_404(merchant_id)
+        db.run("DELETE FROM merchants WHERE id=?", (merchant_id,))
+        merchants_mod.assign_merchants(db)
+        return {"ok": True}
 
     return app
