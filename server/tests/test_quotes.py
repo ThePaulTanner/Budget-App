@@ -276,6 +276,12 @@ def test_a_listing_in_another_currency_is_not_used():
     assert QuoteService(provider, Clock()).lookup([wanted()]).live == {}
 
 
+def test_a_quote_with_no_currency_is_not_trusted():
+    provider = FakeProvider()
+    provider.currency = None
+    assert QuoteService(provider, Clock()).lookup([wanted()]).live == {}
+
+
 def test_history_failure_keeps_the_live_price():
     provider = FakeProvider()
     original = provider.history

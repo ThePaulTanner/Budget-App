@@ -269,8 +269,8 @@ class QuoteService:
                     if exc.kind == "unavailable":
                         raise
                     continue
-                if quote.currency and quote.currency.upper() != wanted.currency.upper():
-                    continue  # a different listing in another currency: no FX guessing
+                if not quote.currency or quote.currency.upper() != wanted.currency.upper():
+                    continue  # another currency, or none stated so it cannot be checked: no FX guessing
                 symbol = candidate
                 with self._lock:
                     self._quotes[symbol] = (now, quote)
