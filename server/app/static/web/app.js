@@ -360,11 +360,9 @@
 
   // A line under the page title in a person's view; empty for the household.
   function viewerNote(householdOnly = false) {
-    if (viewer == null) return document.createDocumentFragment();  // nothing to show, and nothing printed
+    if (viewer == null || !householdOnly) return document.createDocumentFragment();  // nothing to show, and nothing printed
     const name = personName(viewer) || "this person";
-    return el("p", { class: "viewer-note", text: householdOnly
-      ? `This page covers the whole household, not just ${name}.`
-      : `Showing ${name}'s accounts. A shared account counts in full for each owner, so the people's totals add up to more than the household's.` });
+    return el("p", { class: "viewer-note", text: `This page covers the whole household, not just ${name}.` });
   }
   async function loadPeople() {
     try { people = await api("/api/people"); } catch (err) { if (err instanceof SignedOut) throw err; people = []; }
