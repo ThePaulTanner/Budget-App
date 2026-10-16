@@ -836,7 +836,7 @@ def create_api_app(services: Services) -> FastAPI:
         if used["transactions"] or used["budgets"] or used["rules"]:
             raise HTTPException(
                 409,
-                f"In use by {used['transactions']} transactions, {used['budgets']} budgets and {used['rules']} rules. "
+                f"In use by {used['transactions']} transaction(s), {used['budgets']} budget(s) and {used['rules']} rule(s). "
                 "Move them to another category first.",
             )
         db.run("DELETE FROM custom_categories WHERE code = ?", (code,))

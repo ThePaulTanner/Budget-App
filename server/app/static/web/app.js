@@ -376,9 +376,9 @@
 
   async function categoryChoices(extra = []) {
     let fromServer = [];
+    try { fromServer = await api("/api/categories"); } catch (err) { if (err instanceof SignedOut) throw err; }
     try {
-      const [codes, custom] = await Promise.all([api("/api/categories"), api("/api/categories/custom")]);
-      fromServer = codes;
+      const custom = await api("/api/categories/custom");
       customCategories = custom.categories;
       PRIMARIES = [...new Set([...BUILT_IN_PRIMARIES, ...custom.primaries])];
     } catch (err) { if (err instanceof SignedOut) throw err; }

@@ -71,7 +71,7 @@ def test_delete_only_when_unused(services, seeded):
     assert client.delete("/api/categories/PETS", headers=auth).status_code == 409  # has a sub-category
     add(services, "p1", "60.00", None, primary="PETS", override="PETS_VET")
     r = client.delete("/api/categories/PETS_VET", headers=auth)
-    assert r.status_code == 409 and "1 transactions" in r.json()["detail"]
+    assert r.status_code == 409 and "1 transaction(s)" in r.json()["detail"]
     assert client.put("/api/budgets/PETS_VET", json={"monthly_limit": 50}, headers=auth).status_code == 200
     services.db.run("DELETE FROM transactions WHERE id = 'p1'")
     assert client.delete("/api/categories/PETS_VET", headers=auth).status_code == 409  # a budget uses it
@@ -86,3 +86,18 @@ def test_requires_login(services, seeded):
     client, _ = seeded
     assert client.post("/api/categories", json={"name": "x"}).status_code == 401
     assert client.get("/api/categories/custom").status_code == 401
+
+
+def test_overlap_with_an_existing_sub_category_and_restart(services, seeded):
+    from app.api import create_api_app
+    from app.rules import parent_category
+
+    client, auth = seeded
+    make(client, auth, "Pets")
+    make(client, auth, "Vet", "PETS")
+    services.db.run("DELETE FROM custom_categories WHERE code = 'PETS'")  # a leftover sub-category
+    create_api_app(services)  # a restart reloads the categories you added
+    assert make(client, auth, "Pets").status_code == 400  # PETS_VET would turn into a sub of it
+    services.db.run("INSERT INTO custom_categories(code, parent, created_at) VALUES ('PETS', NULL, 'x')")
+    create_api_app(services)
+    assert parent_category("PETS_VET") == "PETS"
