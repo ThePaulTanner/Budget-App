@@ -692,6 +692,7 @@
   const FIELD_LABELS = { name: "the description", merchant_name: "the bank's merchant name" };
   let merchPeriod = "12m";
   let merchAll = false;
+  let merchTab = "merchants";
 
   function shortDate(text) {
     return parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
@@ -735,23 +736,33 @@
     }
     search.addEventListener("input", draw);
 
-    const todoCard = todo.length > 0 && el("section", { class: "card" },
-      el("h2", { text: `Needs a name (${todo.length})` }),
+    const todoCard = el("section", { class: "card" },
+      el("h2", { text: "Needs a name" }),
       el("p", { class: "muted", text: "Your bank gave these no clear merchant name. Name one and every matching transaction, past and future, is tracked under it." }),
-      todo.slice(0, 8).map((t) => el("div", { class: "row" },
-        el("div", { class: "grow" }, el("strong", { text: t.name }),
-          el("div", { class: "muted", text: `${t.transactions} transaction${t.transactions === 1 ? "" : "s"} \u00B7 last ${shortDate(t.last_date)} \u00B7 ${t.account_name}` })),
-        el("div", { class: "amount", text: t.outflow ? money(t.outflow, t.currency) : "" }),
-        el("button", { type: "button", class: "primary small", text: "Name it", onclick: () => openNameDialog({ pattern: t.name, field: "name" }, reload) }))),
-      todo.length > 8 && el("p", { class: "muted", text: `${todo.length - 8} more. Name these first and the rest move up.` }));
+      todo.length === 0
+        ? el("p", { class: "empty", text: "Everything has a name." })
+        : todo.map((t) => el("div", { class: "row" },
+          el("div", { class: "grow" }, el("strong", { text: t.name }),
+            el("div", { class: "muted", text: `${t.transactions} transaction${t.transactions === 1 ? "" : "s"} \u00B7 last ${shortDate(t.last_date)} \u00B7 ${t.account_name}` })),
+          el("div", { class: "amount", text: t.outflow ? money(t.outflow, t.currency) : "" }),
+          el("button", { type: "button", class: "primary small", text: "Name it", onclick: () => openNameDialog({ pattern: t.name, field: "name" }, reload) }))));
 
     const masterCard = el("section", { class: "card" }, el("h2", { text: "Merchants" }),
       el("div", { class: "toolbar" }, seg, search),
       el("label", { class: "checkline" }, includeAll, "Include payments, transfers and income"),
       total, list,
       el("div", { class: "actions" }, el("button", { type: "button", text: "Add a merchant", onclick: () => openAddMerchant(reload) })));
-    view().replaceChildren(...[todoCard, masterCard].filter(Boolean));
-    draw();
+
+    const tabs = el("div", { class: "seg", role: "group", "aria-label": "Merchants page" },
+      [["merchants", "Merchants"], ["needs", `Needs a name (${todo.length})`]].map(([key, label]) =>
+        el("button", { type: "button", "aria-pressed": String(key === merchTab), text: label,
+          onclick: () => { merchTab = key; show(); } })));
+    function show() {
+      for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
+      view().replaceChildren(el("div", { class: "toolbar" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      if (merchTab === "merchants") draw();
+    }
+    show();
   }
 
   function openAddMerchant(done) {
@@ -963,7 +974,7 @@
     const card = el("section", { class: "card" });
     const paint = () => {
       const t = window.HFTheme.get();
-      const choose = (part, value) => { window.HFTheme.set({ [part]: value }); syncThemeButton(); paint(); };
+      const choose = (part, value) => { window.HFTheme.set({ [part]: value }); paint(); };
       const segment = (part, options) => el("div", { class: "seg", role: "group", "aria-label": part },
         options.map(([value, label]) => el("button", { type: "button", "aria-pressed": String(t[part] === value), text: label, onclick: () => choose(part, value) })));
       card.replaceChildren(
@@ -1122,13 +1133,6 @@
     } catch (_) { /* the badge is only a convenience */ }
   }
 
-  const THEME_ICONS = { system: ["#i-system", "System"], light: ["#i-sun", "Light"], dark: ["#i-moon", "Dark"] };
-  function syncThemeButton() {
-    const { mode } = window.HFTheme.get();
-    $("theme-icon").setAttribute("href", THEME_ICONS[mode][0]);
-    $("theme-toggle").title = `Colour scheme: ${THEME_ICONS[mode][1].toLowerCase()} (click to change)`;
-  }
-
   function setBanner(institutions) {
     const banner = $("banner");
     if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
@@ -1143,7 +1147,7 @@
     syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
     const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
-    for (const a of document.querySelectorAll("#tabs a")) {
+    for (const a of document.querySelectorAll("#tabs a, #settings-link")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
     const [title, subtitle] = PAGES[name];
@@ -1221,14 +1225,8 @@
     } finally { button.disabled = false; }
   });
 
-  $("refresh").addEventListener("click", route);
+  for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
   $("signout").addEventListener("click", signOut);
-  $("theme-toggle").addEventListener("click", () => {
-    const { MODES, get, set } = window.HFTheme;
-    set({ mode: MODES[(MODES.indexOf(get().mode) + 1) % MODES.length] });
-    syncThemeButton();
-  });
-  syncThemeButton();
   window.addEventListener("hashchange", route);
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });
