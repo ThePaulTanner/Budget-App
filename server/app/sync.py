@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import base64
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -56,6 +58,32 @@ def map_account_type(plaid_type: str | None) -> str:
     if plaid_type == "brokerage":
         return "investment"
     return "other"
+
+
+def clean_logo(value: Any) -> str | None:
+    """Plaid's logo is a base64 PNG. Keep it only if it really is one and is small."""
+    if not isinstance(value, str) or not value or len(value) > 200_000:
+        return None
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except ValueError:
+        return None
+    return value if raw.startswith(b"\x89PNG\r\n\x1a\n") else None
+
+
+def clean_color(value: Any) -> str | None:
+    return value if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value) else None
+
+
+def store_institution(db: Database, item_id: str, details: dict[str, Any] | None) -> None:
+    """Remember a bank's logo and colour. Only a real answer from Plaid counts as checked,
+    so a failed call is tried again at the next sync."""
+    if details is None:
+        return
+    db.run(
+        "UPDATE items SET logo=?, color=?, logo_checked=1 WHERE id=?",
+        (clean_logo(details.get("logo")), clean_color(details.get("color")), item_id),
+    )
 
 
 def item_token(keys: Keys, item: Any) -> str:
@@ -350,7 +378,14 @@ def snapshot_networth(db: Database, date: str | None = None) -> None:
 # -- one bank ----------------------------------------------------------------
 
 
-def sync_item(db: Database, plaid: PlaidClient, keys: Keys, item: Any, base: str) -> dict[str, Any]:
+def sync_item(
+    db: Database,
+    plaid: PlaidClient,
+    keys: Keys,
+    item: Any,
+    base: str,
+    country_codes: tuple[str, ...] = ("CA", "US"),
+) -> dict[str, Any]:
     result: dict[str, Any] = {
         "item_id": item["id"],
         "institution": item["institution"],
@@ -360,6 +395,8 @@ def sync_item(db: Database, plaid: PlaidClient, keys: Keys, item: Any, base: str
     }
     try:
         token = item_token(keys, item)
+        if not item["logo_checked"] and item["institution_id"]:
+            store_institution(db, item["id"], plaid.institution_details(item["institution_id"], country_codes))
         sync_accounts(db, plaid, token, item["id"], base)
         result["transactions_changed"] = sync_transactions(db, plaid, token, item, base)
         result["holdings"], has_investments = sync_holdings(db, plaid, token, item["id"], base)
@@ -417,7 +454,7 @@ class SyncManager:
                     if (row := self.db.one("SELECT * FROM items WHERE id=?", (item_id,)))
                 ]
             results = [
-                sync_item(self.db, self.plaid, self.keys, item, self.settings.base_currency)
+                sync_item(self.db, self.plaid, self.keys, item, self.settings.base_currency, self.settings.plaid_country_codes)
                 for item in items
             ]
             snapshot_networth(self.db)

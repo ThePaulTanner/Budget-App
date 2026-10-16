@@ -277,9 +277,90 @@
     if (names.length === 0) return "No owner yet";
     return names.length === 1 ? names[0] : `Shared: ${names.join(" & ")}`;
   }
-  // A line under the page title in a person's view; null for the household.
+  const iconSvg = (id, size = 20) => svg("svg", { class: "ico", width: size, height: size, "aria-hidden": "true" }, svg("use", { href: `#${id}` }));
+
+  // A bank's logo (Plaid sends it as a small PNG), or its initials on the bank's colour.
+  function readableOn(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    return lum > 0.6 ? "#111827" : "#ffffff";
+  }
+  function bankLogo(item, name, size = 36) {
+    if (item && item.logo) {
+      const img = el("img", { class: "bank-logo", alt: "", width: size, height: size });
+      img.src = `data:image/png;base64,${item.logo}`;
+      return img;
+    }
+    const label = (name || "Bank").trim();
+    let hue = 0;
+    for (const ch of label) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
+    const color = item && /^#[0-9a-fA-F]{6}$/.test(item.color || "") ? item.color : null;
+    const badge = el("span", { class: "bank-logo initials", "aria-hidden": "true", text: label.slice(0, 2).toUpperCase() });
+    badge.style.width = badge.style.height = `${size}px`;
+    badge.style.background = color || `hsl(${hue} 50% 36%)`;
+    badge.style.color = color ? readableOn(color) : "#ffffff";
+    return badge;
+  }
+
+  // The Overview's account sections. Each is its own card with a total, then a table.
+  const ACCOUNT_SECTIONS = [
+    ["investment", "Investments", "i-trend"], ["depository", "Cash", "i-cash"], ["credit", "Credit", "i-card"],
+    ["loan", "Loans", "i-home"], ["other", "Other", "i-list"],
+  ];
+  function sectionTotals(rows, kind) {
+    const totals = {};
+    for (const a of rows) if (a.current_balance != null) totals[a.currency] = (totals[a.currency] || 0) + a.current_balance;
+    return Object.entries(totals).sort(([a], [b]) => (a === baseCurrency ? -1 : b === baseCurrency ? 1 : a.localeCompare(b)))
+      .map(([cur, value]) => money(value, cur)).join(" \u00B7 ") + (kind === "credit" || kind === "loan" ? " owed" : "");
+  }
+  function ownersCell(a) {
+    const names = (a.owner_ids || []).map(personName).filter(Boolean);
+    if (names.length === 0) return el("span", { class: "muted", text: "No owner yet" });
+    return el("span", {}, names.join(" & "), names.length > 1 && el("span", { class: "pill", text: "Shared" }));
+  }
+  function accountSection(kind, label, iconId, rows, itemsById) {
+    const credit = kind === "credit";
+    const showOwner = people.length > 0;
+    const open = (a) => { location.hash = `#/transactions?account=${encodeURIComponent(a.id)}`; };
+    const headers = [["Account", "col-account"], ["Bank", "col-bank"], showOwner && ["Owner", "col-owner"],
+      credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
+      kind === "depository" && ["Available", "num col-extra"],
+      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance"]].filter(Boolean);
+    const sorted = rows.slice().sort((a, b) => Math.abs(b.current_balance || 0) - Math.abs(a.current_balance || 0));
+    const body = sorted.map((a) => {
+      const item = itemsById.get(a.item_id);
+      const available = credit && a.credit_limit != null
+        ? (a.available_balance ?? (a.current_balance != null ? a.credit_limit - a.current_balance : null)) : null;
+      const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
+      const cells = [
+        el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, a.institution),
+          el("div", {}, el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+            a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
+            el("div", { class: "muted narrow-only", text: [a.institution, showOwner ? (ownerText(a) || "") : ""].filter(Boolean).join(" \u00B7 ") })))),
+        el("td", { class: "col-bank", text: a.institution || "" }),
+        showOwner && el("td", { class: "col-owner" }, ownersCell(a)),
+        credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
+        credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
+        credit && el("td", { class: `num col-extra${used != null && used >= 80 ? " neg" : ""}`, text: used != null ? `${used}%` : "\u2014" }),
+        kind === "depository" && el("td", { class: "num col-extra", text: a.available_balance != null ? money(a.available_balance, a.currency) : "\u2014" }),
+        el("td", { class: "num col-balance" }, a.current_balance == null ? "\u2014" : money(a.current_balance, a.currency)),
+      ].filter(Boolean);
+      return el("tr", { class: "click", tabindex: 0, onclick: (e) => { if (!e.target.closest("a")) open(a); },
+        onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(a); } }, cells);
+    });
+    return el("section", { class: `card acct-section ${kind}` },
+      el("div", { class: "section-head" },
+        el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
+        el("div", { class: "grow" }, el("h2", { text: label }), el("div", { class: "muted", text: `${rows.length} account${rows.length === 1 ? "" : "s"}` })),
+        el("div", { class: "section-total", text: sectionTotals(rows, kind) })),
+      el("div", { class: "table-wrap" }, el("table", { class: "acct-table" },
+        el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
+        el("tbody", {}, body))));
+  }
+
+  // A line under the page title in a person's view; empty for the household.
   function viewerNote(householdOnly = false) {
-    if (viewer == null) return null;
+    if (viewer == null) return document.createDocumentFragment();  // nothing to show, and nothing printed
     const name = personName(viewer) || "this person";
     return el("p", { class: "viewer-note", text: householdOnly
       ? `This page covers the whole household, not just ${name}.`
@@ -374,9 +455,9 @@
   let nwDays = 365;
 
   async function viewOverview(id) {
-    const [summary, accounts, log, spending] = await Promise.all([
+    const [summary, accounts, log, spending, items] = await Promise.all([
       api(scoped("/api/summary")), api(scoped("/api/accounts?include_hidden=false")), api("/auth/login-log?limit=100").catch(() => null),
-      api(scoped("/api/spending")).catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
+      api(scoped("/api/spending")).catch(() => ({ categories: [] })), api("/api/items").catch(() => [])]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -423,24 +504,17 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
-    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }));
-    if (accounts.length === 0) accountsCard.append(el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." }));
-    for (const [type, label] of TYPE_GROUPS) {
-      const group = accounts.filter((a) => (a.type === type) || (type === "other" && !TYPE_GROUPS.some(([t]) => t === a.type)));
-      if (group.length === 0) continue;
-      accountsCard.append(el("h3", { text: label }));
-      for (const a of group) {
-        const owed = a.type === "credit" || a.type === "loan";
-        const available = a.type === "credit" && a.credit_limit != null
-          ? (a.available_balance ?? (a.current_balance != null ? a.credit_limit - a.current_balance : null)) : null;
-        accountsCard.append(el("a", { class: "row click", href: `#/transactions?account=${encodeURIComponent(a.id)}` },
-          el("div", { class: "grow" },
-            el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  ••${a.mask}` })),
-            el("div", { class: "muted", text: [a.institution, ownerText(a), available != null ? `${money(available, a.currency)} available` : null].filter(Boolean).join(" · ") })),
-          el("div", { class: "amount" }, a.current_balance == null ? "—" : money(a.current_balance, a.currency), owed && el("div", { class: "muted", text: "owed" }))));
-      }
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    const known = new Set(["investment", "depository", "credit", "loan"]);
+    const sections = ACCOUNT_SECTIONS
+      .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
+      .filter(([, , , rows]) => rows.length > 0)
+      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
+    if (sections.length === 0) {
+      sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+        el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
     }
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), accountsCard);
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), ...sections);
     drawChart();
   }
 
@@ -1172,7 +1246,7 @@
     const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }),
       el("div", { class: "actions" }, linkButton, syncButton), syncOut,
       items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
-      items.map((i) => el("div", { class: "row" }, el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
+      items.map((i) => el("div", { class: "row" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
         el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
         i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
         el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
@@ -1379,9 +1453,10 @@
     syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
     const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
-    for (const a of document.querySelectorAll("#tabs a, #settings-link")) {
+    for (const a of document.querySelectorAll("#tabs a, #menu-list a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
+    menuButton.classList.toggle("current", name === "settings");
     const [title, subtitle] = PAGES[name];
     $("page-title").textContent = title;
     $("page-sub").textContent = subtitle;
@@ -1460,6 +1535,27 @@
   });
 
   for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
+  // The cog opens a small menu: Settings and Sign out.
+  const menuButton = $("menu-button");
+  const menuList = $("menu-list");
+  function setMenu(open) {
+    menuList.hidden = !open;
+    menuButton.setAttribute("aria-expanded", String(open));
+    if (open) menuList.querySelector("[role=menuitem]").focus();
+  }
+  menuButton.addEventListener("click", () => setMenu(menuList.hidden));
+  menuList.addEventListener("click", () => setMenu(false));
+  document.addEventListener("click", (e) => { if (!menuList.hidden && !e.target.closest("#account-menu")) setMenu(false); });
+  document.addEventListener("keydown", (e) => {
+    if (menuList.hidden) return;
+    if (e.key === "Escape") { setMenu(false); menuButton.focus(); }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = [...menuList.querySelectorAll("[role=menuitem]")];
+      const at = items.indexOf(document.activeElement);
+      items[(at + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+    }
+  });
   $("signout").addEventListener("click", signOut);
   $("viewer").addEventListener("change", (e) => { viewer = e.target.value === "" ? null : Number(e.target.value); route(); });
   window.addEventListener("hashchange", route);

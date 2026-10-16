@@ -33,7 +33,7 @@ from .rules import (
     parent_category,
     split_category,
 )
-from .sync import PlaidNotConfigured, SyncBusy, compute_networth, today_str
+from .sync import PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
 
 STATIC_DIR = Path(__file__).parent / "static"
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -1080,6 +1080,8 @@ def create_api_app(services: Services) -> FastAPI:
                 "needs_reauth": bool(r["needs_reauth"]),
                 "has_investments": bool(r["has_investments"]),
                 "last_synced_at": r["last_synced_at"],
+                "logo": r["logo"],
+                "color": r["color"],
             }
             for r in db.query("SELECT * FROM items ORDER BY created_at")
         ]
@@ -1139,11 +1141,8 @@ def create_api_app(services: Services) -> FastAPI:
             institution_id = plaid.item_get(access_token).get("item", {}).get("institution_id")
         except PlaidError as exc:
             raise HTTPException(502, exc.message) from None
-        name = (
-            plaid.institution_name(institution_id, settings.plaid_country_codes)
-            if institution_id
-            else None
-        ) or "Bank"
+        details = plaid.institution_details(institution_id, settings.plaid_country_codes) if institution_id else None
+        name = (details or {}).get("name") or "Bank"
         sealed = seal(access_token.encode(), services.keys.kek, b"item:" + item_id.encode())
         db.run(
             "INSERT INTO items(id, institution_id, institution, access_token, created_at) "
@@ -1152,6 +1151,7 @@ def create_api_app(services: Services) -> FastAPI:
             "needs_reauth=0, error_code=NULL",
             (item_id, institution_id, name, sealed, utcnow()),
         )
+        store_institution(db, item_id, details)
         services.sync.request(item_id)  # first sync happens in the background
         return {"item_id": item_id, "institution": name}
 

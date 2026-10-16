@@ -186,6 +186,8 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
         INSERT INTO users(username, password_hash, totp_secret, created_at) VALUES ('paul', 'h', x'00', 't');
         CREATE TABLE holdings (account_id TEXT, security_id TEXT, ticker TEXT);
         CREATE TABLE transactions (id TEXT PRIMARY KEY, name TEXT);
+        CREATE TABLE items (id TEXT PRIMARY KEY, institution TEXT);
+        INSERT INTO items VALUES ('item_1', 'TD');
         CREATE TABLE networth (date TEXT NOT NULL, currency TEXT NOT NULL, assets TEXT NOT NULL,
           liabilities TEXT NOT NULL, investments TEXT NOT NULL, net_worth TEXT NOT NULL, PRIMARY KEY (date, currency));
         INSERT INTO networth VALUES ('2026-10-01', 'CAD', '10', '4', '0', '6');
@@ -194,7 +196,7 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 6
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 7
     assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
     assert "merchant_id" in [c[1] for c in db.query("PRAGMA table_info(transactions)")]
     assert db.query("SELECT * FROM merchants") == [] and db.query("SELECT * FROM merchant_aliases") == []
@@ -202,6 +204,8 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
     assert (user["username"], user["failed_streak"], user["locked_at"]) == ("paul", 0, None)
     assert db.query("SELECT * FROM login_events") == []
     assert db.query("SELECT * FROM card_dues") == []
+    bank = db.one("SELECT institution, logo, color, logo_checked FROM items")  # existing banks get their logo at the next sync
+    assert (bank["institution"], bank["logo"], bank["color"], bank["logo_checked"]) == ("TD", None, None, 0)
     assert db.query("SELECT * FROM people") == [] and db.query("SELECT * FROM account_owners") == []
     kept = db.one("SELECT date, currency, person_id, net_worth FROM networth")  # old history becomes the household's
     assert (kept["date"], kept["currency"], kept["person_id"], kept["net_worth"]) == ("2026-10-01", "CAD", 0, "6")

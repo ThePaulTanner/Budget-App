@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE users (
@@ -54,7 +54,10 @@ CREATE TABLE items (
   needs_reauth INTEGER NOT NULL DEFAULT 0,
   has_investments INTEGER NOT NULL DEFAULT 0,
   last_synced_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  logo TEXT,
+  color TEXT,
+  logo_checked INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE accounts (
   id TEXT PRIMARY KEY,
@@ -268,6 +271,12 @@ INSERT INTO networth_new(date, currency, person_id, assets, liabilities, investm
   SELECT date, currency, 0, assets, liabilities, investments, net_worth FROM networth;
 DROP TABLE networth;
 ALTER TABLE networth_new RENAME TO networth;
+""",
+
+    6: """
+ALTER TABLE items ADD COLUMN logo TEXT;
+ALTER TABLE items ADD COLUMN color TEXT;
+ALTER TABLE items ADD COLUMN logo_checked INTEGER NOT NULL DEFAULT 0;
 """}
 
 
