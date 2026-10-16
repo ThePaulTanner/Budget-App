@@ -175,6 +175,8 @@ label.row { margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip { padding: 3px 11px; border-radius: 99px; background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); font-size: .85rem; font-weight: 550; }
 .dayhead { margin: 16px 0 4px; font-size: .78rem; color: var(--muted); font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+.row.sub { padding-left: 2.6rem; }
+.row.sub .progress { height: 5px; }
 .empty { text-align: center; color: var(--muted); padding: 28px 8px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px; margin: 12px 0; }
 .stats strong { display: block; font-size: 1.15rem; }

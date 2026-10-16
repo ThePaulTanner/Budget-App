@@ -5,7 +5,13 @@
   "categories": [
     {
       "category": "FOOD_AND_DRINK",
-      "spent": 132.47
+      "spent": 132.47,
+      "subcategories": [
+        {
+          "category": "FOOD_AND_DRINK_GROCERIES",
+          "spent": 132.47
+        }
+      ]
     }
   ]
 }

@@ -4,6 +4,7 @@
   "budgets": [
     {
       "category": "ENTERTAINMENT",
+      "parent": null,
       "monthly_limit": 40.0,
       "spent": 0.0,
       "remaining": 40.0,
@@ -11,6 +12,7 @@
     },
     {
       "category": "FOOD_AND_DRINK",
+      "parent": null,
       "monthly_limit": 600.0,
       "spent": 132.47,
       "remaining": 467.53,
@@ -18,6 +20,7 @@
     },
     {
       "category": "GENERAL_MERCHANDISE",
+      "parent": null,
       "monthly_limit": 400.0,
       "spent": 0.0,
       "remaining": 400.0,
@@ -25,6 +28,7 @@
     },
     {
       "category": "TRANSPORTATION",
+      "parent": null,
       "monthly_limit": 150.0,
       "spent": 0.0,
       "remaining": 150.0,

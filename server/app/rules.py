@@ -16,6 +16,15 @@ from .db import Database, placeholders
 # Categories that are not "spending": moving money around, paying debts, or income.
 EXCLUDED_FROM_SPENDING = frozenset({"INCOME", "TRANSFER_IN", "TRANSFER_OUT", "LOAN_PAYMENTS"})
 
+# Plaid's top-level categories. A detailed code such as FOOD_AND_DRINK_FAST_FOOD starts with its
+# top-level one, which is how a sub-category finds its parent.
+PRIMARY_CATEGORIES = (
+    "INCOME", "TRANSFER_IN", "TRANSFER_OUT", "LOAN_PAYMENTS", "BANK_FEES", "ENTERTAINMENT",
+    "FOOD_AND_DRINK", "GENERAL_MERCHANDISE", "HOME_IMPROVEMENT", "MEDICAL", "PERSONAL_CARE",
+    "GENERAL_SERVICES", "GOVERNMENT_AND_NON_PROFIT", "TRANSPORTATION", "TRAVEL",
+    "RENT_AND_UTILITIES", "OTHER",
+)
+
 EFFECTIVE_CATEGORY_SQL = "COALESCE(override_category, rule_category, plaid_category)"
 
 _CATEGORY = re.compile(r"^[A-Z0-9][A-Z0-9_&'\-]{0,59}$")
@@ -26,6 +35,44 @@ def normalize_category(raw: str) -> str:
     if not _CATEGORY.match(value):
         raise ValueError("A category is 1-60 letters, numbers, spaces, & ' or -.")
     return value
+
+
+def parent_category(category: str | None) -> str | None:
+    """FOOD_AND_DRINK_FAST_FOOD -> FOOD_AND_DRINK. None when it is not a sub-category."""
+    if not category:
+        return None
+    best = None
+    for primary in PRIMARY_CATEGORIES:
+        if category.startswith(primary + "_") and (best is None or len(primary) > len(best)):
+            best = primary
+    return best
+
+
+def top_level(category: str | None) -> str | None:
+    return parent_category(category) or category
+
+
+def is_excluded(category: str | None) -> bool:
+    """Not spending (transfers, debt payments, income), including their sub-categories."""
+    return top_level(category) in EXCLUDED_FROM_SPENDING
+
+
+def split_category(row: Any) -> tuple[str | None, str | None]:
+    """(top-level category, sub-category or None) for a transaction row.
+
+    Plaid's own category has a sub-category in `category_detailed`. A category the user (or a
+    rule) chose is a sub-category only when it is written as one, e.g. FOOD_AND_DRINK_FAST_FOOD.
+    Spending counts each transaction once, in its top-level category; the sub-category is a
+    finer view of the same money."""
+    chosen = row["override_category"] if row["override_category"] is not None else row["rule_category"]
+    if chosen is not None:
+        parent = parent_category(chosen)
+        return (parent, chosen) if parent else (chosen, None)
+    primary = row["plaid_category"]
+    detailed = row["category_detailed"]
+    if primary is not None and detailed and parent_category(detailed) == primary:
+        return primary, detailed
+    return primary, None
 
 
 def _norm(text: str) -> str:
@@ -115,8 +162,8 @@ def preview(db: Database, candidate: dict[str, Any]) -> dict[str, int]:
         if winner is not probe or tx["effective"] == probe["category"]:
             continue
         would_change += 1
-        was_excluded = tx["effective"] in EXCLUDED_FROM_SPENDING
-        will_be_excluded = probe["category"] in EXCLUDED_FROM_SPENDING
+        was_excluded = is_excluded(tx["effective"])
+        will_be_excluded = is_excluded(probe["category"])
         if will_be_excluded and not was_excluded:
             into_excluded += 1
         elif was_excluded and not will_be_excluded:

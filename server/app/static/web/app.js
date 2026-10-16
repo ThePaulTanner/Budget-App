@@ -93,11 +93,25 @@
     RENT_AND_UTILITIES: "\u{1F4A1}", OTHER: "\u{1F4C1}", GROCERIES: "\u{1F6D2}",
   };
   const KNOWN_CATEGORIES = Object.keys(ICONS);
-  const icon = (category) => ICONS[category] || "\u{1F4C1}";
-  function categoryLabel(code) {
-    if (!code) return "Uncategorized";
+  // Plaid's top-level categories. A sub-category's code starts with its parent's, as in
+  // FOOD_AND_DRINK_FAST_FOOD, so the parent can be found from the code alone.
+  const PRIMARIES = KNOWN_CATEGORIES.filter((c) => c !== "GROCERIES");
+  function parentOf(code) {
+    let best = null;
+    for (const p of PRIMARIES) if (code && code.startsWith(`${p}_`) && (!best || p.length > best.length)) best = p;
+    return best;
+  }
+  const icon = (category) => ICONS[category] || ICONS[parentOf(category)] || "\u{1F4C1}";
+  function titleCase(code) {
     return code.toLowerCase().split("_").map((w) => (w === "and" ? "&" : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
   }
+  // "Food & Drink", or "Food & Drink \u203A Fast Food" for a sub-category.
+  function categoryLabel(code) {
+    if (!code) return "Uncategorized";
+    const parent = parentOf(code);
+    return parent ? `${titleCase(parent)} \u203A ${titleCase(code.slice(parent.length + 1))}` : titleCase(code);
+  }
+  const subLabel = (code) => titleCase(code.slice(parentOf(code).length + 1));
   const TYPE_GROUPS = [["depository", "Cash"], ["credit", "Credit"], ["investment", "Investments"], ["loan", "Loans"], ["other", "Other"]];
 
   function toast(text, isError = false) {
@@ -414,7 +428,7 @@
         el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
           el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
-          el("div", { class: "muted", text: `${categoryLabel(tx.category)} · ${accountName[tx.account_id] || ""}` })),
+          el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} · ${accountName[tx.account_id] || ""}` })),
         el("div", { class: `amount ${amount.cls}`, text: amount.text }));
       const open = () => openTransaction(tx, choices, accountName, (updated) => {
         state.rows.set(updated.id, updated);
@@ -583,15 +597,17 @@
 
     const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
     if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
+    const budgeted = new Set(budgets.budgets.map((b) => b.category));
     for (const b of budgets.budgets) {
       const left = b.remaining >= 0 ? `${money(b.remaining, cur)} left` : `${money(-b.remaining, cur)} over`;
-      budgetCard.append(el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => budgetDialog(b),
+      const inside = b.parent && budgeted.has(b.parent) ? ` \u00B7 also counted in ${categoryLabel(b.parent)}` : "";
+      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, onclick: () => budgetDialog(b),
         onkeydown: (e) => { if (e.key === "Enter") budgetDialog(b); } },
         el("div", { class: "icon", text: icon(b.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
           el("div", {}, el("strong", { text: categoryLabel(b.category) })),
           progress(b.percent),
-          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} · ${left}` }))));
+          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} · ${left}${inside}` }))));
     }
 
     const maxSpent = Math.max(...spending.categories.map((c) => Math.abs(c.spent)), 1);
@@ -603,6 +619,16 @@
         el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
         el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
         el("div", { class: "amount", text: money(c.spent, cur) })));
+      // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
+      const split = c.subcategories || [];
+      const rest = c.spent - split.reduce((sum, s) => sum + s.spent, 0);
+      const parts = split.map((s) => [subLabel(s.category), s.spent]);
+      if (split.length > 0 && Math.abs(rest) >= 0.005) parts.push(["Not in a sub-category", rest]);
+      for (const [label, spent] of parts) {
+        spendCard.append(el("div", { class: "row sub" },
+          el("div", { class: "grow" }, el("div", { class: "muted", text: label }), progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true)),
+          el("div", { class: "amount muted", text: money(spent, cur) })));
+      }
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
     view().replaceChildren(nav, budgetCard, el("div", { class: "grid" }, spendCard, trendCard));
