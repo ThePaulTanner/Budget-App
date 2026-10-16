@@ -1,6 +1,8 @@
 """Command line helpers. Run inside the container:
 
     docker exec -it homefinance python -m app.cli create-user --username paul
+    docker exec -it homefinance python -m app.cli login-log
+    docker exec -it homefinance python -m app.cli unlock
     python -m app.cli gen-key > hf_master_key
 """
 
@@ -54,6 +56,30 @@ def _create_user(args: argparse.Namespace) -> int:
     return 0
 
 
+def _unlock(_: argparse.Namespace) -> int:
+    from .bootstrap import build_services
+
+    services = build_services(load_settings())
+    if services.auth.unlock():
+        print("Sign-in unlocked. The failed-attempt count is back to zero.")
+    else:
+        print("Sign-in was not locked. The failed-attempt count is back to zero.")
+    return 0
+
+
+def _login_log(args: argparse.Namespace) -> int:
+    from .bootstrap import build_services
+
+    services = build_services(load_settings())
+    data = services.auth.login_log(args.limit)
+    state = "LOCKED since " + data["locked_at"] if data["locked"] else "not locked"
+    print(f"Sign-in is {state}. Failed in a row: {data['failed_streak']} of {data['max_failed_logins']}.\n")
+    for e in data["events"]:
+        times = f" x{e['count']}" if e["count"] > 1 else ""
+        print(f"{e['at']}  {e['result']:<13}{times:<6} from {e['ip'] or '-'}  {e['origin'] or ''}  {e['device_name'] or ''}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -61,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
     create = sub.add_parser("create-user", help="create the login (password + authenticator)")
     create.add_argument("--username", required=True)
     create.set_defaults(func=_create_user)
+    sub.add_parser("unlock", help="unlock sign-in after too many failed attempts").set_defaults(func=_unlock)
+    log = sub.add_parser("login-log", help="show recent sign-in attempts")
+    log.add_argument("--limit", type=int, default=50)
+    log.set_defaults(func=_login_log)
     args = parser.parse_args(argv)
     return args.func(args)
 

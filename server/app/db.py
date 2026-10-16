@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE users (
@@ -23,7 +23,9 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   totp_secret BLOB NOT NULL,
   totp_last_step INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  failed_streak INTEGER NOT NULL DEFAULT 0,
+  locked_at TEXT
 );
 CREATE TABLE recovery_codes (
   id INTEGER PRIMARY KEY,
@@ -116,6 +118,17 @@ CREATE TABLE rules (
   category TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE login_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  result TEXT NOT NULL,
+  ip TEXT,
+  origin TEXT,
+  method TEXT,
+  device_name TEXT,
+  user_known INTEGER NOT NULL DEFAULT 0,
+  count INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE networth (
   date TEXT NOT NULL,
   currency TEXT NOT NULL,
@@ -126,6 +139,25 @@ CREATE TABLE networth (
   PRIMARY KEY (date, currency)
 );
 """
+
+# Upgrades for databases created by an older version: {from_version: SQL}.
+MIGRATIONS = {
+    1: """
+ALTER TABLE users ADD COLUMN failed_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN locked_at TEXT;
+CREATE TABLE login_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  result TEXT NOT NULL,
+  ip TEXT,
+  origin TEXT,
+  method TEXT,
+  device_name TEXT,
+  user_known INTEGER NOT NULL DEFAULT 0,
+  count INTEGER NOT NULL DEFAULT 1
+);
+""",
+}
 
 
 def utcnow() -> str:
@@ -176,19 +208,25 @@ class Database:
     def _migrate(self) -> None:
         with self._lock:
             version = self._conn.execute("PRAGMA user_version").fetchone()[0]
-            if version == 0:
+            if version > SCHEMA_VERSION:
+                raise DatabaseError(
+                    f"This database is from a newer version (schema {version}); "
+                    "update the server image instead of downgrading."
+                )
+            while version < SCHEMA_VERSION:
+                script = SCHEMA if version == 0 else MIGRATIONS[version]
+                target = SCHEMA_VERSION if version == 0 else version + 1
                 self._conn.execute("BEGIN")
                 try:
-                    for statement in SCHEMA.split(";\n"):
+                    for statement in script.split(";\n"):
                         if statement.strip():
                             self._conn.execute(statement)
-                    self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                    self._conn.execute(f"PRAGMA user_version = {target}")
                     self._conn.execute("COMMIT")
                 except Exception:
                     self._conn.execute("ROLLBACK")
                     raise
-            elif version != SCHEMA_VERSION:
-                raise DatabaseError(f"Unsupported database schema version {version}")
+                version = target
 
     def query(self, sql: str, params: tuple | list = ()) -> list[Any]:
         with self._lock:

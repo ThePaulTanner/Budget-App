@@ -53,6 +53,17 @@ WEB_HEADER = "x-requested-with"
 WEB_HEADER_VALUE = "HomeFinance"
 
 
+def origin_of(request: Request) -> str:
+    """What the proxy says about the caller. Logged for the owner to read, never trusted for
+    any decision (the real peer behind Tailscale Serve is always the NAS itself)."""
+    parts = []
+    for label, header in (("tailscale-user", "tailscale-user-login"), ("forwarded-for", "x-forwarded-for")):
+        value = request.headers.get(header)
+        if value:
+            parts.append(f"{label}={value}")
+    return "; ".join(parts)[:120]
+
+
 def num(value: Any) -> float | None:
     """Money out as a JSON number (the app decodes it exactly; see CLAUDE.md)."""
     return None if value is None else float(Decimal(str(value)))
@@ -274,7 +285,7 @@ def create_api_app(services: Services) -> FastAPI:
     @app.post("/auth/login")
     def login(body: LoginBody, request: Request):
         ip = request.client.host if request.client else "-"
-        return auth.login(body.username, body.password, body.code, body.device_name, ip)
+        return auth.login(body.username, body.password, body.code, body.device_name, ip, origin_of(request))
 
     @app.post("/auth/refresh")
     def refresh(body: RefreshBody):
@@ -284,6 +295,10 @@ def create_api_app(services: Services) -> FastAPI:
     def logout(ctx: Auth):
         auth.revoke(ctx, ctx.session_id)
         return {"ok": True}
+
+    @app.get("/auth/login-log")
+    def login_log(ctx: Auth, limit: Annotated[int, Query(ge=1, le=500)] = 50):
+        return auth.login_log(limit)
 
     @app.get("/auth/sessions")
     def sessions(ctx: Auth):
@@ -337,7 +352,7 @@ def create_api_app(services: Services) -> FastAPI:
     def web_login(body: WebLoginBody, request: Request):
         require_same_site(request)
         ip = request.client.host if request.client else "-"
-        return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip))
+        return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip, origin_of(request)))
 
     @app.post("/web/refresh")
     def web_refresh(request: Request):

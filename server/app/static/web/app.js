@@ -286,13 +286,35 @@
     });
   }
 
+  // ---------------------------------------------------------------- sign-in activity
+
+  const LOGIN_RESULTS = {
+    success: ["Signed in", false], bad_password: ["Wrong password", true], bad_code: ["Wrong authenticator code", true],
+    unknown_user: ["Unknown username", true], rate_limited: ["Blocked: too many attempts", true],
+    locked: ["Refused: sign-in is locked", true], lockout: ["Sign-in locked after too many failures", true],
+    unlocked: ["Unlocked from the NAS", false],
+  };
+  const FAILED = new Set(["bad_password", "bad_code", "unknown_user", "lockout"]);
+
+  function setAlert(log) {
+    const node = $("alert");
+    const recent = log ? log.events.filter((e) => FAILED.has(e.result) && Date.now() - new Date(e.at).getTime() < 864e5).length : 0;
+    if (!log || (!log.locked && recent === 0)) { node.hidden = true; return; }
+    node.replaceChildren(
+      log.locked ? "New sign-ins are locked after too many failed attempts. " : `${recent} failed sign-in attempt${recent === 1 ? "" : "s"} in the last 24 hours. `,
+      el("a", { href: "#/settings", text: "See the sign-in activity" }));
+    node.hidden = false;
+  }
+
   // ---------------------------------------------------------------- Overview
 
   let nwDays = 365;
 
   async function viewOverview(id) {
-    const [summary, accounts] = await Promise.all([api("/api/summary"), api("/api/accounts?include_hidden=false")]);
+    const [summary, accounts, log] = await Promise.all([
+      api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null)]);
     if (id !== navId) return;
+    setAlert(log);
     baseCurrency = summary.base_currency;
     setBanner(summary.items_needing_attention);
     const worth = summary.net_worth.find((n) => n.currency === baseCurrency) || summary.net_worth[0];
@@ -601,9 +623,10 @@
   // ---------------------------------------------------------------- Settings
 
   async function viewSettings(id) {
-    const [items, sessions, rules, accounts, choices] = await Promise.all([
-      api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices()]);
+    const [items, sessions, rules, accounts, choices, log] = await Promise.all([
+      api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
     if (id !== navId) return;
+    setAlert(log);
     const reload = () => guard(viewSettings(++navId));
 
     const syncOut = el("div");
@@ -673,7 +696,20 @@
         catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
       } }), el("span", { class: "grow", text: `${a.institution || ""} ${a.name}${a.mask ? " ••" + a.mask : ""}` }))));
 
-    view().replaceChildren(banks, el("div", { class: "grid" }, devices, rulesCard), accountsCard);
+    const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
+      log.locked
+        ? el("p", { class: "error", role: "alert", text: "Sign-in is locked. Unlock it from the NAS: docker exec -it homefinance python -m app.cli unlock" })
+        : el("p", { class: "muted", text: `${log.failed_streak} of ${log.max_failed_logins} failed attempts in a row. At ${log.max_failed_logins}, new sign-ins are locked until you unlock them on the NAS. A successful sign-in resets the count.` }),
+      log.events.length === 0 && el("p", { class: "empty", text: "Nothing recorded yet." }),
+      log.events.map((e) => {
+        const [label, bad] = LOGIN_RESULTS[e.result] || [e.result, false];
+        const detail = [new Date(e.at).toLocaleString("en-CA"), e.ip && `from ${e.ip}`, e.origin, e.method === "recovery" && "recovery code", e.device_name].filter(Boolean).join(" \u00B7 ");
+        return el("div", { class: "row" }, el("div", { class: "grow" },
+          el("div", {}, el("strong", { class: bad ? "neg" : "", text: label }), e.count > 1 && el("span", { class: "badge", text: `\u00D7${e.count}` })),
+          el("div", { class: "muted", text: detail })));
+      }));
+
+    view().replaceChildren(banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
   }
 
   // ---------------------------------------------------------------- shell: routes, sign-in
@@ -716,6 +752,7 @@
     $("login-message").textContent = message;
     view().replaceChildren();
     $("banner").hidden = true;
+    $("alert").hidden = true;
     const user = document.querySelector("#login-form [name=username]");
     if (user) user.focus();
   }

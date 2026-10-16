@@ -96,3 +96,5 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1rem; curso
   .brand { margin-right: auto; }
   nav { order: 3; flex-basis: 100%; }
 }
+.banner.danger { background: var(--red); color: #fff; }
+.banner.danger a { color: #fff; }

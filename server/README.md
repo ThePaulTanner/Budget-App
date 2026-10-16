@@ -9,7 +9,7 @@ A private budgeting API for one person. It pulls balances, transactions and inve
 | Layer | What it does |
 |---|---|
 | Network | The API is only reachable through your Tailscale network (WireGuard + HTTPS). Only the Plaid webhook port is public, and it accepts nothing but correctly signed Plaid messages. |
-| Login | Password + authenticator code (or a one-time recovery code). Passwords are Argon2id-hashed with a secret pepper. Short-lived access tokens, per-device refresh tokens that change on every use, a device list you can revoke from, and lockouts after failed attempts. |
+| Login | Password + authenticator code (or a one-time recovery code). Passwords are Argon2id-hashed with a secret pepper. Short-lived access tokens, per-device refresh tokens that change on every use, a device list you can revoke from, a log of every sign-in attempt, and a hard lock after 10 failed attempts in a row. |
 | Database | The whole database file is encrypted with SQLCipher (AES-256). |
 | Bank tokens | Plaid access tokens get a second layer: AES-256-GCM with a separate key per token, tied to their row. |
 | Master key | One 256-bit key, kept in a file outside the database. Every other key is derived from it. |
@@ -17,7 +17,7 @@ A private budgeting API for one person. It pulls balances, transactions and inve
 | Container | Runs as a normal user, read-only filesystem, no extra privileges, no request logging. |
 
 **Other honest limits:**
-- Behind Tailscale every request reaches the container from the same address, so the failed-sign-in limiter cannot tell devices apart. The per-user lockout (5 failures, doubling up to 15 minutes) and a shared 20-failure lockout mean a device on your tailnet could lock you out of signing in for a while by guessing wrongly on purpose. Nobody can get in that way, and lockouts expire. Recovery codes do not bypass a lockout.
+- Behind Tailscale every request reaches the container from the same address, so the temporary-delay limiter cannot tell devices apart, and the hard lock (10 failures in a row, then no new sign-ins until `python -m app.cli unlock` on the NAS) means a device on your tailnet could lock you out of new sign-ins by guessing wrongly on purpose. Nobody can get in that way, devices already signed in keep working, and you unlock from the NAS. Recovery codes do not bypass a lock.
 - The public webhook port is rate limited (120 requests a minute) before signatures are checked, so a flood of junk could delay real webhooks. The hourly backup sync still collects the data.
 
 **Honest limit:** encryption protects you if the NAS disk, a backup or the database file is stolen. It cannot protect a NAS that an attacker already controls while it is running, because the key is in memory then. Keep DSM and Tailscale updated.
@@ -113,6 +113,7 @@ Signing in sets a cookie that keeps you signed in for 30 days from last use (see
 | `BASE_CURRENCY` | `CAD` | The currency budgets and spending are counted in |
 | `PUBLIC_WEBHOOK_URL` | empty | Where Plaid sends "new data" messages |
 | `SYNC_INTERVAL_MINUTES` | `60` | Backup sync timer (webhooks do the real work) |
+| `MAX_FAILED_LOGINS` | `10` | Failed sign-ins in a row before new sign-ins are locked (3 to 100). It is only read if your `docker-compose.yml` passes it through, as the repo copy does |
 | `TZ` | `America/Toronto` | Decides what "today" and "this month" mean |
 | `HF_MASTER_KEY_FILE` | `/run/secrets/hf_master_key` | Path to the master key |
 | `PLAID_CLIENT_ID_FILE`, `PLAID_SECRET_FILE` | in `/run/secrets` | Plaid credentials as files |
@@ -125,6 +126,8 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 - **Update:** pull the new image and recreate the project (Container Manager → Project → Build/Update).
 - **Backups:** back up the `data` folder (it is encrypted; safe to copy) **and, separately,** the master key.
 - **Lost the authenticator:** sign in with a recovery code.
+- **See who tried to sign in:** web app → Settings → Sign-in activity, or `docker exec -it homefinance python -m app.cli login-log`.
+- **Locked out after too many failed attempts:** `docker exec -it homefinance python -m app.cli unlock`. It takes effect at once, no restart.
 - **Go to production:** swap the Plaid secret file for the production one, set `PLAID_ENV=production`, restart, and link your real banks. Sandbox data stays in the database until you remove those banks (`DELETE /api/items/{id}`).
 
 ## Troubleshooting
@@ -138,7 +141,10 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 | New transactions are slow to appear | `PUBLIC_WEBHOOK_URL` unset or Funnel not running; the hourly timer still catches up |
 | `unable to open database file` | Synology ACL made `data` read-only for the container user (see step 1) |
 | A `.env` change has no effect | The container was only restarted; recreate it with `--force-recreate` |
+| `423 Sign-in is locked` | 10 failed sign-ins in a row; run `python -m app.cli unlock` on the NAS (see Everyday use) |
 | `429 Too many attempts` | Five failed sign-ins; wait for the lockout (it doubles each time, up to 15 minutes) |
+
+**Upgrading an existing install:** the database upgrades itself on start (schema 1 to 2 adds the sign-in log). Back up the `data` folder first, as with any update. If you copied `docker-compose.yml` to the NAS earlier, add `MAX_FAILED_LOGINS: ${MAX_FAILED_LOGINS:-10}` under `environment:` only if you want a limit other than 10.
 
 ## Developing
 

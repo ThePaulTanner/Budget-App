@@ -8,7 +8,9 @@ Design (see docs/SECURITY.md):
 - Refresh token: random 256-bit value, replaced on every use, stored only as a hash.
   The previous token keeps working for 60 seconds so an app killed mid-refresh can
   retry. Using it after that is treated as theft and revokes that device only.
-- Failed logins are rate limited with growing lockouts.
+- Failed logins are rate limited with growing lockouts, every attempt is written to a log
+  (never the password or code), and after `max_failed_logins` failures in a row new
+  sign-ins stay locked until the owner unlocks them from the NAS (`cli unlock`).
 """
 
 from __future__ import annotations
@@ -16,9 +18,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import threading
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Callable
 
 import jwt
@@ -44,6 +48,11 @@ class AuthError(Exception):
 
 
 INVALID = "Invalid credentials"
+LOCKED_STATUS = 423
+LOCKED_MESSAGE = "Sign-in is locked after too many failed attempts. Unlock it from the NAS."
+LOG_RETENTION_DAYS = 180
+LOG_MAX_ROWS = 5000
+COLLAPSED_RESULTS = {"rate_limited", "locked"}  # repeats from one address become one row with a count
 
 
 class LoginLimiter:
@@ -108,10 +117,15 @@ class AuthService:
         *,
         clock: Callable[[], float] = time.time,
         hasher: PasswordHasher | None = None,
+        max_failed_logins: int = 10,
     ) -> None:
         self.db = db
         self.keys = keys
         self.clock = clock
+        self.max_failed_logins = max_failed_logins
+        # One sign-in attempt at a time: otherwise a burst of parallel guesses could all
+        # pass the lock check before the first failure is counted.
+        self._login_lock = threading.Lock()
         self.hasher = hasher or PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
         self._dummy_hash = self.hasher.hash(self._prehash("not-a-real-password"))
         self.user_limiter = LoginLimiter(max_failures=5, clock=clock)
@@ -192,35 +206,137 @@ class AuthService:
     # -- login / tokens ----------------------------------------------------
 
     def login(
-        self, username: str, password: str, code: str, device_name: str, ip: str = "-"
+        self,
+        username: str,
+        password: str,
+        code: str,
+        device_name: str,
+        ip: str = "-",
+        origin: str = "",
     ) -> dict:
         key = username.strip().lower()
-        self.user_limiter.check(key)
-        self.ip_limiter.check(ip)
-        user = self.db.one("SELECT * FROM users WHERE username=?", (key,))
-        ok = self._verify_password(user["password_hash"] if user else None, password)
-        code = code.strip()
-        if ok and user is not None:
-            ok = self._check_totp(user, code) or self._check_recovery(user, code)
-        if not ok or user is None:
-            self.user_limiter.failure(key)
-            self.ip_limiter.failure(ip)
-            raise AuthError(401, INVALID)
-        self.user_limiter.success(key)
-        if self.hasher.check_needs_rehash(user["password_hash"]):
+        with self._login_lock:
+            user = self.db.one("SELECT * FROM users WHERE username=?", (key,))
+            known = user is not None
+            if user is not None and user["locked_at"] is not None:
+                self._log("locked", ip, origin, device=device_name, known=True)
+                raise AuthError(LOCKED_STATUS, LOCKED_MESSAGE)
+            try:
+                self.user_limiter.check(key)
+                self.ip_limiter.check(ip)
+            except AuthError:
+                self._log("rate_limited", ip, origin, device=device_name, known=known)
+                raise
+            password_ok = self._verify_password(user["password_hash"] if user else None, password)
+            code = code.strip()
+            method = None
+            if password_ok and user is not None:
+                if self._check_totp(user, code):
+                    method = "totp"
+                elif self._check_recovery(user, code):
+                    method = "recovery"
+            if method is None or user is None:
+                result = "unknown_user" if user is None else "bad_password" if not password_ok else "bad_code"
+                self.user_limiter.failure(key)
+                self.ip_limiter.failure(ip)
+                self._log(result, ip, origin, device=device_name, known=known)
+                if user is not None:
+                    self._count_failure(user["id"], ip, origin, device_name)
+                raise AuthError(401, INVALID)
+            self.user_limiter.success(key)
+            self.db.run("UPDATE users SET failed_streak=0 WHERE id=?", (user["id"],))
+            self._log("success", ip, origin, device=device_name, known=True, method=method)
+            if self.hasher.check_needs_rehash(user["password_hash"]):
+                self.db.run(
+                    "UPDATE users SET password_hash=? WHERE id=?",
+                    (self.hasher.hash(self._prehash(password)), user["id"]),
+                )
+            session_id = uuid.uuid4().hex
+            refresh = secrets.token_urlsafe(32)
+            now = utcnow()
             self.db.run(
-                "UPDATE users SET password_hash=? WHERE id=?",
-                (self.hasher.hash(self._prehash(password)), user["id"]),
+                "INSERT INTO sessions(id, user_id, device_name, refresh_hash, created_at, last_used_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (session_id, user["id"], (device_name or "Unknown device")[:80], _sha256(refresh), now, now),
             )
-        session_id = uuid.uuid4().hex
-        refresh = secrets.token_urlsafe(32)
+            return self._tokens(user["id"], session_id, refresh)
+
+    # -- sign-in log and hard lock ---------------------------------------------
+
+    def _count_failure(self, user_id: int, ip: str, origin: str, device: str) -> None:
+        self.db.run("UPDATE users SET failed_streak=failed_streak+1 WHERE id=?", (user_id,))
+        row = self.db.one("SELECT failed_streak FROM users WHERE id=?", (user_id,))
+        if row["failed_streak"] >= self.max_failed_logins:
+            if self.db.run(
+                "UPDATE users SET locked_at=? WHERE id=? AND locked_at IS NULL", (utcnow(), user_id)
+            ):
+                self._log("lockout", ip, origin, device=device, known=True)
+
+    def _log(
+        self,
+        result: str,
+        ip: str,
+        origin: str = "",
+        *,
+        device: str | None = None,
+        known: bool = False,
+        method: str | None = None,
+    ) -> None:
+        """Record one attempt. Only metadata: never the password, the code, or a username
+        that is not the real one (people sometimes type a password into the username box)."""
         now = utcnow()
+        if result in COLLAPSED_RESULTS:
+            last = self.db.one("SELECT id, result, ip FROM login_events ORDER BY id DESC LIMIT 1")
+            if last is not None and last["result"] == result and last["ip"] == ip[:64]:
+                self.db.run("UPDATE login_events SET count=count+1, at=? WHERE id=?", (now, last["id"]))
+                return
         self.db.run(
-            "INSERT INTO sessions(id, user_id, device_name, refresh_hash, created_at, last_used_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (session_id, user["id"], (device_name or "Unknown device")[:80], _sha256(refresh), now, now),
+            "INSERT INTO login_events(at, result, ip, origin, method, device_name, user_known) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (now, result, ip[:64], origin[:120] or None, method, (device or "")[:80] or None, int(known)),
         )
-        return self._tokens(user["id"], session_id, refresh)
+        cutoff = (datetime.now(UTC) - timedelta(days=LOG_RETENTION_DAYS)).isoformat().replace("+00:00", "Z")
+        self.db.run("DELETE FROM login_events WHERE at < ?", (cutoff,))
+        self.db.run(
+            "DELETE FROM login_events WHERE id <= (SELECT MAX(id) FROM login_events) - ?", (LOG_MAX_ROWS,)
+        )
+
+    def login_log(self, limit: int = 50) -> dict:
+        user = self.db.one("SELECT failed_streak, locked_at FROM users LIMIT 1")
+        rows = self.db.query(
+            "SELECT at, result, ip, origin, method, device_name, user_known, count "
+            "FROM login_events ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return {
+            "locked": bool(user and user["locked_at"]),
+            "locked_at": user["locked_at"] if user else None,
+            "failed_streak": user["failed_streak"] if user else 0,
+            "max_failed_logins": self.max_failed_logins,
+            "events": [
+                {
+                    "at": r["at"],
+                    "result": r["result"],
+                    "ip": r["ip"],
+                    "origin": r["origin"],
+                    "method": r["method"],
+                    "device_name": r["device_name"],
+                    "user_known": bool(r["user_known"]),
+                    "count": r["count"],
+                }
+                for r in rows
+            ],
+        }
+
+    def unlock(self) -> bool:
+        """Clear the hard lock and the failure count. Returns whether it was locked."""
+        with self._login_lock:
+            user = self.db.one("SELECT locked_at FROM users LIMIT 1")
+            was_locked = bool(user and user["locked_at"])
+            self.db.run("UPDATE users SET locked_at=NULL, failed_streak=0")
+            if was_locked:
+                self._log("unlocked", "cli", known=True)
+            return was_locked
 
     def refresh(self, refresh_token: str) -> dict:
         digest = _sha256(refresh_token)

@@ -38,7 +38,7 @@ def build_services(settings: Settings, *, plaid: PlaidClient | None = None) -> S
         settings=settings,
         keys=keys,
         db=db,
-        auth=AuthService(db, keys),
+        auth=AuthService(db, keys, max_failed_logins=settings.max_failed_logins),
         plaid=plaid,
         sync=SyncManager(db, keys, plaid, settings),
     )

@@ -11,7 +11,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - Because the URL is HTTPS with a real certificate, **don't add App Transport Security exceptions** (`NSAllowsArbitraryLoads`, etc.).
 - **Login:** `POST /auth/login` with `{"username", "password", "code", "device_name"}`, where `code` is the authenticator code (or a one-time recovery code). It returns `{access_token, refresh_token, token_type, expires_in, session_id}`. Every `/api/*` request needs `Authorization: Bearer <access_token>`. The access token lasts 15 minutes.
 - **Refresh:** `POST /auth/refresh` with `{"refresh_token"}` returns a new pair. **Every refresh token works once**: always store the new one. If the app is killed before saving it, retrying the old one within 60 seconds still works. After that, an old token revokes the device.
-- `POST /auth/logout`, `GET /auth/sessions` (signed-in devices) and `DELETE /auth/sessions/{id}` (revoke one) also need the bearer token. Too many failed sign-ins return `429` with `Retry-After`.
+- `POST /auth/logout`, `GET /auth/sessions` (signed-in devices), `DELETE /auth/sessions/{id}` (revoke one) and `GET /auth/login-log` (recent sign-in attempts and lock state) also need the bearer token. Too many failed sign-ins return `429` with `Retry-After`.
 - `GET /health` needs no login and returns `{"ok":true,"plaid_env":"sandbox"|"production"}`. Use it for the "Test connection" button.
 - Linking and reconnecting banks happens on a web page at the server root (`GET /`), not in the app. The app never uses the Plaid SDK. When a bank needs reconnecting, the app opens the base URL in Safari (`openURL`).
 
@@ -37,7 +37,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - **Timestamps** (`last_synced_at`, `updated_at`) are UTC ISO-8601 with `Z`. They usually have fractional seconds (`2026-10-02T23:41:42.799072Z`) but sometimes don't, so the decoder must accept both forms.
 - **`month`** is `"YYYY-MM"`.
 - **Nullable fields:** `official_name`, `mask`, `subtype`, `available_balance`, `credit_limit`, `current_balance`, `authorized_date`, `merchant_name`, `logo_url`, `ticker`, `price`, `value`, `cost_basis`, `gain`, `percent`, `as_of`, `last_synced_at`, `institution`, `error_code`.
-- **Errors** are `{"detail": "message"}` with a status code: 400 bad input, 401 bad or missing credentials, 404 not found, 409 sync already running, 422 validation, 429 too many sign-in attempts, 502 Plaid upstream error, 503 Plaid not configured.
+- **Errors** are `{"detail": "message"}` with a status code: 400 bad input, 401 bad or missing credentials, 404 not found, 409 sync already running, 422 validation, 423 sign-in locked after too many failed attempts (show the `detail` text; unlocking happens on the NAS), 429 too many sign-in attempts, 502 Plaid upstream error, 503 Plaid not configured.
 
 ## Endpoints
 
