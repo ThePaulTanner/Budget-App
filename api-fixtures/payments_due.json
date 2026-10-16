@@ -1,0 +1,35 @@
+{
+  "as_of": "2026-10-02",
+  "base_currency": "CAD",
+  "dues_available": true,
+  "totals": {
+    "CAD": {
+      "owed": 850.25,
+      "statement_due": 612.4,
+      "minimum_due": 35.0
+    }
+  },
+  "cards": [
+    {
+      "account_id": "acc_visa",
+      "institution": "Desjardins",
+      "name": "Visa Odyssée",
+      "mask": "9876",
+      "currency": "CAD",
+      "current_balance": 850.25,
+      "credit_limit": 5000.0,
+      "available_credit": 4149.75,
+      "statement_balance": 612.4,
+      "statement_date": "2026-09-28",
+      "minimum_payment": 35.0,
+      "due_date": "2026-10-25",
+      "days_until_due": 23,
+      "status": "upcoming",
+      "statement_paid": false,
+      "last_payment_amount": 500.0,
+      "last_payment_date": "2026-09-10",
+      "dues_known": true,
+      "dues_updated_at": "2026-10-02T00:00:00Z"
+    }
+  ]
+}

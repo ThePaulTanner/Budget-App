@@ -1,7 +1,7 @@
 """A small Plaid client over httpx.
 
-Only read-only products are ever requested: transactions, and investments when the
-bank has them. Auth (account numbers) and Transfer (moving money) are never used.
+Only read-only products are ever requested: transactions, plus investments and
+liabilities (credit card due dates) when the bank has them. Auth (account numbers) and Transfer (moving money) are never used.
 JSON numbers are parsed straight into `Decimal`, so amounts like 132.47 stay exact.
 """
 
@@ -82,7 +82,7 @@ class PlaidClient:
             body["access_token"] = access_token
         else:
             body["products"] = ["transactions"]
-            body["optional_products"] = ["investments"]
+            body["optional_products"] = ["investments", "liabilities"]
         return self._post("/link/token/create", body)
 
     def exchange_public_token(self, public_token: str) -> dict[str, Any]:
@@ -119,6 +119,9 @@ class PlaidClient:
 
     def investments_holdings_get(self, access_token: str) -> dict[str, Any]:
         return self._post("/investments/holdings/get", {"access_token": access_token})
+
+    def liabilities_get(self, access_token: str) -> dict[str, Any]:
+        return self._post("/liabilities/get", {"access_token": access_token})
 
     # -- webhooks ----------------------------------------------------------
 

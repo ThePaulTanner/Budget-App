@@ -93,11 +93,25 @@
     RENT_AND_UTILITIES: "\u{1F4A1}", OTHER: "\u{1F4C1}", GROCERIES: "\u{1F6D2}",
   };
   const KNOWN_CATEGORIES = Object.keys(ICONS);
-  const icon = (category) => ICONS[category] || "\u{1F4C1}";
-  function categoryLabel(code) {
-    if (!code) return "Uncategorized";
+  // Plaid's top-level categories. A sub-category's code starts with its parent's, as in
+  // FOOD_AND_DRINK_FAST_FOOD, so the parent can be found from the code alone.
+  const PRIMARIES = KNOWN_CATEGORIES.filter((c) => c !== "GROCERIES");
+  function parentOf(code) {
+    let best = null;
+    for (const p of PRIMARIES) if (code && code.startsWith(`${p}_`) && (!best || p.length > best.length)) best = p;
+    return best;
+  }
+  const icon = (category) => ICONS[category] || ICONS[parentOf(category)] || "\u{1F4C1}";
+  function titleCase(code) {
     return code.toLowerCase().split("_").map((w) => (w === "and" ? "&" : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
   }
+  // "Food & Drink", or "Food & Drink \u203A Fast Food" for a sub-category.
+  function categoryLabel(code) {
+    if (!code) return "Uncategorized";
+    const parent = parentOf(code);
+    return parent ? `${titleCase(parent)} \u203A ${titleCase(code.slice(parent.length + 1))}` : titleCase(code);
+  }
+  const subLabel = (code) => titleCase(code.slice(parentOf(code).length + 1));
   const TYPE_GROUPS = [["depository", "Cash"], ["credit", "Credit"], ["investment", "Investments"], ["loan", "Loans"], ["other", "Other"]];
 
   function toast(text, isError = false) {
@@ -414,7 +428,7 @@
         el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
           el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
-          el("div", { class: "muted", text: `${categoryLabel(tx.category)} · ${accountName[tx.account_id] || ""}` })),
+          el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} · ${accountName[tx.account_id] || ""}` })),
         el("div", { class: `amount ${amount.cls}`, text: amount.text }));
       const open = () => openTransaction(tx, choices, accountName, (updated) => {
         state.rows.set(updated.id, updated);
@@ -583,15 +597,17 @@
 
     const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
     if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
+    const budgeted = new Set(budgets.budgets.map((b) => b.category));
     for (const b of budgets.budgets) {
       const left = b.remaining >= 0 ? `${money(b.remaining, cur)} left` : `${money(-b.remaining, cur)} over`;
-      budgetCard.append(el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => budgetDialog(b),
+      const inside = b.parent && budgeted.has(b.parent) ? ` \u00B7 also counted in ${categoryLabel(b.parent)}` : "";
+      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, onclick: () => budgetDialog(b),
         onkeydown: (e) => { if (e.key === "Enter") budgetDialog(b); } },
         el("div", { class: "icon", text: icon(b.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
           el("div", {}, el("strong", { text: categoryLabel(b.category) })),
           progress(b.percent),
-          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} · ${left}` }))));
+          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} · ${left}${inside}` }))));
     }
 
     const maxSpent = Math.max(...spending.categories.map((c) => Math.abs(c.spent)), 1);
@@ -603,6 +619,16 @@
         el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
         el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
         el("div", { class: "amount", text: money(c.spent, cur) })));
+      // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
+      const split = c.subcategories || [];
+      const rest = c.spent - split.reduce((sum, s) => sum + s.spent, 0);
+      const parts = split.map((s) => [subLabel(s.category), s.spent]);
+      if (split.length > 0 && Math.abs(rest) >= 0.005) parts.push(["Not in a sub-category", rest]);
+      for (const [label, spent] of parts) {
+        spendCard.append(el("div", { class: "row sub" },
+          el("div", { class: "grow" }, el("div", { class: "muted", text: label }), progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true)),
+          el("div", { class: "amount muted", text: money(spent, cur) })));
+      }
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
     view().replaceChildren(nav, budgetCard, el("div", { class: "grid" }, spendCard, trendCard));
@@ -688,10 +714,70 @@
 
   // ---------------------------------------------------------------- Merchants
 
+  // ---- Money Management: credit card statements, minimums and due dates ------------------------
+
+  const DUE_PILLS = {
+    overdue: ["Overdue", "bad"], due_soon: ["Due soon", "warn"], upcoming: ["Upcoming", ""],
+    paid: ["Statement paid", "good"], nothing_owed: ["Nothing owed", "good"], unknown: ["Unconfirmed", ""],
+  };
+
+  function dueText(card) {
+    const days = card.days_until_due;
+    if (card.due_date == null) return "Your bank has not shared a due date.";
+    if (card.status === "paid" || card.status === "nothing_owed") return `Next payment date ${shortDate(card.due_date)}.`;
+    if (days < 0) return `Was due ${shortDate(card.due_date)}, ${-days} day${days === -1 ? "" : "s"} ago.`;
+    if (days === 0) return "Due today.";
+    if (days === 1) return `Due tomorrow, ${dayLabel(card.due_date)}.`;
+    return `Due ${dayLabel(card.due_date)}, in ${days} days.`;
+  }
+
+  async function viewMoney(id) {
+    const data = await api("/api/payments-due");
+    if (id !== navId) return;
+    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    const unpaid = data.cards.filter((c) => c.status !== "paid" && c.status !== "nothing_owed" && c.due_date);
+    const next = unpaid.slice().sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+
+    const summary = el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
+      data.cards.length === 0
+        ? el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." })
+        : [
+          Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
+            stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
+            stat("Minimum payments", money(t.minimum_due, cur)),
+            stat("Total owed on cards", money(t.owed, cur)))),
+          next && el("p", { text: `Next payment: ${next.institution} ${next.name}${next.mask ? ` \u2022\u2022${next.mask}` : ""}. ${dueText(next)}` }),
+          !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances below are still current." }),
+          el("p", { class: "muted", text: "Information only. HomeFinance cannot move money, so pay your cards at your bank." }),
+        ]);
+
+    const rows = data.cards.map((c) => {
+      const [label, tone] = DUE_PILLS[c.status];
+      const cur = c.currency;
+      return el("section", { class: `card due ${c.status}` },
+        el("div", { class: "row" },
+          el("div", { class: "grow" },
+            el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+              el("span", { class: `pill ${tone}`, text: label })),
+            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
+          el("div", { class: "amount" },
+            el("div", { class: "big small", text: money(c.statement_balance ?? c.current_balance, cur) }),
+            el("div", { class: "muted", text: c.statement_balance == null ? "balance" : "statement balance" }))),
+        el("div", { class: "stats" },
+          stat("Minimum payment", c.minimum_payment == null ? "\u2014" : money(c.minimum_payment, cur)),
+          stat("Balance now", money(c.current_balance, cur)),
+          stat("Available credit", c.available_credit == null ? "\u2014" : money(c.available_credit, cur)),
+          stat("Last payment", c.last_payment_amount == null ? "\u2014" : `${money(c.last_payment_amount, cur)}${c.last_payment_date ? ` on ${shortDate(c.last_payment_date)}` : ""}`)),
+        c.dues_known && el("p", { class: "muted", text: `${c.statement_date ? `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""} ` : ""}Bank data updated ${ago(c.dues_updated_at)}.` }));
+    });
+    view().replaceChildren(summary, ...rows);
+  }
+
   const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
   const FIELD_LABELS = { name: "the description", merchant_name: "the bank's merchant name" };
   let merchPeriod = "12m";
   let merchAll = false;
+  let merchTab = "merchants";
 
   function shortDate(text) {
     return parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
@@ -735,23 +821,33 @@
     }
     search.addEventListener("input", draw);
 
-    const todoCard = todo.length > 0 && el("section", { class: "card" },
-      el("h2", { text: `Needs a name (${todo.length})` }),
+    const todoCard = el("section", { class: "card" },
+      el("h2", { text: "Needs a name" }),
       el("p", { class: "muted", text: "Your bank gave these no clear merchant name. Name one and every matching transaction, past and future, is tracked under it." }),
-      todo.slice(0, 8).map((t) => el("div", { class: "row" },
-        el("div", { class: "grow" }, el("strong", { text: t.name }),
-          el("div", { class: "muted", text: `${t.transactions} transaction${t.transactions === 1 ? "" : "s"} \u00B7 last ${shortDate(t.last_date)} \u00B7 ${t.account_name}` })),
-        el("div", { class: "amount", text: t.outflow ? money(t.outflow, t.currency) : "" }),
-        el("button", { type: "button", class: "primary small", text: "Name it", onclick: () => openNameDialog({ pattern: t.name, field: "name" }, reload) }))),
-      todo.length > 8 && el("p", { class: "muted", text: `${todo.length - 8} more. Name these first and the rest move up.` }));
+      todo.length === 0
+        ? el("p", { class: "empty", text: "Everything has a name." })
+        : todo.map((t) => el("div", { class: "row" },
+          el("div", { class: "grow" }, el("strong", { text: t.name }),
+            el("div", { class: "muted", text: `${t.transactions} transaction${t.transactions === 1 ? "" : "s"} \u00B7 last ${shortDate(t.last_date)} \u00B7 ${t.account_name}` })),
+          el("div", { class: "amount", text: t.outflow ? money(t.outflow, t.currency) : "" }),
+          el("button", { type: "button", class: "primary small", text: "Name it", onclick: () => openNameDialog({ pattern: t.name, field: "name" }, reload) }))));
 
     const masterCard = el("section", { class: "card" }, el("h2", { text: "Merchants" }),
       el("div", { class: "toolbar" }, seg, search),
       el("label", { class: "checkline" }, includeAll, "Include payments, transfers and income"),
       total, list,
       el("div", { class: "actions" }, el("button", { type: "button", text: "Add a merchant", onclick: () => openAddMerchant(reload) })));
-    view().replaceChildren(...[todoCard, masterCard].filter(Boolean));
-    draw();
+
+    const tabs = el("div", { class: "seg", role: "group", "aria-label": "Merchants page" },
+      [["merchants", "Merchants"], ["needs", `Needs a name (${todo.length})`]].map(([key, label]) =>
+        el("button", { type: "button", "aria-pressed": String(key === merchTab), text: label,
+          onclick: () => { merchTab = key; show(); } })));
+    function show() {
+      for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
+      view().replaceChildren(el("div", { class: "toolbar" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      if (merchTab === "merchants") draw();
+    }
+    show();
   }
 
   function openAddMerchant(done) {
@@ -963,7 +1059,7 @@
     const card = el("section", { class: "card" });
     const paint = () => {
       const t = window.HFTheme.get();
-      const choose = (part, value) => { window.HFTheme.set({ [part]: value }); syncThemeButton(); paint(); };
+      const choose = (part, value) => { window.HFTheme.set({ [part]: value }); paint(); };
       const segment = (part, options) => el("div", { class: "seg", role: "group", "aria-label": part },
         options.map(([value, label]) => el("button", { type: "button", "aria-pressed": String(t[part] === value), text: label, onclick: () => choose(part, value) })));
       card.replaceChildren(
@@ -1094,10 +1190,11 @@
     transactions: ["Transactions", "Search, filter and re-categorize"],
     merchants: ["Merchants", "Where your money goes, over time"],
     budgets: ["Budgets", "Limits and spending by month"],
+    money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "Banks, sign-in activity and appearance"],
   };
-  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
   // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
   async function refreshStatus() {
@@ -1122,13 +1219,6 @@
     } catch (_) { /* the badge is only a convenience */ }
   }
 
-  const THEME_ICONS = { system: ["#i-system", "System"], light: ["#i-sun", "Light"], dark: ["#i-moon", "Dark"] };
-  function syncThemeButton() {
-    const { mode } = window.HFTheme.get();
-    $("theme-icon").setAttribute("href", THEME_ICONS[mode][0]);
-    $("theme-toggle").title = `Colour scheme: ${THEME_ICONS[mode][1].toLowerCase()} (click to change)`;
-  }
-
   function setBanner(institutions) {
     const banner = $("banner");
     if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
@@ -1143,7 +1233,7 @@
     syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
     const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
-    for (const a of document.querySelectorAll("#tabs a")) {
+    for (const a of document.querySelectorAll("#tabs a, #settings-link")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
     const [title, subtitle] = PAGES[name];
@@ -1221,14 +1311,8 @@
     } finally { button.disabled = false; }
   });
 
-  $("refresh").addEventListener("click", route);
+  for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
   $("signout").addEventListener("click", signOut);
-  $("theme-toggle").addEventListener("click", () => {
-    const { MODES, get, set } = window.HFTheme;
-    set({ mode: MODES[(MODES.indexOf(get().mode) + 1) % MODES.length] });
-    syncThemeButton();
-  });
-  syncThemeButton();
   window.addEventListener("hashchange", route);
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });

@@ -20,11 +20,9 @@
       <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
       <symbol id="i-store" viewBox="0 0 24 24"><path d="M3 9l1.6-5h14.8L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9a3 3 0 006 0 3 3 0 006 0 3 3 0 006 0"/></symbol>
       <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+      <symbol id="i-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/></symbol>
       <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></symbol>
-      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2L6 6M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8"/></symbol>
-      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></symbol>
-      <symbol id="i-system" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 4v6h-6"/><path d="M20 15a8 8 0 11-2-8.4L21 10"/></symbol>
       <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></symbol>
     </defs>
@@ -46,16 +44,19 @@
 
   <div id="shell" class="app" hidden>
     <aside class="sidebar">
-      <a class="brand" href="#/overview" aria-label="HomeFinance, go to Overview">
-        <svg class="logo" width="30" height="30" aria-hidden="true"><use href="#i-logo"/></svg><span>HomeFinance</span>
-      </a>
+      <div class="brand-row">
+        <a class="brand" href="#/overview" aria-label="HomeFinance, go to Overview">
+          <svg class="logo" width="30" height="30" aria-hidden="true"><use href="#i-logo"/></svg><span>HomeFinance</span>
+        </a>
+        <button type="button" class="icon-btn refresh-btn brand-refresh" title="Reload this page's data (does not sync banks)" aria-label="Reload this page's data"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-refresh"/></svg></button>
+      </div>
       <nav id="tabs" aria-label="Sections">
         <a href="#/overview" data-tab="overview"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-home"/></svg><span>Overview</span></a>
         <a href="#/transactions" data-tab="transactions"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-list"/></svg><span class="lbl">Transactions</span><span class="lbl-short" aria-hidden="true">Activity</span></a>
         <a href="#/merchants" data-tab="merchants"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-store"/></svg><span>Merchants</span></a>
         <a href="#/budgets" data-tab="budgets"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-target"/></svg><span>Budgets</span></a>
+        <a href="#/money" data-tab="money"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-card"/></svg><span class="lbl">Money Management</span><span class="lbl-short" aria-hidden="true">Money</span></a>
         <a href="#/investments" data-tab="investments"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-trend"/></svg><span class="lbl">Investments</span><span class="lbl-short" aria-hidden="true">Invest</span></a>
-        <a href="#/settings" data-tab="settings"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg><span>Settings</span></a>
       </nav>
       <div class="side-foot">
         <span id="env-badge" class="env" hidden></span>
@@ -70,8 +71,8 @@
           <p id="page-sub" class="muted"></p>
         </div>
         <div class="top-actions">
-          <button id="theme-toggle" type="button" class="icon-btn" title="Colour scheme: system" aria-label="Change colour scheme"><svg class="ico" width="20" height="20" aria-hidden="true"><use id="theme-icon" href="#i-system"/></svg></button>
-          <button id="refresh" type="button" class="icon-btn" title="Reload this page's data (does not sync banks)" aria-label="Reload this page's data"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-refresh"/></svg></button>
+          <button type="button" class="icon-btn refresh-btn phone-only" title="Reload this page's data (does not sync banks)" aria-label="Reload this page's data"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-refresh"/></svg></button>
+          <a id="settings-link" href="#/settings" data-tab="settings" class="icon-btn" title="Settings" aria-label="Settings"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg></a>
         </div>
       </header>
       <p id="banner" class="banner" hidden></p>

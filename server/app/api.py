@@ -25,7 +25,14 @@ from .crypto import seal
 from .db import utcnow
 from .plaid import PlaidError
 from .quotes import FRESH_SECONDS, LIVE_TYPES, PERIODS, Wanted, reference_prices
-from .rules import EFFECTIVE_CATEGORY_SQL, EXCLUDED_FROM_SPENDING, normalize_category
+from .rules import (
+    EFFECTIVE_CATEGORY_SQL,
+    PRIMARY_CATEGORIES,
+    is_excluded,
+    normalize_category,
+    parent_category,
+    split_category,
+)
 from .sync import PlaidNotConfigured, SyncBusy, compute_networth, today_str
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -218,6 +225,7 @@ def tx_json(row: Any) -> dict[str, Any]:
         "category": row["category"],
         "plaid_category": row["plaid_category"],
         "category_detailed": row["category_detailed"],
+        "subcategory": split_category(row)[1],
         "category_overridden": row["override_category"] is not None,
         "logo_url": row["logo_url"],
         "category_source": category_source(row),
@@ -416,33 +424,47 @@ def create_api_app(services: Services) -> FastAPI:
 
     # -- summary -------------------------------------------------------------
 
-    def totals_for(start: str, end: str, category: str | None = None) -> dict[str, Decimal]:
+    def category_totals(start: str, end: str) -> tuple[dict[str, Decimal], dict[str, dict[str, Decimal]]]:
+        """Spending by top-level category, and inside each one by sub-category. A transaction is
+        added once to its top-level category and, when it has one, once to its sub-category, so
+        adding up the top level never counts anything twice."""
         sql = (
-            f"SELECT {EFFECTIVE_CATEGORY_SQL} AS category, t.amount FROM transactions t "
-            "JOIN accounts a ON a.id = t.account_id "
+            "SELECT t.override_category, t.rule_category, t.plaid_category, t.category_detailed, t.amount "
+            "FROM transactions t JOIN accounts a ON a.id = t.account_id "
             "WHERE a.hidden = 0 AND t.currency = ? AND t.date >= ? AND t.date < ?"
         )
-        totals: dict[str, Decimal] = {}
+        tops: dict[str, Decimal] = {}
+        subs: dict[str, dict[str, Decimal]] = {}
         for row in db.query(sql, (base, start, end)):
-            totals[row["category"]] = totals.get(row["category"], Decimal(0)) + Decimal(row["amount"])
-        return totals
+            top, sub = split_category(row)
+            amount = Decimal(row["amount"])
+            tops[top] = tops.get(top, Decimal(0)) + amount
+            if sub:
+                inner = subs.setdefault(top, {})
+                inner[sub] = inner.get(sub, Decimal(0)) + amount
+        return tops, subs
+
+    def totals_for(start: str, end: str) -> dict[str, Decimal]:
+        return category_totals(start, end)[0]
 
     def spend_total(totals: dict[str, Decimal]) -> Decimal:
         return sum(
-            (v for k, v in totals.items() if k not in EXCLUDED_FROM_SPENDING), Decimal(0)
+            (v for k, v in totals.items() if not is_excluded(k)), Decimal(0)
         )
 
     def budget_entries(month: str) -> list[dict[str, Any]]:
-        start, end = month_bounds(month)
-        totals = totals_for(start, end)
+        tops, subs = category_totals(*month_bounds(month))
+        by_sub = {sub: v for inner in subs.values() for sub, v in inner.items()}
         entries = []
         for row in db.query("SELECT category, monthly_limit FROM budgets ORDER BY category"):
             limit = Decimal(row["monthly_limit"])
-            spent = totals.get(row["category"], Decimal(0))
+            parent = parent_category(row["category"])
+            spent = (by_sub if parent else tops).get(row["category"], Decimal(0))
             percent = (spent / limit * 100).quantize(Decimal("0.1"), ROUND_HALF_UP)
             entries.append(
                 {
                     "category": row["category"],
+                    "parent": parent,
                     "monthly_limit": num(limit),
                     "spent": num(spent),
                     "remaining": num(limit - spent),
@@ -450,6 +472,15 @@ def create_api_app(services: Services) -> FastAPI:
                 }
             )
         return entries
+
+    def budgeted_total(budgets: list[dict[str, Any]]) -> Decimal:
+        """Total of the budgets. A sub-category budget under a parent that is budgeted too is a
+        share of the parent's money, so it is not added a second time."""
+        budgeted = {b["category"] for b in budgets}
+        return sum(
+            (Decimal(str(b["monthly_limit"])) for b in budgets if b["parent"] not in budgeted),
+            Decimal(0),
+        )
 
     @app.get("/api/summary")
     def summary(ctx: Auth):
@@ -475,7 +506,7 @@ def create_api_app(services: Services) -> FastAPI:
             ],
             "month": month,
             "spent_this_month": num(spend_total(totals_for(start, end))),
-            "budgeted_this_month": num(sum((Decimal(str(b["monthly_limit"])) for b in budgets), Decimal(0))),
+            "budgeted_this_month": num(budgeted_total(budgets)),
             "over_budget": [b for b in budgets if b["spent"] > b["monthly_limit"]],
             "items_needing_attention": [
                 r["institution"] or "Unknown bank" for r in items if r["needs_reauth"]
@@ -524,11 +555,24 @@ def create_api_app(services: Services) -> FastAPI:
         else:
             where.append("a.hidden = 0")
         if category:
-            where.append(f"{EFFECTIVE_CATEGORY_SQL} = ?")
             try:
-                params.append(normalize_category(category))
+                wanted = normalize_category(category)
             except ValueError:
-                params.append(category.strip().upper())  # not a valid name: matches nothing
+                wanted = category.strip().upper()  # not a valid name: matches nothing
+            if parent_category(wanted):
+                # A sub-category: transactions Plaid files under it, or that were put in it by hand.
+                where.append(
+                    f"({EFFECTIVE_CATEGORY_SQL} = ? OR (override_category IS NULL AND rule_category IS NULL "
+                    "AND t.category_detailed = ?))"
+                )
+                params += [wanted, wanted]
+            elif wanted in PRIMARY_CATEGORIES:
+                # A top-level category includes everything in its sub-categories.
+                where.append(f"({EFFECTIVE_CATEGORY_SQL} = ? OR {EFFECTIVE_CATEGORY_SQL} LIKE ? ESCAPE '\\')")
+                params += [wanted, wanted.replace("_", "\\_") + "\\_%"]
+            else:
+                where.append(f"{EFFECTIVE_CATEGORY_SQL} = ?")
+                params.append(wanted)
         if search and search.strip():
             like = "%" + re.sub(r"([\\%_])", r"\\\1", search.strip()) + "%"
             where.append("(t.name LIKE ? ESCAPE '\\' OR t.merchant_name LIKE ? ESCAPE '\\' OR m.name LIKE ? ESCAPE '\\')")
@@ -578,7 +622,7 @@ def create_api_app(services: Services) -> FastAPI:
     @app.get("/api/categories")
     def categories(ctx: Auth):
         found: set[str] = set()
-        for col in ("override_category", "rule_category", "plaid_category"):
+        for col in ("override_category", "rule_category", "plaid_category", "category_detailed"):
             found.update(r[0] for r in db.query(f"SELECT DISTINCT {col} FROM transactions") if r[0])
         found.update(r[0] for r in db.query("SELECT category FROM budgets"))
         found.update(r[0] for r in db.query("SELECT category FROM rules"))
@@ -589,17 +633,25 @@ def create_api_app(services: Services) -> FastAPI:
     @app.get("/api/spending")
     def spending(ctx: Auth, month: str | None = None):
         month = parse_month(month)
-        totals = {
-            k: v
-            for k, v in totals_for(*month_bounds(month)).items()
-            if k not in EXCLUDED_FROM_SPENDING and v != 0
-        }
+        tops, subs = category_totals(*month_bounds(month))
+        totals = {k: v for k, v in tops.items() if not is_excluded(k) and v != 0}
         ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
         return {
             "month": month,
             "currency": base,
             "total": num(sum(totals.values(), Decimal(0))),
-            "categories": [{"category": k, "spent": num(v)} for k, v in ranked],
+            "categories": [
+                {
+                    "category": k,
+                    "spent": num(v),
+                    "subcategories": [
+                        {"category": sub, "spent": num(amount)}
+                        for sub, amount in sorted(subs.get(k, {}).items(), key=lambda kv: kv[1], reverse=True)
+                        if amount != 0
+                    ],
+                }
+                for k, v in ranked
+            ],
         }
 
     @app.get("/api/spending/monthly")
@@ -613,7 +665,7 @@ def create_api_app(services: Services) -> FastAPI:
         )
         sums: dict[str, Decimal] = {}
         for row in db.query(sql, (base, f"{first}-01", month_bounds(current)[1])):
-            if row["category"] in EXCLUDED_FROM_SPENDING:
+            if is_excluded(row["category"]):
                 continue
             key = row["date"][:7]
             sums[key] = sums.get(key, Decimal(0)) + Decimal(row["amount"])
@@ -649,6 +701,93 @@ def create_api_app(services: Services) -> FastAPI:
         if db.run("DELETE FROM budgets WHERE category=?", (name,)) == 0:
             raise HTTPException(404, "budget not found")
         return {"ok": True}
+
+    # -- credit card payments ------------------------------------------------
+
+    @app.get("/api/payments-due")
+    def payments_due(ctx: Auth):
+        today = date.fromisoformat(today_str())
+        rows = db.query(
+            "SELECT a.*, i.institution AS institution, d.account_id AS dues_id, d.due_date, "
+            "d.minimum_payment, d.statement_balance, d.statement_date, d.last_payment_amount, "
+            "d.last_payment_date, d.is_overdue, d.updated_at AS dues_updated_at FROM accounts a "
+            "JOIN items i ON i.id = a.item_id LEFT JOIN card_dues d ON d.account_id = a.id "
+            "WHERE a.type = 'credit' AND a.hidden = 0"
+        )
+        cards: list[dict[str, Any]] = []
+        totals: dict[str, dict[str, Decimal]] = {}
+        for r in rows:
+            owed = Decimal(r["current_balance"] or "0")
+            statement = None if r["statement_balance"] is None else Decimal(r["statement_balance"])
+            minimum = None if r["minimum_payment"] is None else Decimal(r["minimum_payment"])
+            last_paid = None if r["last_payment_amount"] is None else Decimal(r["last_payment_amount"])
+            due = r["due_date"]
+            days = (date.fromisoformat(due) - today).days if due else None
+            statement_paid = statement is not None and (
+                statement <= 0
+                or (
+                    last_paid is not None
+                    and r["last_payment_date"]
+                    and r["statement_date"]
+                    and r["last_payment_date"] >= r["statement_date"]
+                    and last_paid >= statement
+                )
+            )
+            # Past the due date with nothing refreshed since then, we cannot know it was not paid.
+            stale = days is not None and days < 0 and (r["dues_updated_at"] or "")[:10] <= due
+            if owed <= 0:
+                status = "nothing_owed"
+            elif bool(r["is_overdue"]) and not statement_paid:
+                status = "overdue"
+            elif statement_paid:
+                status = "paid"
+            elif days is not None and days < 0:
+                status = "unknown" if stale else "overdue"
+            elif days is not None and days <= 7:
+                status = "due_soon"
+            elif days is not None:
+                status = "upcoming"
+            else:
+                status = "unknown"
+            limit = None if r["credit_limit"] is None else Decimal(r["credit_limit"])
+            cards.append(
+                {
+                    "account_id": r["id"],
+                    "institution": r["institution"],
+                    "name": r["name"],
+                    "mask": r["mask"],
+                    "currency": r["currency"],
+                    "current_balance": num(owed),
+                    "credit_limit": num(limit),
+                    "available_credit": num(None if limit is None else limit - owed),
+                    "statement_balance": num(statement),
+                    "statement_date": r["statement_date"],
+                    "minimum_payment": num(minimum),
+                    "due_date": due,
+                    "days_until_due": days,
+                    "status": status,
+                    "statement_paid": statement_paid,
+                    "last_payment_amount": num(last_paid),
+                    "last_payment_date": r["last_payment_date"],
+                    "dues_known": r["dues_id"] is not None,
+                    "dues_updated_at": r["dues_updated_at"],
+                }
+            )
+            t = totals.setdefault(r["currency"], {"owed": Decimal(0), "statement_due": Decimal(0), "minimum_due": Decimal(0)})
+            t["owed"] += max(owed, Decimal(0))
+            if statement is not None and not statement_paid:
+                t["statement_due"] += statement
+            if minimum is not None and not statement_paid:
+                t["minimum_due"] += minimum
+        order = {"overdue": 0, "due_soon": 1, "upcoming": 2, "unknown": 3, "paid": 4, "nothing_owed": 5}
+        cards.sort(key=lambda c: (order[c["status"]], c["due_date"] or "9999-12-31", c["name"]))
+        return {
+            "as_of": today.isoformat(),
+            "base_currency": base,
+            "dues_available": any(c["dues_known"] for c in cards),
+            "totals": {cur: {k: num(v) for k, v in t.items()} for cur, t in totals.items()},
+            "cards": cards,
+        }
 
     # -- investments, net worth, banks ---------------------------------------
 
@@ -1031,7 +1170,7 @@ def create_api_app(services: Services) -> FastAPI:
                 m["outflow"] += amount
                 m["outflow_count"] += 1
             m["inflow"] += -amount if amount < 0 else Decimal(0)
-            if r["category"] not in EXCLUDED_FROM_SPENDING:
+            if not is_excluded(r["category"]):
                 m["spent"] += amount
             m["cats"][r["category"]] = m["cats"].get(r["category"], Decimal(0)) + amount
         return out
@@ -1205,7 +1344,7 @@ def create_api_app(services: Services) -> FastAPI:
         ):
             bucket = monthly.setdefault(r["date"][:7], {"total": Decimal(0), "count": 0})
             bucket["count"] += 1
-            if r["category"] not in EXCLUDED_FROM_SPENDING:
+            if not is_excluded(r["category"]):
                 bucket["total"] += Decimal(r["amount"])
             cats[r["category"]] = cats.get(r["category"], Decimal(0)) + Decimal(r["amount"])
         recent = db.query(
@@ -1238,7 +1377,7 @@ def create_api_app(services: Services) -> FastAPI:
         out["categories"] = [
             {"category": c, "amount": num(v)}
             for c, v in sorted(cats.items(), key=lambda kv: -abs(kv[1]))
-            if c not in EXCLUDED_FROM_SPENDING and v != 0
+            if not is_excluded(c) and v != 0
         ]
         out["alias_list"] = [alias_json(a) for a in aliases]
         out["recent_transactions"] = [tx_json(r) for r in recent]
