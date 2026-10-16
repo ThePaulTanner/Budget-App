@@ -314,6 +314,8 @@
     const [summary, accounts, log] = await Promise.all([
       api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null)]);
     if (id !== navId) return;
+    const spending = await api(`/api/spending?month=${summary.month}`).catch(() => ({ categories: [] }));
+    if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
     setBanner(summary.items_needing_attention);
@@ -350,7 +352,14 @@
       budgeted > 0 ? [progress(pct), el("p", { class: "muted", text: `of ${money(budgeted, cur)} budgeted (${Math.round(pct)}%)` })]
         : el("p", { class: "muted", text: "No budgets set yet." }),
       summary.over_budget.length > 0 && el("div", { class: "chips" }, summary.over_budget.map((b) =>
-        el("span", { class: "chip", text: `${categoryLabel(b.category)} ${money(b.spent - b.monthly_limit, cur)} over` }))));
+        el("span", { class: "chip", text: `${categoryLabel(b.category)} ${money(b.spent - b.monthly_limit, cur)} over` }))),
+      spending.categories.length > 0 && [el("h3", { text: "Top categories" }),
+        spending.categories.slice(0, 5).map((c) => el("div", { class: "row" },
+          el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
+          el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
+            progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
+          el("div", { class: "amount", text: money(c.spent, cur) }))),
+        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
     const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }));
     if (accounts.length === 0) accountsCard.append(el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." }));
@@ -950,6 +959,30 @@
     }).open();
   }
 
+  // Colour scheme, accent and density. Kept in this browser only (see theme.js).
+  function appearanceCard() {
+    const card = el("section", { class: "card" });
+    const paint = () => {
+      const t = window.HFTheme.get();
+      const choose = (part, value) => { window.HFTheme.set({ [part]: value }); syncThemeButton(); paint(); };
+      const segment = (part, options) => el("div", { class: "seg", role: "group", "aria-label": part },
+        options.map(([value, label]) => el("button", { type: "button", "aria-pressed": String(t[part] === value), text: label, onclick: () => choose(part, value) })));
+      card.replaceChildren(
+        el("h2", { text: "Appearance" }),
+        el("p", { class: "muted", text: "Saved in this browser only, so each device can look different." }),
+        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Colour scheme" }), el("div", { class: "muted", text: "System follows your device's light or dark setting." })),
+          segment("mode", [["system", "System"], ["light", "Light"], ["dark", "Dark"]])),
+        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Accent colour" }), el("div", { class: "muted", text: `Currently ${t.accent}.` })),
+          el("div", { class: "swatches", role: "group", "aria-label": "Accent colour" },
+            window.HFTheme.ACCENTS.map((accent) => el("button", { type: "button", class: "swatch", "data-accent": accent, title: accent,
+              "aria-label": accent, "aria-pressed": String(t.accent === accent), onclick: () => choose("accent", accent) })))),
+        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Density" }), el("div", { class: "muted", text: "Compact fits more on screen." })),
+          segment("density", [["comfortable", "Comfortable"], ["compact", "Compact"]])));
+    };
+    paint();
+    return card;
+  }
+
   async function viewSettings(id) {
     const [items, sessions, rules, accounts, choices, log] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
@@ -1051,13 +1084,51 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    view().replaceChildren(banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
+    view().replaceChildren(appearanceCard(), banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
   }
 
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
+  const PAGES = {
+    overview: ["Overview", "Net worth, spending and accounts"],
+    transactions: ["Transactions", "Search, filter and re-categorize"],
+    merchants: ["Merchants", "Where your money goes, over time"],
+    budgets: ["Budgets", "Limits and spending by month"],
+    investments: ["Investments", "Positions at live prices"],
+    settings: ["Settings", "Banks, sign-in activity and appearance"],
+  };
   const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
+
+  // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
+  async function refreshStatus() {
+    try {
+      const items = await api("/api/items");
+      const newest = items.map((i) => i.last_synced_at).filter(Boolean).sort().pop();
+      $("foot-sync").textContent = items.length === 0 ? "No banks linked yet" : newest ? `Last synced ${ago(newest)}` : "Waiting for the first sync\u2026";
+      setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
+    } catch (err) {
+      if (err instanceof SignedOut) showLogin();
+    }
+  }
+
+  async function showEnvironment() {
+    try {
+      const { plaid_env: env } = await (await plainFetch("/health")).json();
+      const badge = $("env-badge");
+      badge.textContent = env === "production" ? "Live banks" : "Sandbox";
+      badge.title = env === "production" ? "Connected to real banks through Plaid" : "Plaid's sandbox: fake banks and test data";
+      badge.className = env === "production" ? "env prod" : "env";
+      badge.hidden = false;
+    } catch (_) { /* the badge is only a convenience */ }
+  }
+
+  const THEME_ICONS = { system: ["#i-system", "System"], light: ["#i-sun", "Light"], dark: ["#i-moon", "Dark"] };
+  function syncThemeButton() {
+    const { mode } = window.HFTheme.get();
+    $("theme-icon").setAttribute("href", THEME_ICONS[mode][0]);
+    $("theme-toggle").title = `Colour scheme: ${THEME_ICONS[mode][1].toLowerCase()} (click to change)`;
+  }
 
   function setBanner(institutions) {
     const banner = $("banner");
@@ -1076,10 +1147,15 @@
     for (const a of document.querySelectorAll("#tabs a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
+    const [title, subtitle] = PAGES[name];
+    $("page-title").textContent = title;
+    $("page-sub").textContent = subtitle;
+    document.title = `${title} \u00B7 HomeFinance`;
     const id = ++navId;
     view().replaceChildren(el("p", { class: "empty", text: "Loading…" }));
     try {
       await ROUTES[name](id, new URLSearchParams(query || ""));
+      refreshStatus();
     } catch (err) {
       if (err instanceof SignedOut) showLogin();
       else if (id === navId) view().replaceChildren(el("p", { class: "empty error", role: "alert", text: err.message }),
@@ -1103,6 +1179,7 @@
   function showShell() {
     $("login").hidden = true;
     $("shell").hidden = false;
+    showEnvironment();
     route();
   }
 
@@ -1146,6 +1223,13 @@
   });
 
   $("refresh").addEventListener("click", route);
+  $("signout").addEventListener("click", signOut);
+  $("theme-toggle").addEventListener("click", () => {
+    const { MODES, get, set } = window.HFTheme;
+    set({ mode: MODES[(MODES.indexOf(get().mode) + 1) % MODES.length] });
+    syncThemeButton();
+  });
+  syncThemeButton();
   window.addEventListener("hashchange", route);
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });

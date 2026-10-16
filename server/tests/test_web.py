@@ -112,6 +112,7 @@ def test_the_app_page_has_a_strict_csp_and_no_inline_code(web):
     assert "<script>" not in html and " style=" not in html and " onclick=" not in html
     assert web.get("/static/web/app.js").status_code == 200
     assert web.get("/static/web/app.css").status_code == 200
+    assert web.get("/static/web/theme.js").status_code == 200
 
 
 def test_the_script_never_uses_innerhtml_and_loads_only_plaids_link_script():
@@ -124,3 +125,19 @@ def test_the_script_never_uses_innerhtml_and_loads_only_plaids_link_script():
     assert "http://" not in js and "https://" not in js.replace(plaid, "")
     html = (WEB_DIR / "index.html").read_text()
     assert "plaid" not in html.lower()  # never loaded at start-up
+
+
+def test_theme_script_only_keeps_three_harmless_choices():
+    js = (WEB_DIR / "theme.js").read_text()
+    assert js.count("localStorage") == 2  # one guarded read, one guarded write
+    for key in ('"hf-mode"', '"hf-accent"', '"hf-density"'):
+        assert key in js
+    for bad in ("fetch(", "XMLHttpRequest", "innerHTML", "eval(", "http://", "https://", "document.cookie"):
+        assert bad not in js, bad
+    assert js.count("try {") == 2 and js.count("catch (_)") == 2  # storage can be blocked
+    html = (WEB_DIR / "index.html").read_text()
+    # loaded from the head, so the saved scheme applies before the page paints
+    assert html.index("theme.js") < html.index("<body>")
+    css = (WEB_DIR / "app.css").read_text()
+    for accent in ("blue", "teal", "green", "purple", "orange", "rose"):
+        assert f'[data-accent="{accent}"]' in css
