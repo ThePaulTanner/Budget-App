@@ -105,7 +105,7 @@ def chart_json(range_, price=47.85, currency="CAD", with_open=True):
 
 
 def mocked(handler):
-    return YahooProvider(httpx.Client(transport=httpx.MockTransport(handler)))
+    return YahooProvider(httpx.Client(transport=httpx.MockTransport(handler)), spacing=0)
 
 
 def test_parses_a_quote_exactly_with_todays_open():
@@ -415,3 +415,161 @@ def test_sync_stores_the_exchange_code(services, plaid, seeded):
     }
     sync_holdings(services.db, plaid, "token", "item_desj", "CAD")
     assert services.db.one("SELECT mic FROM holdings WHERE security_id='sec_veqt'")["mic"] == "XTSE"
+
+
+# -- throttling: gentle requests, honoured waits, doubling rests ---------------------------
+
+
+def test_429_carries_the_wait_yahoo_asked_for():
+    def handler(request):
+        return httpx.Response(429, headers={"Retry-After": "120"}, text="Too Many Requests")
+
+    with pytest.raises(QuoteError) as caught:
+        mocked(handler).quote("VEQT.TO")
+    assert caught.value.kind == "unavailable" and caught.value.retry_after == 120.0
+    assert "429" in str(caught.value) and "too many requests" in str(caught.value)
+
+
+@pytest.mark.parametrize("header, expected", [(None, None), ("soon", None), ("999999", q.MAX_COOLDOWN)])
+def test_429_without_a_usable_wait(header, expected):
+    def handler(request):
+        return httpx.Response(429, headers={} if header is None else {"Retry-After": header})
+
+    with pytest.raises(QuoteError) as caught:
+        mocked(handler).quote("VEQT.TO")
+    assert caught.value.retry_after == expected
+
+
+def test_requests_to_yahoo_are_spaced_out():
+    import time
+
+    def handler(request):
+        return httpx.Response(200, json=chart_json("1d"))
+
+    provider = YahooProvider(httpx.Client(transport=httpx.MockTransport(handler)), spacing=0.05)
+    started = time.monotonic()
+    for _ in range(4):
+        provider.quote("VEQT.TO")
+    assert time.monotonic() - started >= 0.15  # three gaps of 0.05 s
+
+
+def test_repeated_throttling_doubles_the_rest_and_a_success_resets_it():
+    provider, clock = FakeProvider(), Clock()
+    service = QuoteService(provider, clock)
+    provider.fail = QuoteError("unavailable", "Yahoo Finance answered 429")
+
+    def rest():
+        before = clock.now
+        service.lookup([wanted()])
+        return service._cooldown_until - before
+
+    assert rest() == q.COOLDOWN
+    clock.now += q.COOLDOWN
+    assert rest() == 2 * q.COOLDOWN
+    clock.now += 2 * q.COOLDOWN
+    assert rest() == 4 * q.COOLDOWN
+    for _ in range(6):  # never longer than the cap
+        clock.now += q.MAX_COOLDOWN
+        assert rest() <= q.MAX_COOLDOWN
+    clock.now += q.MAX_COOLDOWN
+    provider.fail = None
+    assert service.lookup([wanted()]).unavailable is None
+    provider.fail = QuoteError("unavailable", "Yahoo Finance answered 429")
+    clock.now += q.CLOSED_QUOTE_TTL + 1  # long enough that the cached price has to be refreshed
+    assert rest() == q.COOLDOWN  # started again from the beginning
+
+
+def test_the_wait_yahoo_asks_for_is_honoured_when_longer():
+    provider, clock = FakeProvider(), Clock()
+    service = QuoteService(provider, clock)
+    provider.fail = QuoteError("unavailable", "Yahoo Finance answered 429", retry_after=900.0)
+    service.lookup([wanted()])
+    assert service._cooldown_until - clock.now == 900.0
+
+
+def test_a_slow_lookup_that_made_progress_is_not_a_failure(monkeypatch):
+    import time
+
+    class Slow(FakeProvider):
+        def quote(self, symbol):
+            if symbol == "SLOW.TO":
+                time.sleep(1.0)
+            return super().quote(symbol)
+
+    monkeypatch.setattr(q, "DEADLINE", 0.3)
+    provider = Slow(known=("VEQT.TO", "SLOW.TO"))
+    service = QuoteService(provider, Clock())
+    result = service.lookup([wanted("VEQT"), wanted("SLOW")])
+    assert result.unavailable is None and service._cooldown_until == 0.0  # no rest imposed
+    assert result.live[wanted("VEQT")].symbol == "VEQT.TO"
+    assert wanted("SLOW") not in result.live  # that one simply is not ready yet
+
+
+def test_nothing_finishing_in_time_is_still_a_problem(monkeypatch):
+    import time
+
+    class Stuck(FakeProvider):
+        def quote(self, symbol):
+            time.sleep(1.0)
+            return super().quote(symbol)
+
+    monkeypatch.setattr(q, "DEADLINE", 0.2)
+    result = QuoteService(Stuck(), Clock()).lookup([wanted()])
+    assert result.unavailable == "Yahoo Finance was too slow"
+
+
+# -- a bank price of 0 is missing, not a worthless holding ----------------------------------
+
+
+def zero_the_banks_price(services):
+    services.db.run("UPDATE holdings SET price='0', value='0' WHERE ticker='VEQT'")
+
+
+def test_a_bank_price_of_zero_is_shown_as_missing(seeded, services):
+    client, auth = seeded
+    zero_the_banks_price(services)
+    body = client.get("/api/holdings", headers=auth).json()
+    veqt = next(h for h in body["holdings"] if h["ticker"] == "VEQT")
+    assert (veqt["price"], veqt["value"], veqt["gain"]) == (None, None, None) and veqt["quantity"] == 880.0
+    assert body["totals"]["CAD"] == 464.0  # only the cash line; the unpriced position is left out, not counted as $0
+
+
+def test_with_yahoo_down_that_position_has_no_price_instead_of_zero(live, services):
+    client, auth, provider = live
+    zero_the_banks_price(services)
+    provider.fail = QuoteError("unavailable", "Yahoo Finance answered 429 (too many requests)")
+    body = client.get("/api/holdings/live", headers=auth).json()
+    veqt = next(h for h in body["holdings"] if h["ticker"] == "VEQT")
+    assert veqt["live"] is False and veqt["price"] is None and veqt["value"] is None
+    assert body["totals"]["CAD"]["value"] == 464.0
+
+
+def test_a_live_price_fixes_a_position_the_bank_could_not_price(live, services):
+    client, auth, _ = live
+    zero_the_banks_price(services)
+    veqt = next(h for h in client.get("/api/holdings/live", headers=auth).json()["holdings"] if h["ticker"] == "VEQT")
+    assert veqt["live"] is True and veqt["price"] == 47.85 and veqt["value"] == 42108.0
+
+
+# -- the quote-test command --------------------------------------------------------------
+
+
+def test_quote_test_command_reports_both_outcomes(monkeypatch, capsys):
+    from app import cli
+
+    class Fake:
+        outcome = None
+
+        def quote(self, symbol):
+            if isinstance(self.outcome, Exception):
+                raise self.outcome
+            return live_quote(symbol)
+
+    fake = Fake()
+    monkeypatch.setattr("app.quotes.YahooProvider", lambda: fake)
+    assert cli.main(["quote-test", "veqt.to"]) == 0
+    assert "VEQT.TO: 47.85 CAD" in capsys.readouterr().out
+    fake.outcome = QuoteError("unavailable", "Yahoo Finance answered 429 (too many requests)", retry_after=120.0)
+    assert cli.main(["quote-test"]) == 1
+    out = capsys.readouterr().out
+    assert "XIU.TO" in out and "429" in out and "wait 120 seconds" in out

@@ -186,7 +186,8 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 | "Could not read the database. The master key is probably wrong." | A different master key than the one that created the database |
 | Web app signs you out right after login | Opened over plain `http`: the cookie is `Secure`, so use the `https://` tailnet address |
 | Link page shows an error after signing in | Plaid credentials or `PLAID_ENV` do not match (sandbox secret with production, or the reverse) |
-| Investments say "Live prices unavailable" | Yahoo throttled or changed its endpoint (the message says which); it retries after 5 minutes. Check the NAS can reach the internet, or set `LIVE_QUOTES=false` |
+| Investments say "Live prices unavailable (Yahoo Finance answered 429)" | Yahoo is throttling this connection. The server spaces its requests half a second apart, honours the wait Yahoo asks for, and doubles its rest after each repeat (5 minutes, then 10, up to 30), so it usually clears by itself. To see whether Yahoo answers at all from the NAS, run `docker exec homefinance python -m app.cli quote-test XIU.TO`: it prints a price, or the exact refusal. If it never works, set `LIVE_QUOTES=false` to use your bank's prices |
+| A position shows "—" and "no price from your bank" | The bank sent 0 or nothing as that position's price (some do for certain holdings). It is left out of totals instead of counting as $0, and gets a real value as soon as a live price is available |
 | New transactions are slow to appear | `PUBLIC_WEBHOOK_URL` unset or Funnel not running; the hourly timer still catches up |
 | `unable to open database file` | Synology ACL made `data` read-only for the container user (see step 1) |
 | A `.env` change has no effect | The container was only restarted; recreate it with `--force-recreate` |

@@ -4,6 +4,7 @@
     docker exec -it homefinance python -m app.cli login-log
     docker exec -it homefinance python -m app.cli unlock
     docker exec -it homefinance python -m app.cli reset-networth
+    docker exec homefinance python -m app.cli quote-test XIU.TO
     python -m app.cli gen-key > hf_master_key
 """
 
@@ -87,6 +88,20 @@ def _login_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def _quote_test(args: argparse.Namespace) -> int:
+    """Ask Yahoo Finance for one symbol, to tell a blocked connection from a busy moment."""
+    from .quotes import QuoteError, YahooProvider
+
+    try:
+        quote = YahooProvider().quote(args.symbol.upper())
+    except QuoteError as exc:
+        wait = f" It asked us to wait {int(exc.retry_after)} seconds." if exc.retry_after else ""
+        print(f"{args.symbol.upper()}: {exc.kind}: {exc}.{wait}")
+        return 1
+    print(f"{quote.symbol}: {quote.price} {quote.currency} (last trade {quote.day}). Yahoo Finance is answering.")
+    return 0
+
+
 def _reset_networth(args: argparse.Namespace) -> int:
     from .bootstrap import build_services
 
@@ -119,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     reset = sub.add_parser("reset-networth", help="delete the saved net-worth chart history (for example after removing sandbox banks)")
     reset.add_argument("--yes", action="store_true", help="do not ask")
     reset.set_defaults(func=_reset_networth)
+    test = sub.add_parser("quote-test", help="ask Yahoo Finance for one price, to check live prices work from here")
+    test.add_argument("symbol", nargs="?", default="XIU.TO")
+    test.set_defaults(func=_quote_test)
     log = sub.add_parser("login-log", help="show recent sign-in attempts")
     log.add_argument("--limit", type=int, default=50)
     log.set_defaults(func=_login_log)
