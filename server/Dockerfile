@@ -27,7 +27,9 @@ USER app
 EXPOSE 8080 8081
 VOLUME /data
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=4)" || exit 1
+# Generous limits: on a busy NAS even starting Python for this check can take several seconds,
+# and a first start (database migration) can take minutes.
+HEALTHCHECK --interval=60s --timeout=30s --start-period=180s --retries=3 \
+  CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=25)" || exit 1
 
 CMD ["python", "-m", "app.main"]
