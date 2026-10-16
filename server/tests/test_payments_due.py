@@ -168,3 +168,15 @@ def test_a_failed_refresh_keeps_the_old_dates(services, plaid):
     plaid.errors["liabilities_get"] = PlaidError(500, "API_ERROR", "INTERNAL_SERVER_ERROR", "boom")
     run(services, item)
     assert services.db.one("SELECT due_date FROM card_dues")["due_date"] == "2026-10-25"
+
+
+def test_a_malformed_reply_keeps_old_rows_and_does_not_fail_the_bank(services, plaid):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page()]
+    plaid.liabilities = pj('{"liabilities":{"credit":[{"account_id":"acc_visa","next_payment_due_date":"2026-10-25"}]}}')
+    run(services, item)
+    plaid.pages = [page(cursor="c2")]
+    plaid.liabilities = pj('{"liabilities":{"credit":[{"account_id":"acc_visa","minimum_payment_amount":"abc"}]}}')
+    assert run(services, item)["ok"] is True
+    assert services.db.one("SELECT due_date FROM card_dues")["due_date"] == "2026-10-25"  # rolled back, old kept

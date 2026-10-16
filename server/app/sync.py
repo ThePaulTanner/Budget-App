@@ -250,34 +250,38 @@ def sync_liabilities(db: Database, plaid: PlaidClient, token: str, item_id: str)
     except PlaidError as exc:
         log.info("No credit card due dates for item %s: %s", item_id, exc.error_code)
         return 0
-    cards = (data.get("liabilities") or {}).get("credit") or []
-    account_ids = {r["id"] for r in db.query("SELECT id FROM accounts WHERE item_id=?", (item_id,))}
-    now = utcnow()
-    count = 0
-    with db.transaction():
-        for account_id in account_ids:
-            db.run("DELETE FROM card_dues WHERE account_id=?", (account_id,))
-        for card in cards:
-            if card.get("account_id") not in account_ids:
-                continue
-            db.run(
-                "INSERT INTO card_dues(account_id, due_date, minimum_payment, "
-                "statement_balance, statement_date, last_payment_amount, last_payment_date, "
-                "is_overdue, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    card["account_id"],
-                    card.get("next_payment_due_date"),
-                    as_text(to_dec(card.get("minimum_payment_amount"))),
-                    as_text(to_dec(card.get("last_statement_balance"))),
-                    card.get("last_statement_issue_date"),
-                    as_text(to_dec(card.get("last_payment_amount"))),
-                    card.get("last_payment_date"),
-                    1 if card.get("is_overdue") else 0,
-                    now,
-                ),
-            )
-            count += 1
-    return count
+    try:
+        cards = (data.get("liabilities") or {}).get("credit") or []
+        account_ids = {r["id"] for r in db.query("SELECT id FROM accounts WHERE item_id=?", (item_id,))}
+        now = utcnow()
+        count = 0
+        with db.transaction():
+            for account_id in account_ids:
+                db.run("DELETE FROM card_dues WHERE account_id=?", (account_id,))
+            for card in cards:
+                if card.get("account_id") not in account_ids:
+                    continue
+                db.run(
+                    "INSERT INTO card_dues(account_id, due_date, minimum_payment, "
+                    "statement_balance, statement_date, last_payment_amount, last_payment_date, "
+                    "is_overdue, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        card["account_id"],
+                        card.get("next_payment_due_date"),
+                        as_text(to_dec(card.get("minimum_payment_amount"))),
+                        as_text(to_dec(card.get("last_statement_balance"))),
+                        card.get("last_statement_issue_date"),
+                        as_text(to_dec(card.get("last_payment_amount"))),
+                        card.get("last_payment_date"),
+                        1 if card.get("is_overdue") else 0,
+                        now,
+                    ),
+                )
+                count += 1
+        return count
+    except Exception as exc:  # a surprising reply here must not fail the bank's whole sync
+        log.warning("Could not read credit card due dates for item %s (%s)", item_id, type(exc).__name__)
+        return 0
 
 
 # -- net worth ---------------------------------------------------------------
