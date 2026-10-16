@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE users (
@@ -87,10 +87,12 @@ CREATE TABLE transactions (
   rule_id INTEGER,
   rule_category TEXT,
   logo_url TEXT,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  merchant_id INTEGER REFERENCES merchants(id) ON DELETE SET NULL
 );
 CREATE INDEX transactions_date ON transactions(date DESC);
 CREATE INDEX transactions_account ON transactions(account_id);
+CREATE INDEX transactions_merchant ON transactions(merchant_id);
 CREATE TABLE holdings (
   account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   security_id TEXT NOT NULL,
@@ -130,6 +132,24 @@ CREATE TABLE login_events (
   user_known INTEGER NOT NULL DEFAULT 0,
   count INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE merchants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  auto INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX merchants_name ON merchants(lower(name));
+CREATE TABLE merchant_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  merchant_id INTEGER NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  match_field TEXT NOT NULL CHECK (match_field IN ('merchant_name', 'name')),
+  match_type TEXT NOT NULL CHECK (match_type IN ('equals', 'contains')),
+  pattern TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('user', 'auto')),
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX merchant_aliases_unique ON merchant_aliases(match_field, match_type, lower(pattern));
+CREATE INDEX merchant_aliases_merchant ON merchant_aliases(merchant_id);
 CREATE TABLE networth (
   date TEXT NOT NULL,
   currency TEXT NOT NULL,
@@ -160,6 +180,28 @@ CREATE TABLE login_events (
 """,
     2: """
 ALTER TABLE holdings ADD COLUMN mic TEXT;
+""",
+    3: """
+CREATE TABLE merchants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  auto INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX merchants_name ON merchants(lower(name));
+CREATE TABLE merchant_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  merchant_id INTEGER NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  match_field TEXT NOT NULL CHECK (match_field IN ('merchant_name', 'name')),
+  match_type TEXT NOT NULL CHECK (match_type IN ('equals', 'contains')),
+  pattern TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('user', 'auto')),
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX merchant_aliases_unique ON merchant_aliases(match_field, match_type, lower(pattern));
+CREATE INDEX merchant_aliases_merchant ON merchant_aliases(merchant_id);
+ALTER TABLE transactions ADD COLUMN merchant_id INTEGER REFERENCES merchants(id) ON DELETE SET NULL;
+CREATE INDEX transactions_merchant ON transactions(merchant_id);
 """,
 }
 

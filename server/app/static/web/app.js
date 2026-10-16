@@ -22,7 +22,7 @@
       else if (key === "value" || key === "checked" || key === "disabled" || key === "hidden" || key === "selected") node[key] = value;
       else node.setAttribute(key, value === true ? "" : value);
     }
-    for (const kid of kids.flat()) {
+    for (const kid of kids.flat(Infinity)) {
       if (kid == null || kid === false) continue;
       node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
     }
@@ -32,7 +32,7 @@
   function svg(tag, attrs, ...kids) {
     const node = document.createElementNS(SVGNS, tag);
     for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
-    for (const kid of kids.flat()) if (kid) node.append(kid);
+    for (const kid of kids.flat(Infinity)) if (kid) node.append(kid);
     return node;
   }
 
@@ -272,7 +272,7 @@
 
   function openSheet(...content) {
     const sheet = $("sheet");
-    sheet.replaceChildren(...content.flat().filter((node) => node != null && node !== false));
+    sheet.replaceChildren(...content.flat(Infinity).filter((node) => node != null && node !== false));
     if (!sheet.open) sheet.showModal();
     return sheet;
   }
@@ -311,8 +311,9 @@
   let nwDays = 365;
 
   async function viewOverview(id) {
-    const [summary, accounts, log] = await Promise.all([
-      api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null)]);
+    const [summary, accounts, log, spending] = await Promise.all([
+      api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null),
+      api("/api/spending").catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -350,7 +351,14 @@
       budgeted > 0 ? [progress(pct), el("p", { class: "muted", text: `of ${money(budgeted, cur)} budgeted (${Math.round(pct)}%)` })]
         : el("p", { class: "muted", text: "No budgets set yet." }),
       summary.over_budget.length > 0 && el("div", { class: "chips" }, summary.over_budget.map((b) =>
-        el("span", { class: "chip", text: `${categoryLabel(b.category)} ${money(b.spent - b.monthly_limit, cur)} over` }))));
+        el("span", { class: "chip", text: `${categoryLabel(b.category)} ${money(b.spent - b.monthly_limit, cur)} over` }))),
+      spending.categories.length > 0 && [el("h3", { text: "Top categories" }),
+        spending.categories.slice(0, 5).map((c) => el("div", { class: "row" },
+          el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
+          el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
+            progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
+          el("div", { class: "amount", text: money(c.spent, cur) }))),
+        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
     const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }));
     if (accounts.length === 0) accountsCard.append(el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." }));
@@ -379,7 +387,7 @@
     const [accounts, choices] = await Promise.all([api("/api/accounts"), categoryChoices()]);
     if (id !== navId) return;
     const accountName = Object.fromEntries(accounts.map((a) => [a.id, `${a.institution ? a.institution + " " : ""}${a.name}`]));
-    const state = { search: "", account: params.get("account") || "", category: "", offset: 0, total: null, loading: false, lastDay: null, rows: new Map() };
+    const state = { search: "", account: params.get("account") || "", merchant: params.get("merchant") || "", category: "", offset: 0, total: null, loading: false, lastDay: null, rows: new Map() };
     const list = el("div");
     const status = el("p", { class: "empty" });
     const sentinel = el("div");
@@ -405,7 +413,7 @@
       const row = el("div", { class: "row click", role: "button", tabindex: 0, "data-id": tx.id },
         el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
-          el("div", {}, el("strong", { text: tx.merchant_name || tx.name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
+          el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
           el("div", { class: "muted", text: `${categoryLabel(tx.category)} · ${accountName[tx.account_id] || ""}` })),
         el("div", { class: `amount ${amount.cls}`, text: amount.text }));
       const open = () => openTransaction(tx, choices, accountName, (updated) => {
@@ -427,6 +435,7 @@
         const q = new URLSearchParams({ limit: "50", offset: String(state.offset) });
         if (state.search) q.set("search", state.search);
         if (state.account) q.set("account_id", state.account);
+        if (state.merchant) q.set("merchant_id", state.merchant);
         if (state.category) q.set("category", state.category);
         const page = await api(`/api/transactions?${q}`);
         if (id !== navId) return;
@@ -444,8 +453,10 @@
     accountSel.addEventListener("change", () => { state.account = accountSel.value; loadMore(true); });
     categorySel.addEventListener("change", () => { state.category = categorySel.value; loadMore(true); });
 
+    const merchantNote = state.merchant && el("p", { class: "muted" }, "Showing one merchant's transactions. ",
+      el("a", { href: "#/transactions", text: "Show all" }));
     view().replaceChildren(el("section", { class: "card" },
-      el("div", { class: "toolbar" }, search, accountSel, categorySel), list, status, sentinel));
+      el("div", { class: "toolbar" }, search, accountSel, categorySel), merchantNote, list, status, sentinel));
     const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && id === navId) loadMore(false); });
     observer.observe(sentinel);
     cleanups.push(() => observer.disconnect());
@@ -495,10 +506,16 @@
     }
 
     openSheet(
-      el("h2", { text: tx.merchant_name || tx.name }),
+      el("h2", { text: tx.display_name }),
       el("div", { class: `big ${amount.cls}`, text: amount.text }),
       el("p", { class: "muted", text: `${dayLabel(tx.date)}${tx.pending ? " · Pending" : ""} · ${accountName[tx.account_id] || ""}` }),
-      tx.name !== (tx.merchant_name || tx.name) && el("p", { class: "muted", text: tx.name }),
+      tx.name !== tx.display_name && el("p", { class: "muted", text: `Bank's text: ${tx.name}` }),
+      el("p", { class: "muted" }, "Merchant: ",
+        tx.merchant ? el("button", { type: "button", class: "link", text: tx.merchant, onclick: () => { closeSheet(); openMerchantById(tx.merchant_id); } }) : "not named yet",
+        "  ",
+        el("button", { type: "button", class: "link", text: tx.merchant ? "Change name" : "Name it",
+          onclick: () => openNameDialog({ pattern: tx.merchant_name || tx.name, field: tx.merchant_name ? "merchant_name" : "name", name: tx.merchant || "" },
+            () => { closeSheet(); route(); }) })),
       el("p", { class: "muted", text: sourceLabel + (tx.category_overridden ? ` (bank said: ${categoryLabel(tx.plaid_category)})` : "") }),
       el("label", {}, "Category", picker.node),
       el("div", { class: "actions" },
@@ -669,6 +686,226 @@
     cleanups.push(() => clearInterval(timer));
   }
 
+  // ---------------------------------------------------------------- Merchants
+
+  const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
+  const FIELD_LABELS = { name: "the description", merchant_name: "the bank's merchant name" };
+  let merchPeriod = "12m";
+  let merchAll = false;
+
+  function shortDate(text) {
+    return parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  async function viewMerchants(id) {
+    const [data, todo] = await Promise.all([api(`/api/merchants?period=${merchPeriod}`), api("/api/merchants/unassigned")]);
+    if (id !== navId) return;
+    baseCurrency = data.currency;
+    const cur = data.currency;
+    const reload = () => guard(viewMerchants(++navId));
+
+    const seg = el("div", { class: "seg", role: "group", "aria-label": "Period" },
+      MERCH_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === merchPeriod), text: label,
+        onclick: () => { merchPeriod = key; reload(); } })));
+    const search = el("input", { type: "search", placeholder: "Search merchants", "aria-label": "Search merchants", maxlength: 100 });
+    const includeAll = el("input", { type: "checkbox", checked: merchAll, onchange: (e) => { merchAll = e.target.checked; draw(); } });
+    const list = el("div");
+    const total = el("p", { class: "muted" });
+
+    function draw() {
+      const needle = search.value.trim().toLowerCase();
+      const rows = data.merchants.filter((m) =>
+        (!needle || m.name.toLowerCase().includes(needle)) && (merchAll ? true : m.spent !== 0));
+      const spent = rows.reduce((sum, m) => sum + m.spent, 0);
+      total.textContent = `${rows.length} merchant${rows.length === 1 ? "" : "s"}${merchAll ? "" : " with spending"}; ${money(spent, cur)} spent in this period.`;
+      list.replaceChildren(...(rows.length === 0
+        ? [el("p", { class: "empty", text: data.merchants.length === 0 ? "No merchants yet. They appear after your first sync." : "No merchants match." })]
+        : rows.map((m) => {
+          const right = m.spent !== 0 ? money(m.spent, cur) : m.outflow > 0 ? `paid ${money(m.outflow, cur)}` : m.inflow > 0 ? `+${money(m.inflow, cur)} in` : "\u2014";
+          const open = () => openMerchantById(m.id, reload);
+          const row = el("div", { class: "row click", role: "button", tabindex: 0, onclick: open,
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } } },
+            el("div", { class: "icon", text: icon(m.top_category), "aria-hidden": "true" }),
+            el("div", { class: "grow" },
+              el("div", {}, el("strong", { text: m.name }), !m.auto && el("span", { class: "badge", text: "named by you" })),
+              el("div", { class: "muted", text: `${m.transactions} transaction${m.transactions === 1 ? "" : "s"}${m.last_date ? ` \u00B7 last ${shortDate(m.last_date)}` : ""}${m.top_category ? ` \u00B7 ${categoryLabel(m.top_category)}` : ""}` })),
+            el("div", { class: "amount", text: right }));
+          return row;
+        })));
+    }
+    search.addEventListener("input", draw);
+
+    const todoCard = todo.length > 0 && el("section", { class: "card" },
+      el("h2", { text: `Needs a name (${todo.length})` }),
+      el("p", { class: "muted", text: "Your bank gave these no clear merchant name. Name one and every matching transaction, past and future, is tracked under it." }),
+      todo.slice(0, 8).map((t) => el("div", { class: "row" },
+        el("div", { class: "grow" }, el("strong", { text: t.name }),
+          el("div", { class: "muted", text: `${t.transactions} transaction${t.transactions === 1 ? "" : "s"} \u00B7 last ${shortDate(t.last_date)} \u00B7 ${t.account_name}` })),
+        el("div", { class: "amount", text: t.outflow ? money(t.outflow, t.currency) : "" }),
+        el("button", { type: "button", class: "primary small", text: "Name it", onclick: () => openNameDialog({ pattern: t.name, field: "name" }, reload) }))),
+      todo.length > 8 && el("p", { class: "muted", text: `${todo.length - 8} more. Name these first and the rest move up.` }));
+
+    const masterCard = el("section", { class: "card" }, el("h2", { text: "Merchants" }),
+      el("div", { class: "toolbar" }, seg, search),
+      el("label", { class: "checkline" }, includeAll, "Include payments, transfers and income"),
+      total, list,
+      el("div", { class: "actions" }, el("button", { type: "button", text: "Add a merchant", onclick: () => openAddMerchant(reload) })));
+    view().replaceChildren(...[todoCard, masterCard].filter(Boolean));
+    draw();
+  }
+
+  function openAddMerchant(done) {
+    const name = el("input", { maxlength: 80, placeholder: "e.g. Corner Store", "aria-label": "Merchant name" });
+    const message = el("p", { class: "error", role: "alert" });
+    openSheet(el("h2", { text: "Add a merchant" }),
+      el("p", { class: "muted", text: "Creates an empty merchant. Attach bank text to it afterwards with Name it." }),
+      el("label", {}, "Name", name), message,
+      el("div", { class: "actions" },
+        el("button", { type: "button", class: "primary", text: "Add", onclick: async () => {
+          try { await api("/api/merchants", { method: "POST", body: { name: name.value } }); closeSheet(); toast("Merchant added."); done(); }
+          catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
+        } }),
+        el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
+  }
+
+  // Give some bank text a name. `done` runs after it is saved.
+  async function openNameDialog({ pattern = "", field = "name", kind = "equals", name = "" }, done) {
+    let existing = [];
+    try { existing = (await api("/api/merchants?period=all")).merchants.map((m) => m.name); } catch (err) { if (err instanceof SignedOut) { showLogin(); return; } }
+    const patternInput = el("input", { value: pattern, maxlength: 200, "aria-label": "Bank text" });
+    const kindSel = el("select", { "aria-label": "How to match" },
+      [["equals", "is exactly"], ["contains", "contains"]].map(([v, l]) => el("option", { value: v, selected: v === kind, text: l })));
+    const fieldSel = el("select", { "aria-label": "Which text" },
+      Object.entries(FIELD_LABELS).map(([v, l]) => el("option", { value: v, selected: v === field, text: l })));
+    const nameInput = el("input", { value: name, maxlength: 80, list: "merchant-names", placeholder: "e.g. Corner Store", "aria-label": "Merchant name", autocomplete: "off" });
+    const datalist = el("datalist", { id: "merchant-names" }, existing.map((n) => el("option", { value: n })));
+    const previewBox = el("div", { class: "preview", hidden: true });
+    const message = el("p", { class: "error", role: "alert" });
+
+    let timer = null;
+    const refreshPreview = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const text = patternInput.value.trim();
+        if (!text) { previewBox.hidden = true; return; }
+        try {
+          const p = await api("/api/merchants/aliases/preview", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: text } });
+          const plural = (n) => `${n} transaction${n === 1 ? "" : "s"}`;
+          previewBox.replaceChildren(
+            p.matching_transactions === 0 ? "Nothing matches yet. It will apply to future transactions."
+              : p.would_apply === 0 ? `${plural(p.matching_transactions)} match, but a name you already gave them is more specific, so none would change.`
+                : `${plural(p.would_apply)} would be named${p.currently_unassigned ? ` (${p.currently_unassigned} not yet named)` : ""}${p.kept_by_other_names ? `; ${p.kept_by_other_names} more keep a more specific name` : ""}.`,
+            ...p.samples.map((s) => el("div", { class: "muted", text: `${shortDate(s.date)} \u00B7 ${money(Math.abs(s.amount), s.currency)} \u00B7 ${s.account_name} \u00B7 ${s.name}` })));
+          previewBox.hidden = false;
+        } catch (err) { if (!(err instanceof SignedOut)) { previewBox.textContent = err.message; previewBox.hidden = false; } }
+      }, 250);
+    };
+    for (const input of [patternInput, kindSel, fieldSel]) input.addEventListener("input", refreshPreview);
+
+    openSheet(el("h2", { text: "Name this merchant" }),
+      el("p", { class: "muted", text: "Pick the bank text to recognise, and the name to show and track it under. Matching is not case-sensitive." }),
+      el("div", { class: "toolbar" }, el("span", { class: "muted", text: "When" }), fieldSel, kindSel),
+      el("label", {}, "Bank text", patternInput),
+      previewBox,
+      el("label", {}, "Merchant name (pick an existing one to combine them)", nameInput), datalist, message,
+      el("div", { class: "actions" },
+        el("button", { type: "button", class: "primary", text: "Save name", onclick: async () => {
+          message.textContent = "";
+          try {
+            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value } });
+            closeSheet();
+            toast(`${r.updated_transactions} transaction${r.updated_transactions === 1 ? "" : "s"} now tracked as ${r.merchant.name}.`);
+            done();
+          } catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
+        } }),
+        el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
+    refreshPreview();
+  }
+
+  async function openMerchantById(merchantId, done = () => route()) {
+    openSheet(el("p", { class: "empty", text: "Loading\u2026" }));
+    let d;
+    try { d = await api(`/api/merchants/${merchantId}?months=12`); }
+    catch (err) { closeSheet(); if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
+    const cur = baseCurrency;
+    const again = () => openMerchantById(merchantId, done);
+    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    const message = el("p", { class: "error", role: "alert" });
+    const run = async (fn, after) => {
+      message.textContent = "";
+      try { await fn(); after(); } catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
+    };
+
+    openSheet(
+      el("h2", {}, d.name, !d.auto && el("span", { class: "badge", text: "named by you" })),
+      el("div", { class: "stats" },
+        stat("Spent, last 12 months", money(d.spent, cur)),
+        stat("Transactions", String(d.transactions)),
+        stat("Average charge", d.average_transaction == null ? "\u2014" : money(d.average_transaction, cur)),
+        stat("All time", money(d.lifetime.spent, cur)),
+        stat("First seen", d.first_date ? shortDate(d.first_date) : "\u2014"),
+        stat("Last seen", d.last_date ? shortDate(d.last_date) : "\u2014")),
+      d.spent === 0 && d.outflow > 0 && el("p", { class: "muted", text: `This is not counted as spending (payments, transfers and income are left out), but ${money(d.outflow, cur)} left your accounts.` }),
+      el("h3", { text: "Spending by month" }), barChart(d.monthly, cur),
+      d.categories.length > 0 && [el("h3", { text: "Categories" }), d.categories.slice(0, 4).map((c) =>
+        el("div", { class: "row" }, el("div", { class: "grow", text: categoryLabel(c.category) }), el("div", { class: "amount", text: money(c.amount, cur) })))],
+      el("h3", { text: "Bank text that maps here" }),
+      d.alias_list.map((a) => el("div", { class: "row" },
+        el("div", { class: "grow" }, el("div", { text: `\u201C${a.pattern}\u201D` }),
+          el("div", { class: "muted", text: `${FIELD_LABELS[a.match_field]} ${a.match_type === "equals" ? "is exactly" : "contains"} \u00B7 ${a.source === "user" ? "added by you" : "from your bank"}` })),
+        el("button", { type: "button", class: "danger small", text: "Remove", onclick: () => run(
+          () => api(`/api/merchants/aliases/${a.id}`, { method: "DELETE" }), () => { toast("Removed."); done(); again(); }) }))),
+      el("p", {}, el("button", { type: "button", class: "link", text: "Add more bank text to this merchant",
+        onclick: () => openNameDialog({ pattern: "", field: "name", name: d.name }, () => { done(); again(); }) })),
+      d.recent_transactions.length > 0 && [el("h3", { text: "Recent" }), d.recent_transactions.slice(0, 5).map((t) => {
+        const a = signed(t.amount, t.currency);
+        return el("div", { class: "row" }, el("div", { class: "grow" }, el("div", { text: t.name }), el("div", { class: "muted", text: shortDate(t.date) })),
+          el("div", { class: `amount ${a.cls}`, text: a.text }));
+      }), el("p", {}, el("a", { href: `#/transactions?merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
+      message,
+      el("div", { class: "actions" },
+        el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
+        el("button", { type: "button", text: "Merge into\u2026", onclick: () => openMerge(d, done) }),
+        // Deleting a merchant your bank named, with nothing of yours attached, would change nothing: it comes straight back.
+        (!d.auto || d.alias_list.some((a) => a.source === "user")) && el("button", { type: "button", class: "danger", text: d.auto ? "Delete" : "Delete or reset", onclick: () => {
+          if (!confirm(`Delete ${d.name}?\n\nIt and the names you gave it are forgotten. Transactions your bank named return to an automatic merchant; the rest go back to "Needs a name".`)) return;
+          run(() => api(`/api/merchants/${d.id}`, { method: "DELETE" }), () => { closeSheet(); toast("Merchant deleted."); done(); });
+        } }),
+        el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
+  }
+
+  function openRename(d, done) {
+    const name = el("input", { value: d.name, maxlength: 80, "aria-label": "Merchant name" });
+    const message = el("p", { class: "error", role: "alert" });
+    openSheet(el("h2", { text: "Rename merchant" }),
+      el("p", { class: "muted", text: "The new name shows everywhere. Matching transactions stay attached, including future ones." }),
+      el("label", {}, "Name", name), message,
+      el("div", { class: "actions" },
+        el("button", { type: "button", class: "primary", text: "Save", onclick: async () => {
+          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value } }); toast("Renamed."); done(); }
+          catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
+        } }),
+        el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
+  }
+
+  async function openMerge(d, done) {
+    let others;
+    try { others = (await api("/api/merchants?period=all")).merchants.filter((m) => m.id !== d.id); }
+    catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else toast(err.message, true); return; }
+    others.sort((a, b) => a.name.localeCompare(b.name));
+    const pick = el("select", { "aria-label": "Merge into" }, others.map((m) => el("option", { value: m.id, text: m.name })));
+    const message = el("p", { class: "error", role: "alert" });
+    openSheet(el("h2", { text: `Merge ${d.name}` }),
+      el("p", { class: "muted", text: "Everything tracked under this merchant moves to the one you pick, and this one disappears. Future transactions follow too." }),
+      others.length === 0 ? el("p", { class: "empty", text: "There is no other merchant to merge into." }) : el("label", {}, "Merge into", pick), message,
+      el("div", { class: "actions" },
+        others.length > 0 && el("button", { type: "button", class: "primary", text: "Merge", onclick: async () => {
+          try { await api(`/api/merchants/${d.id}/merge`, { method: "POST", body: { into_id: Number(pick.value) } }); closeSheet(); toast("Merged."); done(); }
+          catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
+        } }),
+        el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
+  }
+
   // ---------------------------------------------------------------- Settings
 
   // Plaid Link is Plaid's own script. It is fetched only when you press a link button.
@@ -719,6 +956,30 @@
       },
       onExit: (err) => { if (err) toast(err.display_message || err.error_message || "Linking was cancelled.", true); },
     }).open();
+  }
+
+  // Colour scheme, accent and density. Kept in this browser only (see theme.js).
+  function appearanceCard() {
+    const card = el("section", { class: "card" });
+    const paint = () => {
+      const t = window.HFTheme.get();
+      const choose = (part, value) => { window.HFTheme.set({ [part]: value }); syncThemeButton(); paint(); };
+      const segment = (part, options) => el("div", { class: "seg", role: "group", "aria-label": part },
+        options.map(([value, label]) => el("button", { type: "button", "aria-pressed": String(t[part] === value), text: label, onclick: () => choose(part, value) })));
+      card.replaceChildren(
+        el("h2", { text: "Appearance" }),
+        el("p", { class: "muted", text: "Saved in this browser only, so each device can look different." }),
+        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Colour scheme" }), el("div", { class: "muted", text: "System follows your device's light or dark setting." })),
+          segment("mode", [["system", "System"], ["light", "Light"], ["dark", "Dark"]])),
+        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Accent colour" }), el("div", { class: "muted", text: `Currently ${t.accent}.` })),
+          el("div", { class: "swatches", role: "group", "aria-label": "Accent colour" },
+            window.HFTheme.ACCENTS.map((accent) => el("button", { type: "button", class: "swatch", "data-accent": accent, title: accent,
+              "aria-label": accent, "aria-pressed": String(t.accent === accent), onclick: () => choose("accent", accent) })))),
+        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Density" }), el("div", { class: "muted", text: "Compact fits more on screen." })),
+          segment("density", [["comfortable", "Comfortable"], ["compact", "Compact"]])));
+    };
+    paint();
+    return card;
   }
 
   async function viewSettings(id) {
@@ -822,13 +1083,51 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    view().replaceChildren(banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
+    view().replaceChildren(appearanceCard(), banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
   }
 
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  const ROUTES = { overview: viewOverview, transactions: viewTransactions, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
+  const PAGES = {
+    overview: ["Overview", "Net worth, spending and accounts"],
+    transactions: ["Transactions", "Search, filter and re-categorize"],
+    merchants: ["Merchants", "Where your money goes, over time"],
+    budgets: ["Budgets", "Limits and spending by month"],
+    investments: ["Investments", "Positions at live prices"],
+    settings: ["Settings", "Banks, sign-in activity and appearance"],
+  };
+  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
+
+  // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
+  async function refreshStatus() {
+    try {
+      const items = await api("/api/items");
+      const newest = items.map((i) => i.last_synced_at).filter(Boolean).sort((a, b) => new Date(a) - new Date(b)).pop();
+      $("foot-sync").textContent = items.length === 0 ? "No banks linked yet" : newest ? `Last synced ${ago(newest)}` : "Waiting for the first sync\u2026";
+      setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
+    } catch (err) {
+      if (err instanceof SignedOut) showLogin();
+    }
+  }
+
+  async function showEnvironment() {
+    try {
+      const { plaid_env: env } = await (await plainFetch("/health")).json();
+      const badge = $("env-badge");
+      badge.textContent = env === "production" ? "Live banks" : "Sandbox";
+      badge.title = env === "production" ? "Connected to real banks through Plaid" : "Plaid's sandbox: fake banks and test data";
+      badge.className = env === "production" ? "env prod" : "env";
+      badge.hidden = false;
+    } catch (_) { /* the badge is only a convenience */ }
+  }
+
+  const THEME_ICONS = { system: ["#i-system", "System"], light: ["#i-sun", "Light"], dark: ["#i-moon", "Dark"] };
+  function syncThemeButton() {
+    const { mode } = window.HFTheme.get();
+    $("theme-icon").setAttribute("href", THEME_ICONS[mode][0]);
+    $("theme-toggle").title = `Colour scheme: ${THEME_ICONS[mode][1].toLowerCase()} (click to change)`;
+  }
 
   function setBanner(institutions) {
     const banner = $("banner");
@@ -847,10 +1146,15 @@
     for (const a of document.querySelectorAll("#tabs a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
+    const [title, subtitle] = PAGES[name];
+    $("page-title").textContent = title;
+    $("page-sub").textContent = subtitle;
+    document.title = `${title} \u00B7 HomeFinance`;
     const id = ++navId;
     view().replaceChildren(el("p", { class: "empty", text: "Loading…" }));
     try {
       await ROUTES[name](id, new URLSearchParams(query || ""));
+      refreshStatus();
     } catch (err) {
       if (err instanceof SignedOut) showLogin();
       else if (id === navId) view().replaceChildren(el("p", { class: "empty error", role: "alert", text: err.message }),
@@ -874,6 +1178,7 @@
   function showShell() {
     $("login").hidden = true;
     $("shell").hidden = false;
+    showEnvironment();
     route();
   }
 
@@ -917,6 +1222,13 @@
   });
 
   $("refresh").addEventListener("click", route);
+  $("signout").addEventListener("click", signOut);
+  $("theme-toggle").addEventListener("click", () => {
+    const { MODES, get, set } = window.HFTheme;
+    set({ mode: MODES[(MODES.indexOf(get().mode) + 1) % MODES.length] });
+    syncThemeButton();
+  });
+  syncThemeButton();
   window.addEventListener("hashchange", route);
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });

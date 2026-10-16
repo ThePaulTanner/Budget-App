@@ -1,0 +1,24 @@
+{
+  "matching_transactions": 2,
+  "would_apply": 2,
+  "kept_by_other_names": 0,
+  "currently_unassigned": 2,
+  "samples": [
+    {
+      "date": "2026-10-01",
+      "name": "POS PURCHASE 4521 TORONTO ON",
+      "merchant_name": null,
+      "amount": 4.5,
+      "currency": "CAD",
+      "account_name": "Chequing"
+    },
+    {
+      "date": "2026-09-20",
+      "name": "POS PURCHASE 4521 TORONTO ON",
+      "merchant_name": null,
+      "amount": 5.25,
+      "currency": "CAD",
+      "account_name": "Chequing"
+    }
+  ]
+}
