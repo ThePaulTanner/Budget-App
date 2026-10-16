@@ -1114,31 +1114,23 @@ def create_api_app(services: Services) -> FastAPI:
 
     @app.post("/api/merchants/aliases/preview")
     def preview_alias(body: AliasBody, ctx: Auth):
-        candidate = {"match_field": body.match_field, "match_type": body.match_type, "pattern": body.pattern.strip()}
+        candidate = {
+            "match_field": body.match_field,
+            "match_type": body.match_type,
+            "pattern": merchants_mod.clean_pattern(body.pattern),
+        }
         if not candidate["pattern"]:
             raise HTTPException(400, "pattern cannot be empty")
-        rows = merchants_mod.matching_transactions(db, candidate)
-        return {
-            "matching_transactions": len(rows),
-            "currently_unassigned": sum(1 for r in rows if r["merchant_id"] is None),
-            "samples": [
-                {
-                    "date": r["date"],
-                    "name": r["name"],
-                    "merchant_name": r["merchant_name"],
-                    "amount": num(r["amount"]),
-                    "currency": r["currency"],
-                    "account_name": r["account_name"],
-                }
-                for r in rows[:5]
-            ],
-        }
+        result = merchants_mod.preview(db, candidate)
+        for sample in result["samples"]:
+            sample["amount"] = num(sample["amount"])
+        return result
 
     @app.post("/api/merchants/aliases", status_code=201)
     def assign_alias(body: AssignBody, ctx: Auth):
         """Give raw transaction text a merchant: an existing one (merchant_id) or a name
         (reused if it exists, created if not). Existing and future transactions follow."""
-        pattern = body.pattern.strip()
+        pattern = merchants_mod.clean_pattern(body.pattern)
         if not pattern:
             raise HTTPException(400, "pattern cannot be empty")
         if (body.merchant_id is None) == (body.name is None or not body.name.strip()):

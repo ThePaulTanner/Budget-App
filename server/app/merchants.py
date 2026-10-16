@@ -62,12 +62,6 @@ class AliasIndex:
             else:
                 self.contains.append(a)
 
-    def add(self, alias: Any) -> None:
-        self.__init__([*self._all(), alias])  # rare: only when a new automatic merchant appears
-
-    def _all(self) -> list[Any]:
-        return [a for group in self.equals.values() for a in group] + self.contains
-
     def best(self, tx: Any) -> Any | None:
         found = []
         for field in ("merchant_name", "name"):
@@ -128,12 +122,12 @@ def assign_merchants(db: Database, tx_ids: list[str] | None = None) -> int:
                     db.run(
                         "INSERT OR IGNORE INTO merchant_aliases(merchant_id, match_field, match_type, "
                         "pattern, source, created_at) VALUES (?,?,?,?,?,?)",
-                        (merchant["id"], "merchant_name", "equals", tx["merchant_name"].strip(), "auto", utcnow()),
+                        (merchant["id"], "merchant_name", "equals", clean_pattern(tx["merchant_name"]), "auto", utcnow()),
                     )
                     alias = db.one(
                         "SELECT * FROM merchant_aliases WHERE match_field='merchant_name' "
                         "AND match_type='equals' AND lower(pattern)=lower(?)",
-                        (tx["merchant_name"].strip(),),
+                        (clean_pattern(tx["merchant_name"]),),
                     )
                     if alias is not None:
                         alias = dict(alias)
@@ -148,6 +142,38 @@ def assign_merchants(db: Database, tx_ids: list[str] | None = None) -> int:
             "AND NOT EXISTS (SELECT 1 FROM merchant_aliases a WHERE a.merchant_id = merchants.id AND a.source='user')"
         )
     return changed
+
+
+def clean_pattern(raw: str) -> str:
+    """Bank text as stored: whitespace collapsed, so it lines up with how matching reads it."""
+    return " ".join(raw.split())
+
+
+def preview(db: Database, candidate: dict[str, Any]) -> dict[str, Any]:
+    """What saving this name would do, using the real priority: transactions a stronger
+    existing name already claims are matched but would not move."""
+    probe = {**candidate, "id": 10**12, "source": "user", "merchant_id": -1}  # a new name is the newest
+    index = AliasIndex([*(dict(a) for a in db.query("SELECT * FROM merchant_aliases")), probe])
+    rows = matching_transactions(db, candidate)
+    applied = [r for r in rows if index.best(r) is probe]
+    shown = applied or rows
+    return {
+        "matching_transactions": len(rows),
+        "would_apply": len(applied),
+        "kept_by_other_names": len(rows) - len(applied),
+        "currently_unassigned": sum(1 for r in applied if r["merchant_id"] is None),
+        "samples": [
+            {
+                "date": r["date"],
+                "name": r["name"],
+                "merchant_name": r["merchant_name"],
+                "amount": r["amount"],
+                "currency": r["currency"],
+                "account_name": r["account_name"],
+            }
+            for r in shown[:5]
+        ],
+    }
 
 
 def matching_transactions(db: Database, candidate: dict[str, Any]) -> list[Any]:

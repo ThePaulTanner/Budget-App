@@ -782,9 +782,11 @@
         if (!text) { previewBox.hidden = true; return; }
         try {
           const p = await api("/api/merchants/aliases/preview", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: text } });
+          const plural = (n) => `${n} transaction${n === 1 ? "" : "s"}`;
           previewBox.replaceChildren(
             p.matching_transactions === 0 ? "Nothing matches yet. It will apply to future transactions."
-              : `${p.matching_transactions} transaction${p.matching_transactions === 1 ? "" : "s"} match${p.matching_transactions === 1 ? "es" : ""}${p.currently_unassigned ? ` (${p.currently_unassigned} not yet named)` : ""}.`,
+              : p.would_apply === 0 ? `${plural(p.matching_transactions)} match, but a name you already gave them is more specific, so none would change.`
+                : `${plural(p.would_apply)} would be named${p.currently_unassigned ? ` (${p.currently_unassigned} not yet named)` : ""}${p.kept_by_other_names ? `; ${p.kept_by_other_names} more keep a more specific name` : ""}.`,
             ...p.samples.map((s) => el("div", { class: "muted", text: `${shortDate(s.date)} \u00B7 ${money(Math.abs(s.amount), s.currency)} \u00B7 ${s.account_name} \u00B7 ${s.name}` })));
           previewBox.hidden = false;
         } catch (err) { if (!(err instanceof SignedOut)) { previewBox.textContent = err.message; previewBox.hidden = false; } }
@@ -856,7 +858,8 @@
       el("div", { class: "actions" },
         el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
         el("button", { type: "button", text: "Merge into\u2026", onclick: () => openMerge(d, done) }),
-        el("button", { type: "button", class: "danger", text: "Delete", onclick: () => {
+        // Deleting a merchant your bank named, with nothing of yours attached, would change nothing: it comes straight back.
+        (!d.auto || d.alias_list.some((a) => a.source === "user")) && el("button", { type: "button", class: "danger", text: d.auto ? "Delete" : "Delete or reset", onclick: () => {
           if (!confirm(`Delete ${d.name}?\n\nIt and the names you gave it are forgotten. Transactions your bank named return to an automatic merchant; the rest go back to "Needs a name".`)) return;
           run(() => api(`/api/merchants/${d.id}`, { method: "DELETE" }), () => { closeSheet(); toast("Merchant deleted."); done(); });
         } }),

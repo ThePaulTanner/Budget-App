@@ -72,7 +72,8 @@ def test_unclear_names_are_listed_then_named_and_future_ones_follow(seeded, serv
         ("POS PURCHASE 4521 TORONTO ON", 2, 9.75), ("E-TRANSFER 99", 1, 20.0)]
     preview = client.post("/api/merchants/aliases/preview", headers=auth, json={
         "match_field": "name", "match_type": "contains", "pattern": "pos purchase 4521"}).json()
-    assert preview["matching_transactions"] == 2 and preview["currently_unassigned"] == 2
+    assert preview["matching_transactions"] == 2 and preview["would_apply"] == 2
+    assert preview["kept_by_other_names"] == 0 and preview["currently_unassigned"] == 2
     assert preview["samples"][0]["name"] == "POS PURCHASE 4521 TORONTO ON" and preview["samples"][0]["account_name"]
 
     made = name_it(client, auth, "POS PURCHASE 4521", "Corner Store", kind="contains")
@@ -107,6 +108,33 @@ def test_a_name_you_give_beats_plaids_and_leaves_no_empty_merchant_behind(seeded
     assert "Amazon" in names and "Amzn Mktp" not in names  # the empty automatic merchant is tidied away
     add_tx(services, "tx_a2", "AMZN Mktp CA*2", "Amzn Mktp", "12.00")
     assert by_name(merchants(client, auth, period="all"), "Amazon")["transactions"] == 2
+
+
+def test_the_preview_uses_the_real_priority(seeded, services):
+    client, auth = seeded
+    add_tx(services, "tx_v1", "SHELL 12 TORONTO", None, "40.00")
+    add_tx(services, "tx_v2", "SHELL 99 OTTAWA", None, "30.00")
+    name_it(client, auth, "SHELL 12 TORONTO", "Shell Toronto")  # an exact name you already gave
+    preview = client.post("/api/merchants/aliases/preview", headers=auth, json={
+        "match_field": "name", "match_type": "contains", "pattern": "shell"}).json()
+    assert preview["matching_transactions"] == 2 and preview["would_apply"] == 1
+    assert preview["kept_by_other_names"] == 1 and preview["samples"][0]["name"] == "SHELL 99 OTTAWA"
+    only_blocked = client.post("/api/merchants/aliases/preview", headers=auth, json={
+        "match_field": "name", "match_type": "contains", "pattern": "toronto"}).json()
+    assert only_blocked["would_apply"] == 0 and only_blocked["samples"][0]["name"] == "SHELL 12 TORONTO"
+    # saving really does what the preview said
+    saved = name_it(client, auth, "shell", "Shell Gas", kind="contains").json()
+    assert saved["updated_transactions"] == 1
+
+
+def test_bank_text_is_stored_with_tidy_whitespace(seeded, services):
+    client, auth = seeded
+    add_tx(services, "tx_w1", "COFFEE   SHOP  9", None, "3.00")
+    alias = name_it(client, auth, "  coffee   shop 9 ", "Coffee Shop").json()["alias"]
+    assert alias["pattern"] == "coffee shop 9"
+    assert client.get("/api/merchants/unassigned", headers=auth).json() == []  # whitespace differences still match
+    again = name_it(client, auth, "COFFEE SHOP 9", "Coffee Shop 2").json()
+    assert again["alias"]["id"] == alias["id"]  # one row, not two
 
 
 def test_priority_is_yours_then_equals_then_longest(services):
