@@ -3,6 +3,7 @@
     docker exec -it homefinance python -m app.cli create-user --username paul
     docker exec -it homefinance python -m app.cli login-log
     docker exec -it homefinance python -m app.cli unlock
+    docker exec -it homefinance python -m app.cli reset-networth
     python -m app.cli gen-key > hf_master_key
 """
 
@@ -60,10 +61,13 @@ def _unlock(_: argparse.Namespace) -> int:
     from .bootstrap import build_services
 
     services = build_services(load_settings())
-    if services.auth.unlock():
-        print("Sign-in unlocked. The failed-attempt count is back to zero.")
-    else:
-        print("Sign-in was not locked. The failed-attempt count is back to zero.")
+    try:
+        if services.auth.unlock():
+            print("Sign-in unlocked. The failed-attempt count is back to zero.")
+        else:
+            print("Sign-in was not locked. The failed-attempt count is back to zero.")
+    finally:
+        services.db.close()
     return 0
 
 
@@ -71,12 +75,36 @@ def _login_log(args: argparse.Namespace) -> int:
     from .bootstrap import build_services
 
     services = build_services(load_settings())
-    data = services.auth.login_log(args.limit)
+    try:
+        data = services.auth.login_log(args.limit)
+    finally:
+        services.db.close()
     state = "LOCKED since " + data["locked_at"] if data["locked"] else "not locked"
     print(f"Sign-in is {state}. Failed in a row: {data['failed_streak']} of {data['max_failed_logins']}.\n")
     for e in data["events"]:
         times = f" x{e['count']}" if e["count"] > 1 else ""
         print(f"{e['at']}  {e['result']:<13}{times:<6} from {e['ip'] or '-'}  {e['origin'] or ''}  {e['device_name'] or ''}")
+    return 0
+
+
+def _reset_networth(args: argparse.Namespace) -> int:
+    from .bootstrap import build_services
+
+    services = build_services(load_settings())
+    try:
+        count = services.db.one("SELECT count(*) AS n FROM networth")["n"]
+        if not args.yes:
+            answer = input(
+                f"Delete all {count} saved daily net-worth points? This is the whole chart history, "
+                "including any from real banks. Type yes: "
+            )
+            if answer.strip().lower() != "yes":
+                print("Nothing deleted.")
+                return 1
+        services.db.run("DELETE FROM networth")
+    finally:
+        services.db.close()
+    print(f"Deleted {count} net-worth points. The chart starts again with the next sync.")
     return 0
 
 
@@ -88,6 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--username", required=True)
     create.set_defaults(func=_create_user)
     sub.add_parser("unlock", help="unlock sign-in after too many failed attempts").set_defaults(func=_unlock)
+    reset = sub.add_parser("reset-networth", help="delete the saved net-worth chart history (for example after removing sandbox banks)")
+    reset.add_argument("--yes", action="store_true", help="do not ask")
+    reset.set_defaults(func=_reset_networth)
     log = sub.add_parser("login-log", help="show recent sign-in attempts")
     log.add_argument("--limit", type=int, default=50)
     log.set_defaults(func=_login_log)

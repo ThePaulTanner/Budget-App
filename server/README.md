@@ -96,13 +96,13 @@ Port 8081 is safe to expose because it serves exactly one route. Every other pat
 
 ### 5. Link your banks
 
-Open `https://YOUR-NAS.YOUR-TAILNET.ts.net` on a device on your tailnet, sign in, and press **Link a bank**. In the sandbox, Plaid's test login is `user_good` / `pass_good`, and if it asks for a phone number, no text message is sent: enter the code `123456`. The sandbox TD Canada Trust test bank has no investment support, so Investments stays empty until you link a real brokerage. Linked banks are listed there with a **Reconnect** button when one needs attention.
+Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet, sign in, go to **Settings**, and press **Link a bank**. Plaid's window opens; choose the bank and sign in there (your bank password goes to Plaid, never to this server). Repeat for each bank. A bank that later needs attention shows **Reconnect** next to it, and **Remove** deletes one. In the sandbox, Plaid's test login is `user_good` / `pass_good`, and if it asks for a phone number, no text message is sent: enter the code `123456`. The sandbox TD Canada Trust test bank has no investment support, so Investments stays empty until you link a real brokerage. The older stand-alone page at `https://YOUR-NAS.YOUR-TAILNET.ts.net/` does the same job and signs in with the same cookie.
 
 ### 6. Use the web app
 
 Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and sign in with your password and authenticator code. It has the same five sections as the iPhone app will: Overview (net worth, chart, accounts), Transactions (search, filters, re-categorize, "always categorize" rules), Budgets, Investments and Settings (sync now, linked banks, devices, rules, hiding accounts).
 
-Signing in sets a cookie that keeps you signed in for 30 days from last use (see `docs/SECURITY.md`, section 1b). Sign out from Settings to end it, and use only computers you trust. The bank-linking page at `/` uses the same sign-in. There is no separate setup: it ships inside the same container.
+Signing in sets a cookie that keeps you signed in for 30 days from last use (see `docs/SECURITY.md`, section 1b). Sign out from Settings to end it, and use only computers you trust. Banks are linked from there too (Settings, Link a bank). There is no separate setup: it ships inside the same container.
 
 ### 7. Live prices for your positions
 
@@ -140,7 +140,31 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 - **Lost the authenticator:** sign in with a recovery code.
 - **See who tried to sign in:** web app → Settings → Sign-in activity, or `docker exec -it homefinance python -m app.cli login-log`.
 - **Locked out after too many failed attempts:** `docker exec -it homefinance python -m app.cli unlock`. It takes effect at once, no restart.
-- **Go to production:** swap the Plaid secret file for the production one, set `PLAID_ENV=production`, restart, and link your real banks. Sandbox data stays in the database until you remove those banks (`DELETE /api/items/{id}`).
+- **Go to real banks:** follow "Going to real banks" below. The order matters (remove the sandbox bank first).
+
+## Going to real banks
+
+**Which Plaid plan.** As Plaid's support pages describe them in October 2026 (plans change, so confirm in your dashboard):
+
+- **Trial plan (free).** For a new US or Canada developer account that has not applied for Production. It uses **real banks** (US and Canadian), is capped at **10 linked banks** ("Items"), and includes Transactions and Investments. You finish a short Trial plan application in the dashboard at dashboard.plaid.com; Plaid decides.
+- **Pay as you go.** For more than 10 banks or other products. Apply for Production access in the dashboard; the prices are shown on the last page of the application.
+- **Every real bank you link uses one of the 10 slots, and removing a bank does not give the slot back.** Sandbox banks are unlimited and do not count. So: link each real bank once, use **Reconnect** (not remove and re-add) when a bank needs attention, and do your experiments in the sandbox.
+
+**Checklist, in this order**
+
+1. **Check coverage first.** Look up each of your banks and brokerages in Plaid's institution list for Canada, and see which products they support (Transactions, and Investments for brokerages). Coverage is Plaid's and the bank's decision, not this server's.
+2. **Get access.** Complete the Trial plan (or Production) application, wait for Plaid to approve it, then copy your **Production secret** from the dashboard (Developers, Keys). Your client id normally stays the same; confirm that in the dashboard.
+3. **Remove the sandbox bank, while still in sandbox mode.** Web app, Settings, Banks, **Remove**. (Doing this after switching would ask the production Plaid to close a sandbox connection and fail.)
+4. **Clear the fake chart history:** `docker exec -it homefinance python -m app.cli reset-networth`. Otherwise the net-worth chart keeps the sandbox's invented balances.
+5. **Swap the secret** (SSH on, no echo, one command at a time; use your own volume in the path):
+   ```sh
+   read -rs -p "Plaid PRODUCTION secret: " V; echo; printf '%s' "$V" | sudo tee /volume1/docker/homefinance/secrets/plaid_secret >/dev/null; unset V
+   ```
+6. **Switch the environment.** In `.env` set `PLAID_ENV=production`, then `sudo docker compose up -d --force-recreate`. Check `curl http://127.0.0.1:18080/health` prints `"plaid_env":"production"`. A secret and environment that do not match show as `INVALID_API_KEYS` when you link a bank.
+7. **Link each bank once** from the web app: Settings, **Link a bank** (it reminds you about the slot limit before it opens). Some banks send you to their own site or app to approve; if one is not offered or fails, stop and note the exact message before retrying, because each successful link uses a slot.
+8. **Wait for the first sync.** Years of history can take a few minutes. Webhooks (`PUBLIC_WEBHOOK_URL`) then bring new transactions within minutes.
+9. **Check it against your bank's own app:** balances on Overview, a few recent transactions, and for a brokerage the positions and "Live" prices on Investments.
+10. **Turn SSH off** again, and keep the master key and recovery codes backed up away from the NAS.
 
 ## Troubleshooting
 

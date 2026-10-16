@@ -599,6 +599,7 @@
     "1m": "Change over the last month.", "3m": "Change over the last 3 months.", ytd: "Change since the start of the year.", "1y": "Change over the last year.",
   };
   let invPeriod = "day";
+  let syncPolls = 0;  // first-sync checks on the Settings screen since you last navigated or linked
 
   function changeText(change, currency) {
     if (!change) return null;
@@ -670,6 +671,56 @@
 
   // ---------------------------------------------------------------- Settings
 
+  // Plaid Link is Plaid's own script. It is fetched only when you press a link button.
+  const PLAID_LINK_SCRIPT = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
+  let plaidLoading = null;
+  function loadPlaidLink() {
+    if (window.Plaid) return Promise.resolve();
+    plaidLoading ??= new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = PLAID_LINK_SCRIPT;
+      script.onload = resolve;
+      script.onerror = () => { plaidLoading = null; script.remove(); reject(new Error("Could not load Plaid Link. Is this device online?")); };
+      document.head.append(script);
+    });
+    return plaidLoading;
+  }
+
+  // Link a new bank (item = null) or reconnect one that needs attention (item = the bank).
+  async function startLink(item, done) {
+    let environment = null;
+    try { environment = (await (await plainFetch("/health")).json()).plaid_env; } catch (_) { /* the link call will report a real problem */ }
+    if (!item && environment === "production" && !confirm(
+      "This links a real bank. Each real bank uses one slot of your Plaid plan (the free Trial plan allows 10), and removing a bank does not give the slot back.\n\nContinue?")) return;
+    let linkToken;
+    try {
+      await loadPlaidLink();
+      linkToken = (await api("/api/link/token", { method: "POST", body: item ? { item_id: item.id } : {} })).link_token;
+    } catch (err) {
+      if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
+      return;
+    }
+    window.Plaid.create({
+      token: linkToken,
+      onSuccess: async (publicToken) => {
+        try {
+          if (item) {
+            await api("/api/link/complete", { method: "POST", body: { item_id: item.id } });
+            toast(`${item.institution || "Bank"} reconnected. It is syncing now.`);
+          } else {
+            const added = await api("/api/link/exchange", { method: "POST", body: { public_token: publicToken } });
+            toast(`${added.institution || "Bank"} connected. The first sync runs in the background.`);
+          }
+          syncPolls = 0;
+          done();
+        } catch (err) {
+          if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
+        }
+      },
+      onExit: (err) => { if (err) toast(err.display_message || err.error_message || "Linking was cancelled.", true); },
+    }).open();
+  }
+
   async function viewSettings(id) {
     const [items, sessions, rules, accounts, choices, log] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
@@ -692,11 +743,25 @@
       } finally { syncButton.disabled = false; syncButton.textContent = "Sync now"; }
     } });
 
-    const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }), syncButton, syncOut,
-      items.length === 0 && el("p", { class: "empty", text: "No banks linked yet." }),
+    const linkButton = el("button", { type: "button", class: "primary", text: "Link a bank", onclick: () => startLink(null, reload) });
+    const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }),
+      el("div", { class: "actions" }, linkButton, syncButton), syncOut,
+      items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
       items.map((i) => el("div", { class: "row" }, el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
-        el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : `Last synced ${ago(i.last_synced_at)}` })))),
-      el("p", {}, el("a", { href: "/", target: "_blank", rel: "noopener", text: "Open bank-linking page" }), el("span", { class: "muted", text: " (link, reconnect or remove banks)" })));
+        el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
+        i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
+        el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+          const name = i.institution || "this bank";
+          if (!confirm(`Remove ${name} from HomeFinance?\n\nIts accounts, transactions and holdings are deleted from this server, and the connection is closed at Plaid. Plaid counts every real bank you link against a free plan's limit, and removing one does not give the slot back. If a bank only needs attention, use Reconnect instead.`)) return;
+          try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }))));
+    // A bank still waiting for its first sync: check again every 6 seconds, at most 10 times,
+    // and never while a dialog is open.
+    if (items.some((i) => !i.last_synced_at && !i.needs_reauth) && syncPolls < 10) {
+      const timer = setTimeout(() => { if ($("sheet").open) return; syncPolls += 1; reload(); }, 6000);
+      cleanups.push(() => clearTimeout(timer));
+    }
 
     const devices = el("section", { class: "card" }, el("h2", { text: "Signed-in devices" }),
       sessions.map((s) => el("div", { class: "row" }, el("div", { class: "grow" },
@@ -769,13 +834,14 @@
     const banner = $("banner");
     if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
     banner.replaceChildren(`${institutions.join(", ")} needs to be reconnected. `,
-      el("a", { href: "/", target: "_blank", rel: "noopener", text: "Open the bank-linking page" }));
+      el("a", { href: "#/settings", text: "Reconnect it in Settings" }));
     banner.hidden = false;
   }
 
   async function route() {
     if (!token && $("shell").hidden) return;
     while (cleanups.length) cleanups.pop()();
+    syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
     const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
     for (const a of document.querySelectorAll("#tabs a")) {
