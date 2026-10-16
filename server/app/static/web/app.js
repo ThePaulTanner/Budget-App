@@ -599,6 +599,7 @@
     "1m": "Change over the last month.", "3m": "Change over the last 3 months.", ytd: "Change since the start of the year.", "1y": "Change over the last year.",
   };
   let invPeriod = "day";
+  let syncPolls = 0;  // first-sync checks on the Settings screen since you last navigated or linked
 
   function changeText(change, currency) {
     if (!change) return null;
@@ -710,6 +711,7 @@
             const added = await api("/api/link/exchange", { method: "POST", body: { public_token: publicToken } });
             toast(`${added.institution || "Bank"} connected. The first sync runs in the background.`);
           }
+          syncPolls = 0;
           done();
         } catch (err) {
           if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
@@ -754,8 +756,10 @@
           try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
           catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
         } }))));
-    if (items.some((i) => !i.last_synced_at && !i.needs_reauth)) {  // a new bank: watch for its first sync
-      const timer = setTimeout(reload, 6000);
+    // A bank still waiting for its first sync: check again every 6 seconds, at most 10 times,
+    // and never while a dialog is open.
+    if (items.some((i) => !i.last_synced_at && !i.needs_reauth) && syncPolls < 10) {
+      const timer = setTimeout(() => { if ($("sheet").open) return; syncPolls += 1; reload(); }, 6000);
       cleanups.push(() => clearTimeout(timer));
     }
 
@@ -837,6 +841,7 @@
   async function route() {
     if (!token && $("shell").hidden) return;
     while (cleanups.length) cleanups.pop()();
+    syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
     const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
     for (const a of document.querySelectorAll("#tabs a")) {
