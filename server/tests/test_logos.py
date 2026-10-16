@@ -61,3 +61,19 @@ def test_a_failed_lookup_is_retried_and_never_fails_the_sync(services, plaid):
     del plaid.errors["institution_details"]
     assert run(services, services.db.one("SELECT * FROM items"))["ok"] is True
     assert services.db.one("SELECT logo FROM items")["logo"] == TEST_LOGO
+
+
+def test_an_unexpected_institution_reply_is_a_failed_lookup_not_a_crash():
+    from app.plaid import PlaidClient
+
+    class Odd(PlaidClient):
+        def __init__(self, reply):
+            self.reply = reply
+
+        def _post(self, path, body):
+            return self.reply
+
+    for reply in ({"institution": None}, {"institution": "oops"}, {}):
+        assert Odd(reply).institution_details("ins_1", ("CA",)) is None
+    assert Odd({"institution": {"name": "TD", "logo": None}}).institution_details("ins_1", ("CA",)) == {
+        "name": "TD", "logo": None, "color": None}

@@ -27,8 +27,9 @@ USER app
 EXPOSE 8080 8081
 VOLUME /data
 
-# Generous limits: on a busy NAS even starting Python for this check can take several seconds,
-# and a first start (database migration) can take minutes.
+# Generous limits: on a busy NAS even starting Python for this check can take several seconds
+# (the check was being killed at 5 s while the server answered fine), and a restart there can take
+# a couple of minutes.
 HEALTHCHECK --interval=60s --timeout=30s --start-period=180s --retries=3 \
   CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=25)" || exit 1
 

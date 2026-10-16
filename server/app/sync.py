@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import queue
-import threading
-import base64
 import re
+import threading
 from datetime import datetime
 from decimal import Decimal
 from typing import Any

@@ -281,13 +281,13 @@ def create_api_app(services: Services) -> FastAPI:
     base = settings.base_currency
 
     def scope_sql(person_id: int | None, column: str = "a.id") -> tuple[str, list[Any]]:
-        """Limit a query to one person's accounts. Without a person it is the whole household,
-        and nothing is joined, so an account with several owners is still one row."""
+        """The condition that limits a query to one person's accounts (empty for the household).
+        Nothing is joined, so an account with several owners is still one row."""
         if person_id is None:
             return "", []
         if not db.one("SELECT 1 FROM people WHERE id = ?", (person_id,)):
             raise HTTPException(404, "person not found")
-        return f" AND {column} IN (SELECT account_id FROM account_owners WHERE person_id = ?)", [person_id]
+        return f"{column} IN (SELECT account_id FROM account_owners WHERE person_id = ?)", [person_id]
 
     def owners_by_account() -> dict[str, list[int]]:
         out: dict[str, list[int]] = {}
@@ -460,7 +460,8 @@ def create_api_app(services: Services) -> FastAPI:
             "FROM transactions t JOIN accounts a ON a.id = t.account_id "
             "WHERE a.hidden = 0 AND t.currency = ? AND t.date >= ? AND t.date < ?"
         )
-        clause, extra = scope_sql(person_id)
+        condition, extra = scope_sql(person_id, "t.account_id")
+        clause = f" AND {condition}" if condition else ""
         tops: dict[str, Decimal] = {}
         subs: dict[str, dict[str, Decimal]] = {}
         for row in db.query(sql + clause, (base, start, end, *extra)):
@@ -554,8 +555,10 @@ def create_api_app(services: Services) -> FastAPI:
         )
         if not include_hidden:
             sql += " AND a.hidden = 0"
-        clause, params = scope_sql(person_id)
-        sql += clause + " ORDER BY a.type, a.name"
+        condition, params = scope_sql(person_id)
+        if condition:
+            sql += f" AND {condition}"
+        sql += " ORDER BY a.type, a.name"
         owners = owners_by_account()
         return [account_json(r, r["institution"], owners.get(r["id"])) for r in db.query(sql, params)]
 
@@ -655,9 +658,9 @@ def create_api_app(services: Services) -> FastAPI:
         person_id: int | None = None,
     ):
         where, params = ["1=1"], []
-        scope, scope_params = scope_sql(person_id, "t.account_id")
-        if scope:
-            where.append(scope[5:])  # drop the leading " AND "
+        condition, scope_params = scope_sql(person_id, "t.account_id")
+        if condition:
+            where.append(condition)
             params += scope_params
         if account_id:
             where.append("t.account_id = ?")
@@ -775,7 +778,8 @@ def create_api_app(services: Services) -> FastAPI:
             "JOIN accounts a ON a.id = t.account_id "
             "WHERE a.hidden = 0 AND t.currency = ? AND t.date >= ? AND t.date < ?"
         )
-        clause, extra = scope_sql(person_id)
+        condition, extra = scope_sql(person_id, "t.account_id")
+        clause = f" AND {condition}" if condition else ""
         sums: dict[str, Decimal] = {}
         for row in db.query(sql + clause, (base, f"{first}-01", month_bounds(current)[1], *extra)):
             if is_excluded(row["category"]):
@@ -820,7 +824,8 @@ def create_api_app(services: Services) -> FastAPI:
     @app.get("/api/payments-due")
     def payments_due(ctx: Auth, person_id: int | None = None):
         today = date.fromisoformat(today_str())
-        clause, extra = scope_sql(person_id)
+        condition, extra = scope_sql(person_id)
+        clause = f" AND {condition}" if condition else ""
         rows = db.query(
             "SELECT a.*, i.institution AS institution, d.account_id AS dues_id, d.due_date, "
             "d.minimum_payment, d.statement_balance, d.statement_date, d.last_payment_amount, "
@@ -908,7 +913,8 @@ def create_api_app(services: Services) -> FastAPI:
 
     @app.get("/api/holdings")
     def holdings(ctx: Auth, person_id: int | None = None):
-        clause, extra = scope_sql(person_id)
+        condition, extra = scope_sql(person_id)
+        clause = f" AND {condition}" if condition else ""
         rows = db.query(
             "SELECT h.*, a.name AS account_name, a.mask AS account_mask FROM holdings h "
             "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0" + clause,
@@ -947,7 +953,8 @@ def create_api_app(services: Services) -> FastAPI:
         the previous close, a week, a month, three months, the start of the year and a year
         ago. Anything without a live price keeps Plaid's last price and says so. Changes
         assume today's quantity was held throughout the period."""
-        clause, extra = scope_sql(person_id)
+        condition, extra = scope_sql(person_id)
+        clause = f" AND {condition}" if condition else ""
         rows = db.query(
             "SELECT h.*, a.name AS account_name, a.mask AS account_mask FROM holdings h "
             "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0" + clause,

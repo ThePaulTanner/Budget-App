@@ -104,7 +104,9 @@ class PlaidClient:
             )
         except PlaidError:
             return None
-        bank = data.get("institution", {})
+        bank = data.get("institution")
+        if not isinstance(bank, dict):
+            return None  # an unexpected reply is treated like a failed lookup
         return {"name": bank.get("name"), "logo": bank.get("logo"), "color": bank.get("primary_color")}
 
     def institution_name(self, institution_id: str, country_codes: tuple[str, ...]) -> str | None:
