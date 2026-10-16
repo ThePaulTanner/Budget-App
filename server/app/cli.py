@@ -3,6 +3,7 @@
     docker exec -it homefinance python -m app.cli create-user --username paul
     docker exec -it homefinance python -m app.cli login-log
     docker exec -it homefinance python -m app.cli unlock
+    docker exec -it homefinance python -m app.cli reset-networth
     python -m app.cli gen-key > hf_master_key
 """
 
@@ -80,6 +81,21 @@ def _login_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reset_networth(args: argparse.Namespace) -> int:
+    from .bootstrap import build_services
+
+    services = build_services(load_settings())
+    count = services.db.one("SELECT count(*) AS n FROM networth")["n"]
+    if not args.yes:
+        answer = input(f"Delete all {count} saved daily net-worth points (the chart history)? Type yes: ")
+        if answer.strip().lower() != "yes":
+            print("Nothing deleted.")
+            return 1
+    services.db.run("DELETE FROM networth")
+    print(f"Deleted {count} net-worth points. The chart starts again with the next sync.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -88,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--username", required=True)
     create.set_defaults(func=_create_user)
     sub.add_parser("unlock", help="unlock sign-in after too many failed attempts").set_defaults(func=_unlock)
+    reset = sub.add_parser("reset-networth", help="delete the saved net-worth chart history (for example after removing sandbox banks)")
+    reset.add_argument("--yes", action="store_true", help="do not ask")
+    reset.set_defaults(func=_reset_networth)
     log = sub.add_parser("login-log", help="show recent sign-in attempts")
     log.add_argument("--limit", type=int, default=50)
     log.set_defaults(func=_login_log)

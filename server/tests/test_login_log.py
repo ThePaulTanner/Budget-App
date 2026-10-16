@@ -261,3 +261,21 @@ def test_login_log_and_423_fixtures_match_the_server(login, client, services):
     live = services.auth.login_log()
     assert set(live) == set(shape)
     assert all(set(e) == set(shape["events"][0]) for e in live["events"])
+
+
+def test_cli_reset_networth(tmp_path, monkeypatch, capsys):
+    import os
+
+    monkeypatch.setenv("HF_DATA_DIR", str(tmp_path))
+    key = generate_master_key()
+    monkeypatch.setenv("HF_MASTER_KEY", key)
+    services = build_services(Settings(data_dir=tmp_path, master_key=key))
+    services.db.run("INSERT INTO networth VALUES ('2026-10-01','CAD','1','0','0','1')")
+    services.db.close()
+    monkeypatch.setattr("builtins.input", lambda _: "no")
+    assert cli.main(["reset-networth"]) == 1  # declined: nothing deleted
+    assert cli.main(["reset-networth", "--yes"]) == 0
+    assert "Deleted 1" in capsys.readouterr().out
+    again = build_services(Settings(data_dir=tmp_path, master_key=key))
+    assert again.db.query("SELECT * FROM networth") == []
+    again.db.close()

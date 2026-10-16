@@ -695,8 +695,14 @@
     const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }), syncButton, syncOut,
       items.length === 0 && el("p", { class: "empty", text: "No banks linked yet." }),
       items.map((i) => el("div", { class: "row" }, el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
-        el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : `Last synced ${ago(i.last_synced_at)}` })))),
-      el("p", {}, el("a", { href: "/", target: "_blank", rel: "noopener", text: "Open bank-linking page" }), el("span", { class: "muted", text: " (link, reconnect or remove banks)" })));
+        el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : `Last synced ${ago(i.last_synced_at)}` })),
+        el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+          const name = i.institution || "this bank";
+          if (!confirm(`Remove ${name} from HomeFinance?\n\nIts accounts, transactions and holdings are deleted from this server, and the connection is closed at Plaid. Plaid counts every real bank you link against a free plan's limit, and removing one does not give the slot back. If a bank only needs attention, use Reconnect on the bank-linking page instead.`)) return;
+          try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }))),
+      el("p", {}, el("a", { href: "/", target: "_blank", rel: "noopener", text: "Open bank-linking page" }), el("span", { class: "muted", text: " (link or reconnect banks)" })));
 
     const devices = el("section", { class: "card" }, el("h2", { text: "Signed-in devices" }),
       sessions.map((s) => el("div", { class: "row" }, el("div", { class: "grow" },
