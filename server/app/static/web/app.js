@@ -454,10 +454,54 @@
 
   let nwDays = 365;
 
+  // The Overview's credit card payments: what to pay, the minimum, and when, for every card.
+  function paymentsSummary(data) {
+    if (!data || data.cards.length === 0) return document.createDocumentFragment();  // nothing to show, and nothing printed
+    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    return el("section", { class: "card" },
+      el("div", { class: "section-head" },
+        el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg("i-card", 22)),
+        el("div", { class: "grow" }, el("h2", { text: "Credit card payments" }),
+          el("div", { class: "muted", text: `${data.cards.length} card${data.cards.length === 1 ? "" : "s"}` })),
+        el("a", { href: "#/money", text: "Details" })),
+      Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
+        stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
+        stat("Minimum payments", money(t.minimum_due, cur)),
+        stat("Total owed on cards", money(t.owed, cur)))),
+      data.cards.map((c) => {
+        const [label, tone] = DUE_PILLS[c.status];
+        return el("a", { class: "row click", href: "#/money" },
+          el("div", { class: "grow" },
+            el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+              el("span", { class: `pill ${tone}`, text: label })),
+            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
+          el("div", { class: "amount" }, money(c.statement_balance ?? c.current_balance, c.currency),
+            el("div", { class: "muted", text: c.minimum_payment != null ? `minimum ${money(c.minimum_payment, c.currency)}` : c.statement_balance == null ? "balance" : "statement" })));
+      }),
+      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet, so these are the balances now." }));
+  }
+
+  // Every account and its balance, by kind, with each bank's logo.
+  async function viewAccounts(id) {
+    const [accounts, items] = await Promise.all([api(scoped("/api/accounts?include_hidden=false")), api("/api/items").catch(() => [])]);
+    if (id !== navId) return;
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    const known = new Set(["investment", "depository", "credit", "loan"]);
+    const sections = ACCOUNT_SECTIONS
+      .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
+      .filter(([, , , rows]) => rows.length > 0)
+      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
+    if (sections.length === 0) {
+      sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+        el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
+    }
+    view().replaceChildren(viewerNote(), ...sections);
+  }
+
   async function viewOverview(id) {
-    const [summary, accounts, log, spending, items] = await Promise.all([
-      api(scoped("/api/summary")), api(scoped("/api/accounts?include_hidden=false")), api("/auth/login-log?limit=100").catch(() => null),
-      api(scoped("/api/spending")).catch(() => ({ categories: [] })), api("/api/items").catch(() => [])]);  // no month = the current one, same as the summary
+    const [summary, dues, log, spending] = await Promise.all([
+      api(scoped("/api/summary")), api(scoped("/api/payments-due")).catch(() => null), api("/auth/login-log?limit=100").catch(() => null),
+      api(scoped("/api/spending")).catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -485,7 +529,8 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       el("div", { class: "toolbar" }, seg),
       chartBox,
-      el("p", { class: "muted", text: `Last synced ${ago(summary.last_synced_at)}. Pull new bank data from Settings.` }));
+      el("p", { class: "muted", text: `Last synced ${ago(summary.last_synced_at)}. Pull new bank data from Settings.` }),
+      el("p", {}, el("a", { href: "#/accounts", text: "See every account and its balance" })));
 
     const budgeted = summary.budgeted_this_month;
     const pct = budgeted > 0 ? (summary.spent_this_month / budgeted) * 100 : 0;
@@ -504,17 +549,7 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
-    const itemsById = new Map(items.map((i) => [i.id, i]));
-    const known = new Set(["investment", "depository", "credit", "loan"]);
-    const sections = ACCOUNT_SECTIONS
-      .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
-      .filter(([, , , rows]) => rows.length > 0)
-      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
-    if (sections.length === 0) {
-      sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
-        el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
-    }
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), ...sections);
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), paymentsSummary(dues));
     drawChart();
   }
 
@@ -1424,7 +1459,8 @@
 
   const cleanups = [];
   const PAGES = {
-    overview: ["Overview", "Net worth, spending and accounts"],
+    overview: ["Overview", "Net worth, spending and credit card payments"],
+    accounts: ["Accounts", "Balances by bank and account"],
     transactions: ["Transactions", "Search, filter and re-categorize"],
     merchants: ["Merchants", "Where your money goes, over time"],
     budgets: ["Budgets", "Limits and spending by month"],
@@ -1432,7 +1468,7 @@
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
   };
-  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, accounts: viewAccounts, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
   // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
   async function refreshStatus() {
