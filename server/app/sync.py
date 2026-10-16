@@ -287,10 +287,19 @@ def sync_liabilities(db: Database, plaid: PlaidClient, token: str, item_id: str)
 # -- net worth ---------------------------------------------------------------
 
 
-def compute_networth(db: Database) -> dict[str, dict[str, Decimal]]:
-    """Assets, liabilities, investments and net worth per currency (hidden accounts excluded)."""
+def compute_networth(db: Database, person_id: int | None = None) -> dict[str, dict[str, Decimal]]:
+    """Assets, liabilities, investments and net worth per currency (hidden accounts excluded).
+
+    Without a person this is the whole household and every account counts once, however many
+    owners it has. With a person it is the accounts that person owns, in full: an account shared
+    with someone else shows in both people's totals, never twice in the household's."""
     totals: dict[str, dict[str, Decimal]] = {}
-    for acct in db.query("SELECT type, current_balance, currency FROM accounts WHERE hidden=0"):
+    sql = "SELECT type, current_balance, currency FROM accounts WHERE hidden=0"
+    params: tuple = ()
+    if person_id is not None:
+        sql += " AND id IN (SELECT account_id FROM account_owners WHERE person_id=?)"
+        params = (person_id,)
+    for acct in db.query(sql, params):
         if acct["current_balance"] is None:
             continue
         t = totals.setdefault(
@@ -315,22 +324,27 @@ def compute_networth(db: Database) -> dict[str, dict[str, Decimal]]:
 
 
 def snapshot_networth(db: Database, date: str | None = None) -> None:
-    """Record today's net worth per currency (one row per day, overwritten on re-sync)."""
+    """Record today's net worth per currency for the household (person_id 0) and for each
+    person (one row per day and scope, overwritten on re-sync)."""
     date = date or today_str()
+    scopes: list[tuple[int, int | None]] = [(0, None)]
+    scopes += [(r["id"], r["id"]) for r in db.query("SELECT id FROM people")]
     with db.transaction():
-        for currency, t in compute_networth(db).items():
-            db.run(
-                "INSERT OR REPLACE INTO networth(date, currency, assets, liabilities, "
-                "investments, net_worth) VALUES (?,?,?,?,?,?)",
-                (
-                    date,
-                    currency,
-                    str(t["assets"]),
-                    str(t["liabilities"]),
-                    str(t["investments"]),
-                    str(t["net_worth"]),
-                ),
-            )
+        for stored_id, person in scopes:
+            for currency, t in compute_networth(db, person).items():
+                db.run(
+                    "INSERT OR REPLACE INTO networth(date, currency, person_id, assets, liabilities, "
+                    "investments, net_worth) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        date,
+                        currency,
+                        stored_id,
+                        str(t["assets"]),
+                        str(t["liabilities"]),
+                        str(t["investments"]),
+                        str(t["net_worth"]),
+                    ),
+                )
 
 
 # -- one bank ----------------------------------------------------------------

@@ -86,6 +86,8 @@ button:active { transform: translateY(1px); }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 button.primary:hover { filter: brightness(1.08); background: var(--accent); }
 button.secondary { background: transparent; }
+button.danger-solid { background: var(--red); border-color: var(--red); color: #fff; }
+button.danger-solid:hover { filter: brightness(1.08); }
 button.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: transparent; }
 button.danger:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }
 button.ghost { background: transparent; border-color: transparent; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
@@ -217,12 +219,14 @@ svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 
 /* ---- dialogs, toast, privacy cover ------------------------------------------------------- */
 dialog { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+dialog#confirm { width: min(460px, calc(100vw - 24px)); }
 dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .confirm { text-align: center; }
 .confirm h2 { margin: 6px 0 10px; font-size: 1.35rem; }
 .confirm p { margin: 0 auto 12px; max-width: 42ch; }
 .confirm ul { text-align: left; margin: 0 auto 16px; padding-left: 1.2rem; max-width: 42ch; display: grid; gap: 8px; }
 .confirm .actions { justify-content: center; margin-top: 18px; }
+.confirm-mark.danger { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
 .confirm-mark { width: 52px; height: 52px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; font-weight: 800; background: var(--amber-bg); color: var(--amber-text); }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 18px; border-radius: 99px; z-index: 40; max-width: 90vw; box-shadow: var(--shadow); }
 #toast.error { background: var(--red); color: #fff; }
@@ -262,3 +266,13 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   dialog { width: calc(100vw - 16px); padding: 18px; }
   #toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }
+
+/* people and owners */
+.viewer select { width: auto; padding: .4rem .8rem; border-radius: 99px; background: var(--surface); font-weight: 600; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.viewer-note { margin: 0 0 12px; padding: 9px 14px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: .9rem; }
+.bank-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: 8px; }
+.bank-head h3 { margin: 10px 0 4px; }
+.bank-head .actions { margin: 0; }
+.owners { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; }
+.owners label { display: inline-flex; align-items: center; gap: 6px; font-size: .92rem; cursor: pointer; }

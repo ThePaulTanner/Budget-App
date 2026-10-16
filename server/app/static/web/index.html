@@ -71,6 +71,7 @@
           <p id="page-sub" class="muted"></p>
         </div>
         <div class="top-actions">
+          <label id="viewer-wrap" class="viewer" hidden><span class="sr">Whose money</span><select id="viewer" aria-label="Whose money to show"></select></label>
           <button type="button" class="icon-btn refresh-btn phone-only" title="Reload this page's data (does not sync banks)" aria-label="Reload this page's data"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-refresh"/></svg></button>
           <a id="settings-link" href="#/settings" data-tab="settings" class="icon-btn" title="Settings" aria-label="Settings"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg></a>
         </div>
@@ -86,6 +87,7 @@
   </div>
 
   <dialog id="sheet"></dialog>
+  <dialog id="confirm" aria-labelledby="confirm-title"></dialog>
   <p id="toast" role="status" aria-live="polite" hidden></p>
   <div id="cover" class="cover" hidden>HomeFinance</div>
   <script src="/static/web/app.js"></script>
