@@ -788,11 +788,11 @@
         ? "Live prices are turned off on the server. Showing your bank's last prices."
         : status.message
           ? (status.live_positions > 0
-            ? `Live prices for ${status.live_positions} of ${status.positions} positions so far. Yahoo Finance is limiting requests (${status.message}); the rest follow as it allows.`
+            ? `Live prices for ${status.live_positions} of ${status.positions} positions so far. Yahoo Finance is having trouble (${status.message}); the rest follow when it allows.`
             : `Live prices unavailable (${status.message}). Showing your bank's last prices.`)
           : status.live_positions === 0
             ? "No position has a live price. Showing your bank's last prices."
-            : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Updates every minute while this page is open; Yahoo Finance may delay prices by up to 15 minutes.`;
+            : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Prices refresh about every two minutes while this page is open; Yahoo Finance may delay them by up to 15 minutes.`;
       const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
           : totals.map(([cur, t]) => {
@@ -1302,6 +1302,7 @@
     const unowned = people.length > 0 ? accounts.filter((a) => !a.hidden && (a.owner_ids || []).length === 0).length : 0;
     const accountsOf = new Map();
     for (const a of accounts) accountsOf.set(a.item_id, [...(accountsOf.get(a.item_id) || []), a]);
+    const orphans = accounts.filter((a) => !items.some((i) => i.id === a.item_id));
 
     function accountRow(a) {
       const chosen = new Set(a.owner_ids || []);
@@ -1353,7 +1354,12 @@
         : "Each bank lists its accounts. Tick Hide to leave an account out of totals and budgets. To say who owns what, add the people in your household on the People tab first." }),
       unowned > 0 && el("p", { class: "muted", text: `${unowned} account${unowned === 1 ? " has" : "s have"} no owner yet. They count in the household but not in anyone's own view.` }),
       items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
-      items.map(bankBlock));
+      items.map(bankBlock),
+      // An account whose bank is not in the list (for example just after a bank was removed) must never vanish from Hide and owners.
+      orphans.length > 0 && el("div", { class: "bank-block" },
+        el("div", { class: "row bank-line" }, el("div", { class: "grow" }, el("strong", { text: "Other accounts" }),
+          el("div", { class: "muted", text: "Not linked to a bank listed above." }))),
+        orphans.map(accountRow)));
 
     // The household's people. They are labels for organising accounts, not logins.
     const newName = el("input", { maxlength: 40, placeholder: "Name, for example Sam", "aria-label": "New person's name" });
