@@ -6,7 +6,7 @@ sign-in form: it can show nothing until you log in.
 """
 
 import re
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -23,6 +23,7 @@ from .bootstrap import Services
 from .crypto import seal
 from .db import utcnow
 from .plaid import PlaidError
+from .quotes import FRESH_SECONDS, LIVE_TYPES, PERIODS, Wanted, reference_prices
 from .rules import EFFECTIVE_CATEGORY_SQL, EXCLUDED_FROM_SPENDING, normalize_category
 from .sync import PlaidNotConfigured, SyncBusy, compute_networth, today_str
 
@@ -640,6 +641,109 @@ def create_api_app(services: Services) -> FastAPI:
                 }
             )
         return {"totals": {c: num(v) for c, v in sorted(totals.items())}, "holdings": out}
+
+    @app.get("/api/holdings/live")
+    def holdings_live(ctx: Auth):
+        """Positions valued at live prices (Yahoo Finance), with the change since the open,
+        the previous close, a week, a month, three months, the start of the year and a year
+        ago. Anything without a live price keeps Plaid's last price and says so. Changes
+        assume today's quantity was held throughout the period."""
+        rows = db.query(
+            "SELECT h.*, a.name AS account_name, a.mask AS account_mask FROM holdings h "
+            "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0"
+        )
+        service = services.quotes
+        wanted = {
+            r["security_id"]: Wanted(r["ticker"], r["mic"], r["currency"])
+            for r in rows
+            if r["ticker"] and (r["type"] or "").lower() in LIVE_TYPES and r["quantity"] is not None
+        }
+        found = service.lookup(wanted.values()) if service is not None and wanted else None
+        now_epoch = service.clock() if service is not None else 0.0
+        cent, pct = Decimal("0.01"), Decimal("0.01")
+        out, totals = [], {}
+        for r in rows:
+            qty = Decimal(r["quantity"]) if r["quantity"] is not None else None
+            plaid_value = Decimal(r["value"]) if r["value"] is not None else None
+            cost = Decimal(r["cost_basis"]) if r["cost_basis"] is not None else None
+            live = found.live.get(wanted[r["security_id"]]) if found is not None and r["security_id"] in wanted else None
+            price = Decimal(r["price"]) if r["price"] is not None else None
+            value, changes = plaid_value, {p: None for p in PERIODS}
+            if live is not None and qty is not None:
+                price = live.quote.price
+                value = (qty * price).quantize(cent, ROUND_HALF_UP)
+                for period, ref in reference_prices(live.quote, live.bars).items():
+                    if ref is not None and ref > 0:
+                        changes[period] = {
+                            "amount": (qty * (price - ref)).quantize(cent, ROUND_HALF_UP),
+                            "percent": ((price / ref - 1) * 100).quantize(pct, ROUND_HALF_UP),
+                            "_then": qty * ref,
+                        }
+            bucket = totals.setdefault(r["currency"], {"value": Decimal(0), "periods": {p: [Decimal(0), Decimal(0), 0] for p in PERIODS}})
+            if value is not None:
+                bucket["value"] += value
+            for period, change in changes.items():
+                if change is not None:
+                    acc = bucket["periods"][period]
+                    acc[0] += change["amount"]
+                    acc[1] += change["_then"]
+                    acc[2] += 1
+            out.append(
+                {
+                    "account_id": r["account_id"],
+                    "account_name": r["account_name"],
+                    "account_mask": r["account_mask"],
+                    "security_id": r["security_id"],
+                    "name": r["name"],
+                    "ticker": r["ticker"],
+                    "type": r["type"],
+                    "quantity": num(qty),
+                    "price": num(price),
+                    "value": num(value),
+                    "cost_basis": num(cost),
+                    "gain": num(value - cost) if value is not None and cost is not None else None,
+                    "currency": r["currency"],
+                    "live": live is not None,
+                    "symbol": live.symbol if live is not None else None,
+                    "price_time": datetime.fromtimestamp(live.quote.time, UTC).isoformat().replace("+00:00", "Z") if live is not None else None,
+                    "market_open": live is not None and now_epoch - live.quote.time <= FRESH_SECONDS,
+                    "open": num(live.quote.open) if live is not None else None,
+                    "previous_close": num(live.quote.previous_close) if live is not None else None,
+                    "changes": {
+                        p: None if c is None else {"amount": num(c["amount"]), "percent": float(c["percent"])}
+                        for p, c in changes.items()
+                    },
+                }
+            )
+        out.sort(key=lambda h: h["value"] if h["value"] is not None else float("-inf"), reverse=True)
+        live_count = sum(1 for h in out if h["live"])
+        return {
+            "status": {
+                "source": "yahoo" if service is not None else None,
+                "enabled": service is not None,
+                "live_positions": live_count,
+                "positions": len(out),
+                "stale": bool(found.stale) if found is not None else False,
+                "message": found.unavailable if found is not None else (None if service is not None else "Live prices are turned off on the server."),
+            },
+            "totals": {
+                c: {
+                    "value": num(b["value"]),
+                    "changes": {
+                        p: None
+                        if acc[2] == 0
+                        else {
+                            "amount": num(acc[0].quantize(cent, ROUND_HALF_UP)),
+                            "percent": float((acc[0] / acc[1] * 100).quantize(pct, ROUND_HALF_UP)) if acc[1] > 0 else None,
+                            "positions": acc[2],
+                        }
+                        for p, acc in b["periods"].items()
+                    },
+                }
+                for c, b in sorted(totals.items())
+            },
+            "holdings": out,
+        }
 
     @app.get("/api/networth")
     def networth(

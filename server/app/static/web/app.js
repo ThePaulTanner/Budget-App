@@ -593,31 +593,79 @@
 
   // ---------------------------------------------------------------- Investments
 
+  const CHANGE_PERIODS = [["day", "Day"], ["open", "Since open"], ["1w", "1W"], ["1m", "1M"], ["3m", "3M"], ["ytd", "YTD"], ["1y", "1Y"]];
+  const PERIOD_HELP = {
+    day: "Change since yesterday's close.", open: "Change since today's open.", "1w": "Change over the last 7 days.",
+    "1m": "Change over the last month.", "3m": "Change over the last 3 months.", ytd: "Change since the start of the year.", "1y": "Change over the last year.",
+  };
+  let invPeriod = "day";
+
+  function changeText(change, currency) {
+    if (!change) return null;
+    const sign = change.amount > 0 ? "+" : change.amount < 0 ? MINUS : "";
+    const percent = change.percent == null ? "" : ` (${sign}${Math.abs(change.percent).toFixed(2)}%)`;
+    return { text: `${sign}${money(Math.abs(change.amount), currency)}${percent}`, cls: change.amount > 0 ? "income" : change.amount < 0 ? "neg" : "muted" };
+  }
+
   async function viewInvestments(id) {
-    const data = await api("/api/holdings");
+    let timer = null;
+    const paint = (data) => {
+      const totals = Object.entries(data.totals);
+      const status = data.status;
+      const seg = el("div", { class: "seg", role: "group", "aria-label": "Compare against" },
+        CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
+          onclick: () => { invPeriod = key; paint(data); } })));
+      const newest = data.holdings.filter((h) => h.price_time).map((h) => h.price_time).sort().pop();
+      const statusLine = !status.enabled
+        ? "Live prices are turned off on the server. Showing your bank's last prices."
+        : status.message
+          ? `Live prices unavailable (${status.message}). ${status.live_positions ? "Showing the last prices received." : "Showing your bank's last prices."}`
+          : status.live_positions === 0
+            ? "No position has a live price. Showing your bank's last prices."
+            : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Updates every minute while this page is open; Yahoo Finance may delay prices by up to 15 minutes.`;
+      const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
+        totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
+          : totals.map(([cur, t]) => {
+            const c = changeText(t.changes[invPeriod], cur);
+            return el("div", {}, el("div", { class: "big" }, money(t.value, cur), el("span", { class: "muted", text: `  ${cur}` })),
+              c ? el("div", { class: c.cls }, el("strong", { text: c.text }), el("span", { class: "muted", text: `  ${PERIOD_HELP[invPeriod]}` }))
+                : el("div", { class: "muted", text: "No change available for this period yet." }));
+          }),
+        el("div", { class: "toolbar" }, seg),
+        el("p", { class: status.message || !status.enabled ? "error" : "muted", text: statusLine }),
+        el("p", { class: "muted", text: "Changes assume you held today's quantity for the whole period, so a position bought recently shows what it would have done, not what you earned." }));
+
+      const byAccount = new Map();
+      for (const h of data.holdings) {
+        const key = `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`;
+        if (!byAccount.has(key)) byAccount.set(key, []);
+        byAccount.get(key).push(h);
+      }
+      const cards = [...byAccount].map(([name, holdings]) => el("section", { class: "card" }, el("h2", { text: name }),
+        holdings.map((h) => {
+          const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
+          const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
+          const c = changeText(h.changes[invPeriod], h.currency);
+          const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : "bank price";
+          return el("div", { class: "row" },
+            el("div", { class: "grow" },
+              el("strong", { text: h.ticker || h.name }), h.live && h.market_open && el("span", { class: "badge", text: "Live" }),
+              el("div", { class: "muted", text: `${h.ticker ? h.name + " \u00B7 " : ""}${h.quantity} @ ${h.price != null ? money(h.price, h.currency) : "\u2014"} (${priceNote})` })),
+            el("div", { class: "amount" }, h.value != null ? money(h.value, h.currency) : "\u2014",
+              c && el("div", { class: c.cls, text: c.text }),
+              h.gain != null && el("div", { class: `muted ${gainCls}`, text: `All time ${h.gain > 0 ? "+" : h.gain < 0 ? MINUS : ""}${money(Math.abs(h.gain), h.currency)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}` })));
+        })));
+      view().replaceChildren(head, ...cards);
+    };
+
+    const load = async () => paint(await api("/api/holdings/live", { timeout: 40000 }));
+    await load();
     if (id !== navId) return;
-    const totals = Object.entries(data.totals);
-    const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
-      totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
-        : totals.map(([cur, value]) => el("div", { class: "big", text: `${money(value, cur)}` }, el("span", { class: "muted", text: `  ${cur}` }))));
-    const byAccount = new Map();
-    for (const h of data.holdings) {
-      const key = `${h.account_name}${h.account_mask ? ` ••${h.account_mask}` : ""}`;
-      if (!byAccount.has(key)) byAccount.set(key, []);
-      byAccount.get(key).push(h);
-    }
-    const cards = [...byAccount].map(([name, holdings]) => el("section", { class: "card" }, el("h2", { text: name }),
-      holdings.map((h) => {
-        const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
-        const gainCls = h.gain == null ? "" : h.gain >= 0 ? "income" : "neg";
-        return el("div", { class: "row" },
-          el("div", { class: "grow" },
-            el("strong", { text: h.ticker || h.name }),
-            el("div", { class: "muted", text: `${h.ticker ? h.name + " · " : ""}${h.quantity} @ ${h.price != null ? money(h.price, h.currency) : "—"}` })),
-          el("div", { class: "amount" }, h.value != null ? money(h.value, h.currency) : "—",
-            h.gain != null && el("div", { class: gainCls, text: `${h.gain >= 0 ? "+" : MINUS}${money(Math.abs(h.gain), h.currency)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}` })));
-      })));
-    view().replaceChildren(head, ...cards);
+    timer = setInterval(() => {
+      if (document.hidden || id !== navId) return;
+      load().catch((err) => { if (err instanceof SignedOut) showLogin(); });
+    }, 60000);
+    cleanups.push(() => clearInterval(timer));
   }
 
   // ---------------------------------------------------------------- Settings

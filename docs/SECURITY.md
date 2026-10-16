@@ -58,6 +58,7 @@ The web app at `/app` uses the same password + authenticator code, but keeps its
 - **Tailscale (WireGuard):** ChaCha20-Poly1305. The API is not on the public internet; only the webhook receiver is (section 4).
 - **HTTPS inside the tailnet:** TLS 1.3 with a real certificate. No App Transport Security exceptions.
 - **Optional, for extra protection:** certificate or public-key pinning in the app. We can decide later. It adds work every time the certificate renews.
+- **Outbound connections from the NAS:** Plaid (bank data) and, for live prices, **Yahoo Finance** (`query1.finance.yahoo.com`). Yahoo receives ticker symbols only, so it can learn which securities you hold but not how many, their value, or who you are beyond the NAS's IP address. Turn it off with `LIVE_QUOTES=false`. Prices come from an unofficial endpoint, are parsed defensively, and are never used for anything but display.
 
 ## 4. Plaid webhooks (the one public entry point) *(server)*
 

@@ -1,0 +1,135 @@
+{
+  "status": {
+    "source": "yahoo",
+    "enabled": true,
+    "live_positions": 1,
+    "positions": 2,
+    "stale": false,
+    "message": null
+  },
+  "totals": {
+    "CAD": {
+      "value": 42572.0,
+      "changes": {
+        "day": {
+          "amount": 396.0,
+          "percent": 0.95,
+          "positions": 1
+        },
+        "open": {
+          "amount": 308.0,
+          "percent": 0.74,
+          "positions": 1
+        },
+        "1w": {
+          "amount": 607.2,
+          "percent": 1.46,
+          "positions": 1
+        },
+        "1m": {
+          "amount": 1012.0,
+          "percent": 2.46,
+          "positions": 1
+        },
+        "3m": {
+          "amount": 2103.2,
+          "percent": 5.26,
+          "positions": 1
+        },
+        "ytd": {
+          "amount": 5324.0,
+          "percent": 14.47,
+          "positions": 1
+        },
+        "1y": {
+          "amount": 6908.0,
+          "percent": 19.63,
+          "positions": 1
+        }
+      }
+    }
+  },
+  "holdings": [
+    {
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_veqt",
+      "name": "Vanguard All-Equity ETF Portfolio",
+      "ticker": "VEQT",
+      "type": "etf",
+      "quantity": 880.0,
+      "price": 47.85,
+      "value": 42108.0,
+      "cost_basis": 38000.0,
+      "gain": 4108.0,
+      "currency": "CAD",
+      "live": true,
+      "symbol": "VEQT.TO",
+      "price_time": "2026-10-02T19:58:00Z",
+      "market_open": true,
+      "open": 47.5,
+      "previous_close": 47.4,
+      "changes": {
+        "day": {
+          "amount": 396.0,
+          "percent": 0.95
+        },
+        "open": {
+          "amount": 308.0,
+          "percent": 0.74
+        },
+        "1w": {
+          "amount": 607.2,
+          "percent": 1.46
+        },
+        "1m": {
+          "amount": 1012.0,
+          "percent": 2.46
+        },
+        "3m": {
+          "amount": 2103.2,
+          "percent": 5.26
+        },
+        "ytd": {
+          "amount": 5324.0,
+          "percent": 14.47
+        },
+        "1y": {
+          "amount": 6908.0,
+          "percent": 19.63
+        }
+      }
+    },
+    {
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_cash",
+      "name": "Cash",
+      "ticker": null,
+      "type": "cash",
+      "quantity": 464.0,
+      "price": 1.0,
+      "value": 464.0,
+      "cost_basis": 464.0,
+      "gain": 0.0,
+      "currency": "CAD",
+      "live": false,
+      "symbol": null,
+      "price_time": null,
+      "market_open": false,
+      "open": null,
+      "previous_close": null,
+      "changes": {
+        "day": null,
+        "open": null,
+        "1w": null,
+        "1m": null,
+        "3m": null,
+        "ytd": null,
+        "1y": null
+      }
+    }
+  ]
+}

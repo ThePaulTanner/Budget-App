@@ -176,7 +176,7 @@ def test_web_login_is_logged_and_locked_the_same_way(services, login):
     assert response.status_code == LOCKED_STATUS and "set-cookie" not in response.headers
 
 
-def test_upgrade_from_schema_1_keeps_the_user(tmp_path):
+def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_path):
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
     old.executescript(
@@ -184,12 +184,14 @@ def test_upgrade_from_schema_1_keeps_the_user(tmp_path):
         CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
           totp_secret BLOB NOT NULL, totp_last_step INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
         INSERT INTO users(username, password_hash, totp_secret, created_at) VALUES ('paul', 'h', x'00', 't');
+        CREATE TABLE holdings (account_id TEXT, security_id TEXT, ticker TEXT);
         PRAGMA user_version = 1;
         """
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 2
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 3
+    assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
     user = db.one("SELECT username, failed_streak, locked_at FROM users")
     assert (user["username"], user["failed_streak"], user["locked_at"]) == ("paul", 0, None)
     assert db.query("SELECT * FROM login_events") == []

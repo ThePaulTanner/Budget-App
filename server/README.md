@@ -104,6 +104,17 @@ Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and 
 
 Signing in sets a cookie that keeps you signed in for 30 days from last use (see `docs/SECURITY.md`, section 1b). Sign out from Settings to end it, and use only computers you trust. The bank-linking page at `/` uses the same sign-in. There is no separate setup: it ships inside the same container.
 
+### 7. Live prices for your positions
+
+The Investments screen values each position at a near-real-time price and shows the change since yesterday's close, since today's open, over 1 week, 1 month, 3 months, year to date and 1 year. Plaid only knows end-of-day prices, so live prices come from **Yahoo Finance**:
+
+- Only **ticker symbols** leave your NAS (for example `VEQT.TO`), to `query1.finance.yahoo.com`. Never balances, quantities, names or account details. Turn it off completely with `LIVE_QUOTES=false`.
+- It refreshes every minute while the page is open (the server caches for a minute, and for ten minutes when the market is closed). Yahoo may delay some prices by up to about 15 minutes.
+- It uses Yahoo's **unofficial** public endpoint, which can change, throttle or stop without notice. When that happens the page says so and falls back to your bank's last prices; nothing else breaks. After an error the server leaves Yahoo alone for five minutes.
+- Canadian listings are found through the exchange code Plaid supplies (TSX becomes `.TO`, NEO `.NE`, and so on); until the first sync after the upgrade it tries the Canadian exchanges in turn. Cash, mutual funds Yahoo does not carry, and anything not found keep your bank's price, marked "bank price".
+- Changes assume you held today's quantity for the whole period.
+- **Not yet verified against the live service**: the build environment could not reach Yahoo. The parser is tested against sample responses written from Yahoo's documented chart format. After you link a real brokerage, check that the Investments screen shows "Live" beside your positions; if it shows a message instead, send it to me.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -113,6 +124,7 @@ Signing in sets a cookie that keeps you signed in for 30 days from last use (see
 | `BASE_CURRENCY` | `CAD` | The currency budgets and spending are counted in |
 | `PUBLIC_WEBHOOK_URL` | empty | Where Plaid sends "new data" messages |
 | `SYNC_INTERVAL_MINUTES` | `60` | Backup sync timer (webhooks do the real work) |
+| `LIVE_QUOTES` | `true` | Live prices for investment positions from Yahoo Finance (only ticker symbols are sent). `false` turns it off |
 | `MAX_FAILED_LOGINS` | `10` | Failed sign-ins in a row before new sign-ins are locked (3 to 100). It is only read if your `docker-compose.yml` passes it through, as the repo copy does |
 | `TZ` | `America/Toronto` | Decides what "today" and "this month" mean |
 | `HF_MASTER_KEY_FILE` | `/run/secrets/hf_master_key` | Path to the master key |
@@ -138,6 +150,7 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 | "Could not read the database. The master key is probably wrong." | A different master key than the one that created the database |
 | Web app signs you out right after login | Opened over plain `http`: the cookie is `Secure`, so use the `https://` tailnet address |
 | Link page shows an error after signing in | Plaid credentials or `PLAID_ENV` do not match (sandbox secret with production, or the reverse) |
+| Investments say "Live prices unavailable" | Yahoo throttled or changed its endpoint (the message says which); it retries after 5 minutes. Check the NAS can reach the internet, or set `LIVE_QUOTES=false` |
 | New transactions are slow to appear | `PUBLIC_WEBHOOK_URL` unset or Funnel not running; the hourly timer still catches up |
 | `unable to open database file` | Synology ACL made `data` read-only for the container user (see step 1) |
 | A `.env` change has no effect | The container was only restarted; recreate it with `--force-recreate` |

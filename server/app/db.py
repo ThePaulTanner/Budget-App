@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE users (
@@ -96,6 +96,7 @@ CREATE TABLE holdings (
   security_id TEXT NOT NULL,
   name TEXT NOT NULL,
   ticker TEXT,
+  mic TEXT,
   type TEXT,
   quantity TEXT,
   price TEXT,
@@ -156,6 +157,9 @@ CREATE TABLE login_events (
   user_known INTEGER NOT NULL DEFAULT 0,
   count INTEGER NOT NULL DEFAULT 1
 );
+""",
+    2: """
+ALTER TABLE holdings ADD COLUMN mic TEXT;
 """,
 }
 

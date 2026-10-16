@@ -214,14 +214,15 @@ def sync_holdings(db: Database, plaid: PlaidClient, token: str, item_id: str, ba
                 continue
             sec = securities.get(h["security_id"], {})
             db.run(
-                "INSERT OR REPLACE INTO holdings(account_id, security_id, name, ticker, type, "
+                "INSERT OR REPLACE INTO holdings(account_id, security_id, name, ticker, mic, type, "
                 "quantity, price, value, cost_basis, currency, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     h["account_id"],
                     h["security_id"],
                     sec.get("name") or sec.get("ticker_symbol") or "Holding",
                     sec.get("ticker_symbol"),
+                    sec.get("market_identifier_code"),
                     sec.get("type"),
                     as_text(to_dec(h.get("quantity"))),
                     as_text(to_dec(h.get("institution_price"))),

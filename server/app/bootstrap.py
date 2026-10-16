@@ -9,6 +9,7 @@ from .config import Settings
 from .crypto import Keys, parse_master_key
 from .db import Database
 from .plaid import PlaidClient
+from .quotes import QuoteService, YahooProvider
 from .sync import SyncManager
 
 
@@ -20,9 +21,12 @@ class Services:
     auth: AuthService
     plaid: PlaidClient | None
     sync: SyncManager
+    quotes: QuoteService | None = None
 
 
-def build_services(settings: Settings, *, plaid: PlaidClient | None = None) -> Services:
+def build_services(
+    settings: Settings, *, plaid: PlaidClient | None = None, quotes: QuoteService | None = None
+) -> Services:
     keys = Keys(parse_master_key(settings.master_key))
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(
@@ -41,4 +45,5 @@ def build_services(settings: Settings, *, plaid: PlaidClient | None = None) -> S
         auth=AuthService(db, keys, max_failed_logins=settings.max_failed_logins),
         plaid=plaid,
         sync=SyncManager(db, keys, plaid, settings),
+        quotes=quotes if quotes is not None else (QuoteService(YahooProvider()) if settings.live_quotes else None),
     )
