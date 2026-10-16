@@ -261,7 +261,7 @@ def sync_liabilities(db: Database, plaid: PlaidClient, token: str, item_id: str)
             if card.get("account_id") not in account_ids:
                 continue
             db.run(
-                "INSERT OR REPLACE INTO card_dues(account_id, due_date, minimum_payment, "
+                "INSERT INTO card_dues(account_id, due_date, minimum_payment, "
                 "statement_balance, statement_date, last_payment_amount, last_payment_date, "
                 "is_overdue, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (

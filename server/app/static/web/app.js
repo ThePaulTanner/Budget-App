@@ -718,7 +718,7 @@
 
   const DUE_PILLS = {
     overdue: ["Overdue", "bad"], due_soon: ["Due soon", "warn"], upcoming: ["Upcoming", ""],
-    paid: ["Statement paid", "good"], nothing_owed: ["Nothing owed", "good"], unknown: ["No due date", ""],
+    paid: ["Statement paid", "good"], nothing_owed: ["Nothing owed", "good"], unknown: ["Unconfirmed", ""],
   };
 
   function dueText(card) {
@@ -768,7 +768,7 @@
           stat("Balance now", money(c.current_balance, cur)),
           stat("Available credit", c.available_credit == null ? "\u2014" : money(c.available_credit, cur)),
           stat("Last payment", c.last_payment_amount == null ? "\u2014" : `${money(c.last_payment_amount, cur)}${c.last_payment_date ? ` on ${shortDate(c.last_payment_date)}` : ""}`)),
-        c.statement_date && el("p", { class: "muted", text: `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""}` }));
+        c.dues_known && el("p", { class: "muted", text: `${c.statement_date ? `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""} ` : ""}Bank data updated ${ago(c.dues_updated_at)}.` }));
     });
     view().replaceChildren(summary, ...rows);
   }

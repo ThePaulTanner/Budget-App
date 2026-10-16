@@ -710,7 +710,7 @@ def create_api_app(services: Services) -> FastAPI:
         rows = db.query(
             "SELECT a.*, i.institution AS institution, d.account_id AS dues_id, d.due_date, "
             "d.minimum_payment, d.statement_balance, d.statement_date, d.last_payment_amount, "
-            "d.last_payment_date, d.is_overdue FROM accounts a "
+            "d.last_payment_date, d.is_overdue, d.updated_at AS dues_updated_at FROM accounts a "
             "JOIN items i ON i.id = a.item_id LEFT JOIN card_dues d ON d.account_id = a.id "
             "WHERE a.type = 'credit' AND a.hidden = 0"
         )
@@ -733,14 +733,16 @@ def create_api_app(services: Services) -> FastAPI:
                     and last_paid >= statement
                 )
             )
-            if bool(r["is_overdue"]) and not statement_paid:
-                status = "overdue"
-            elif owed <= 0:
+            # Past the due date with nothing refreshed since then, we cannot know it was not paid.
+            stale = days is not None and days < 0 and (r["dues_updated_at"] or "")[:10] <= due
+            if owed <= 0:
                 status = "nothing_owed"
+            elif bool(r["is_overdue"]) and not statement_paid:
+                status = "overdue"
             elif statement_paid:
                 status = "paid"
             elif days is not None and days < 0:
-                status = "overdue"
+                status = "unknown" if stale else "overdue"
             elif days is not None and days <= 7:
                 status = "due_soon"
             elif days is not None:
@@ -768,6 +770,7 @@ def create_api_app(services: Services) -> FastAPI:
                     "last_payment_amount": num(last_paid),
                     "last_payment_date": r["last_payment_date"],
                     "dues_known": r["dues_id"] is not None,
+                    "dues_updated_at": r["dues_updated_at"],
                 }
             )
             t = totals.setdefault(r["currency"], {"owed": Decimal(0), "statement_due": Decimal(0), "minimum_due": Decimal(0)})

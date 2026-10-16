@@ -1,6 +1,6 @@
 """A small Plaid client over httpx.
 
-Only read-only products are ever requested: transactions, and investments and
+Only read-only products are ever requested: transactions, plus investments and
 liabilities (credit card due dates) when the bank has them. Auth (account numbers) and Transfer (moving money) are never used.
 JSON numbers are parsed straight into `Decimal`, so amounts like 132.47 stay exact.
 """

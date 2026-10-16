@@ -113,3 +113,23 @@ def test_sub_categories_of_transfers_and_debt_stay_out_of_spending(services, see
     assert body["total"] == 132.47
     monthly = client.get("/api/spending/monthly?months=1", headers=auth).json()
     assert monthly[0]["total"] == 132.47
+
+
+def test_a_custom_category_with_a_top_level_prefix_is_a_sub_category(services, seeded):
+    client, auth = seeded
+    add(services, "c1", "25.00", None, primary="OTHER")
+    client.patch("/api/transactions/c1", json={"category": "Travel fund"}, headers=auth)
+    body = client.get("/api/spending?month=2026-10", headers=auth).json()
+    travel = next(c for c in body["categories"] if c["category"] == "TRAVEL")
+    assert travel["spent"] == 25.0 and travel["subcategories"] == [{"category": "TRAVEL_FUND", "spent": 25.0}]
+    client.patch("/api/transactions/c1", json={"category": "Income side gig"}, headers=auth)
+    assert "INCOME" not in [c["category"] for c in client.get("/api/spending?month=2026-10", headers=auth).json()["categories"]]
+
+
+def test_a_refund_only_sub_category_can_go_negative(services, seeded):
+    client, auth = seeded
+    add(services, "r1", "-30.00", "TRAVEL_FLIGHTS", primary="TRAVEL")
+    body = client.get("/api/spending?month=2026-10", headers=auth).json()
+    travel = next(c for c in body["categories"] if c["category"] == "TRAVEL")
+    assert travel["spent"] == -30.0 and travel["subcategories"][0]["spent"] == -30.0
+    assert body["total"] == 132.47 - 30.0

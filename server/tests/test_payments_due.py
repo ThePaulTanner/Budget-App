@@ -13,14 +13,14 @@ from .test_sync import ACCOUNTS, add_item, page, pj, run
 def set_dues(services, **fields):
     row = {"due_date": "2026-10-25", "minimum_payment": "35.00", "statement_balance": "612.40",
            "statement_date": "2026-09-28", "last_payment_amount": "500.00",
-           "last_payment_date": "2026-09-10", "is_overdue": 0, **fields}
+           "last_payment_date": "2026-09-10", "is_overdue": 0, "updated_at": "2026-10-02T00:00:00Z", **fields}
     services.db.run(
         "INSERT OR REPLACE INTO card_dues(account_id, due_date, minimum_payment, statement_balance, "
         "statement_date, last_payment_amount, last_payment_date, is_overdue, updated_at) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
         ("acc_visa", row["due_date"], row["minimum_payment"], row["statement_balance"],
          row["statement_date"], row["last_payment_amount"], row["last_payment_date"],
-         row["is_overdue"], "2026-10-02T00:00:00Z"),
+         row["is_overdue"], row["updated_at"]),
     )
 
 
@@ -137,3 +137,34 @@ def test_link_token_asks_for_liabilities_only_as_optional():
 
     Recorder("id", "secret", "https://example.test").link_token_create("u", ("CA",), None)
     assert sent["products"] == ["transactions"] and "liabilities" in sent["optional_products"]
+
+
+def test_zero_balance_beats_the_banks_overdue_flag(services, seeded):
+    client, auth = seeded
+    set_dues(services, is_overdue=1)
+    assert visa(client, auth)[1]["status"] == "overdue"
+    services.db.run("UPDATE accounts SET current_balance='0' WHERE id='acc_visa'")
+    assert visa(client, auth)[1]["status"] == "nothing_owed"  # paid after the bank's last update
+
+
+def test_a_past_due_date_with_no_refresh_since_is_unconfirmed(services, seeded):
+    client, auth = seeded
+    set_dues(services, due_date="2026-09-30", updated_at="2026-09-20T00:00:00Z")  # last refreshed before it fell due
+    body, card = visa(client, auth)
+    assert card["status"] == "unknown" and card["dues_updated_at"] == "2026-09-20T00:00:00Z"
+    set_dues(services, due_date="2026-09-30", updated_at="2026-09-20T00:00:00Z", is_overdue=1)  # the bank says so
+    assert visa(client, auth)[1]["status"] == "overdue"
+    set_dues(services, due_date="2026-09-30", updated_at="2026-10-01T00:00:00Z")  # refreshed after it fell due
+    assert visa(client, auth)[1]["status"] == "overdue"
+
+
+def test_a_failed_refresh_keeps_the_old_dates(services, plaid):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page()]
+    plaid.liabilities = pj('{"liabilities":{"credit":[{"account_id":"acc_visa","next_payment_due_date":"2026-10-25"}]}}')
+    run(services, item)
+    plaid.pages = [page(cursor="c2")]
+    plaid.errors["liabilities_get"] = PlaidError(500, "API_ERROR", "INTERNAL_SERVER_ERROR", "boom")
+    run(services, item)
+    assert services.db.one("SELECT due_date FROM card_dues")["due_date"] == "2026-10-25"
