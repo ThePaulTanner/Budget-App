@@ -40,11 +40,18 @@ LINK_PAGE_CSP = (
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 
-# The web app has no inline script or style, loads nothing from other sites, and
-# cannot be framed. That is what keeps injected script (XSS) out of your data.
+# The web app has no inline script, never loads anything at start-up from another site,
+# and cannot be framed. The one exception is Plaid's own Link script, fetched from
+# cdn.plaid.com only when you press "Link a bank". These are the same allowances the
+# bank-linking page at `/` has always had (Plaid Link needs them).
 APP_CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.plaid.com; "
+    "frame-src https://cdn.plaid.com; "
+    "connect-src 'self' https://*.plaid.com; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https://*.plaid.com; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 # `__Host-` makes browsers insist on Secure, Path=/ and no Domain, so a sibling site
 # cannot plant or overwrite it.

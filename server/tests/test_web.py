@@ -102,17 +102,25 @@ def test_the_app_page_has_a_strict_csp_and_no_inline_code(web):
     assert page.status_code == 200
     assert page.headers["content-security-policy"] == APP_CSP
     assert page.headers["cache-control"] == "no-store"
-    for needle in ("script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "default-src 'none'"):
-        assert needle in APP_CSP
-    assert "unsafe" not in APP_CSP
+    directives = dict(part.strip().split(" ", 1) for part in APP_CSP.split(";") if part.strip())
+    # Only our own code, plus Plaid's Link script (fetched only when linking a bank).
+    assert directives["script-src"] == "'self' https://cdn.plaid.com"
+    assert "unsafe" not in directives["script-src"] and "unsafe" not in APP_CSP.replace("style-src 'self' 'unsafe-inline'", "")
+    assert directives["frame-ancestors"] == "'none'" and directives["base-uri"] == "'none'"
+    assert directives["frame-src"] == "https://cdn.plaid.com"
     html = (WEB_DIR / "index.html").read_text()
     assert "<script>" not in html and " style=" not in html and " onclick=" not in html
     assert web.get("/static/web/app.js").status_code == 200
     assert web.get("/static/web/app.css").status_code == 200
 
 
-def test_the_script_never_uses_innerhtml_or_other_sites():
-    js = (WEB_DIR / "app.js").read_text().replace("http://www.w3.org/2000/svg", "")  # an XML name, not a request
+def test_the_script_never_uses_innerhtml_and_loads_only_plaids_link_script():
+    js = (WEB_DIR / "app.js").read_text()
+    js = js.replace("http://www.w3.org/2000/svg", "")  # an XML name, not a request
     for bad in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "localStorage", "sessionStorage"):
         assert bad not in js, bad
-    assert "http://" not in js and "https://" not in js
+    plaid = "https://cdn.plaid.com/link/v2/stable/link-initialize.js"
+    assert js.count(plaid) == 1  # one constant, used only when a link button is pressed
+    assert "http://" not in js and "https://" not in js.replace(plaid, "")
+    html = (WEB_DIR / "index.html").read_text()
+    assert "plaid" not in html.lower()  # never loaded at start-up
