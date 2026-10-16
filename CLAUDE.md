@@ -11,7 +11,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - Because the URL is HTTPS with a real certificate, **don't add App Transport Security exceptions** (`NSAllowsArbitraryLoads`, etc.).
 - **Login:** `POST /auth/login` with `{"username", "password", "code", "device_name"}`, where `code` is the authenticator code (or a one-time recovery code). It returns `{access_token, refresh_token, token_type, expires_in, session_id}`. Every `/api/*` request needs `Authorization: Bearer <access_token>`. The access token lasts 15 minutes.
 - **Refresh:** `POST /auth/refresh` with `{"refresh_token"}` returns a new pair. **Every refresh token works once**: always store the new one. If the app is killed before saving it, retrying the old one within 60 seconds still works. After that, an old token revokes the device.
-- `POST /auth/logout`, `GET /auth/sessions` (signed-in devices) and `DELETE /auth/sessions/{id}` (revoke one) also need the bearer token. Too many failed sign-ins return `429` with `Retry-After`.
+- `POST /auth/logout`, `GET /auth/sessions` (signed-in devices), `DELETE /auth/sessions/{id}` (revoke one) and `GET /auth/login-log` (recent sign-in attempts and lock state) also need the bearer token. Too many failed sign-ins return `429` with `Retry-After`.
 - `GET /health` needs no login and returns `{"ok":true,"plaid_env":"sandbox"|"production"}`. Use it for the "Test connection" button.
 - Linking and reconnecting banks happens on a web page at the server root (`GET /`), not in the app. The app never uses the Plaid SDK. When a bank needs reconnecting, the app opens the base URL in Safari (`openURL`).
 
@@ -37,7 +37,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 - **Timestamps** (`last_synced_at`, `updated_at`) are UTC ISO-8601 with `Z`. They usually have fractional seconds (`2026-10-02T23:41:42.799072Z`) but sometimes don't, so the decoder must accept both forms.
 - **`month`** is `"YYYY-MM"`.
 - **Nullable fields:** `official_name`, `mask`, `subtype`, `available_balance`, `credit_limit`, `current_balance`, `authorized_date`, `merchant_name`, `logo_url`, `ticker`, `price`, `value`, `cost_basis`, `gain`, `percent`, `as_of`, `last_synced_at`, `institution`, `error_code`.
-- **Errors** are `{"detail": "message"}` with a status code: 400 bad input, 401 bad or missing credentials, 404 not found, 409 sync already running, 422 validation, 429 too many sign-in attempts, 502 Plaid upstream error, 503 Plaid not configured.
+- **Errors** are `{"detail": "message"}` with a status code: 400 bad input, 401 bad or missing credentials, 404 not found, 409 sync already running, 422 validation, 423 sign-in locked after too many failed attempts (show the `detail` text; unlocking happens on the NAS), 429 too many sign-in attempts, 502 Plaid upstream error, 503 Plaid not configured.
 
 ## Endpoints
 
@@ -55,6 +55,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 | `PUT /api/budgets/{CATEGORY}` `{"monthly_limit":600}` | `budget_put_response.json` | Creates or updates a budget. The limit must be > 0. |
 | `DELETE /api/budgets/{CATEGORY}` | — | |
 | `GET /api/holdings` | `holdings.json` | `totals` is `{currency: value}`. The list is sorted by value. Group by `account_name`. `gain` = value − cost_basis and may be null. |
+| `GET /api/holdings/live` | `holdings_live.json` | Same positions at **live prices** (Yahoo Finance via the server; may lag up to ~15 min). Adds `live`, `price_time`, `market_open`, `open`, `previous_close` and `changes` per position (`day`, `open`, `1w`, `1m`, `3m`, `ytd`, `1y`: `{amount, percent}` or null) plus the same per-currency in `totals`, and a `status` object (`enabled`, `live_positions`, `stale`, `message`). Poll about once a minute while the screen is visible. If `status.message` is set, show it and the bank's prices. Changes assume today's quantity was held throughout. The server is the only thing that contacts Yahoo, so the app needs no ATS exception or API key. |
 | `GET /api/networth?days=365[&currency=USD]` | `networth.json` | One point per day, oldest first. `net_worth` = assets − liabilities, so it **can be negative** (a mortgage counts as a liability). Also includes `assets`, `liabilities`, `investments`. |
 | `GET /api/items` | `items.json` | Linked banks. `needs_reauth` bool. |
 | `POST /api/sync` | `sync_response.json` | Array of per-bank results (`ok`, `error`). Slow. A 409 means a sync is already running. Show that as info, not an error. |

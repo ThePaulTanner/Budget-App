@@ -24,10 +24,25 @@ The shared `X-API-Key` header of the original handoff is replaced by a real logi
 | **Passkeys (not used)** | Passkeys on iOS need the **Associated Domains** capability, which the free Apple ID does not have, and an `apple-app-site-association` file served from a publicly reachable host. They can be added later if the account is upgraded; the sign-in code is built so a second method can be added. |
 | **Password storage** | **Argon2id** with a per-user salt, at OWASP-recommended or stronger settings (for example 64 MiB memory, 3 iterations), plus an optional server-side "pepper" key stored outside the database. Passwords are never stored or logged in plain text. |
 | **Sessions** | A short-lived access token (about 15 minutes), plus a refresh token that is **replaced every time it is used**. Each device gets its own refresh token, so one device can be signed out without affecting the others. Refresh tokens are stored on the server only as hashes. **Crash window:** the server accepts the previous refresh token for 60 seconds after rotating, so an app killed before it saved the new token can retry. The trade-off is that a replayed old token still works for those 60 seconds; for a single-user setup behind Tailscale that is acceptable. **Reuse detection:** if an old token is used after that grace period, the server revokes that one device's token chain (not other devices) and alerts. **Face ID frequency:** the access token is kept in memory, so Face ID is needed once per unlock (launch or auto-lock), not on every refresh. |
-| **Brute-force protection** | Rate limits and increasing delays on failed logins. Alerts on new-device sign-ins. |
+| **Brute-force protection** | Three layers. (1) Temporary delays: after 5 wrong attempts the sign-in is refused for 30 seconds, doubling up to 15 minutes. (2) **A hard limit:** after `MAX_FAILED_LOGINS` wrong attempts in a row (default 10, counted in the database so a restart does not reset it), new sign-ins are **locked, even with the right password and code**, until you run `python -m app.cli unlock` on the NAS. Devices already signed in keep working. Attempts are handled one at a time, so a burst of parallel guesses cannot sneak past the limit. (3) **A sign-in log:** every attempt (success, wrong password, wrong code, unknown username, delayed, refused, locked) is recorded with time, source address and device name, and shown in the web app's Settings and by `python -m app.cli login-log`. The log never contains a password, a code, or a username that is not yours (people type passwords into the username box). It keeps 180 days and at most 5,000 rows, and repeated refusals from one address collapse into one row with a count. Alerts on new-device sign-ins are not built yet. |
 | **Device management** | A "Signed-in devices" list in Settings, with **Revoke** on each device. |
-| **Bank-linking web page** | The `GET /` Plaid Link page also requires login. Today it is protected only by the network it's on. |
+| **Bank-linking web page** | The `GET /` Plaid Link page shows nothing until you sign in. If you are already signed in to the web app (section 1b), its cookie signs this page in too. |
 | **Accounts** | Built for one user (Paul) to start. The design allows more household users later. |
+
+## 1b. Web app login (browser) *(server)*
+
+The web app at `/app` uses the same password + authenticator code, but keeps its session in a cookie instead of the iPhone's Keychain.
+
+| Piece | Choice |
+|---|---|
+| **Refresh token** | Lives only in an **HttpOnly** cookie that page script cannot read. Named `__Host-hf_rt`, which makes browsers insist on `Secure`, `Path=/` and no `Domain`, so a sibling site cannot plant or overwrite it. `SameSite=Strict`. Lasts 30 days and is renewed on every use (the refresh token rotates like the app's). |
+| **Access token** | Returned in the response body and held in the page's memory only (15 minutes). The page sends it as a bearer token, so `/api/*` is unchanged and not exposed to cross-site request forgery: a browser never adds a bearer header by itself. The cookie alone opens nothing. |
+| **Cookie routes** | Only `/web/login`, `/web/refresh` and `/web/logout` read or set the cookie. They refuse requests without the custom header `X-Requested-With: HomeFinance` (which forces a cross-origin preflight that the server never grants) and requests the browser marks as cross-site (`Sec-Fetch-Site`). |
+| **Script safety (XSS)** | A strict Content-Security-Policy: scripts and styles only from the server itself, no inline code, nothing loaded from other sites, no framing. The page never inserts server data as HTML (tests enforce this) and uses no third-party libraries, so there is nothing to compromise from outside. |
+| **Devices** | Shows up as "Web browser" in the signed-in devices list and can be revoked like any device. Signing out revokes the session on the server and clears the cookie. |
+| **Honest limits** | A browser cookie is easier to steal from a compromised computer than a Face-ID-locked Keychain item, and there is no idle lock on an open page. Use the web app only on computers you trust, and revoke it from Settings when you stop. |
+
+**Trade-off of the hard lock:** anyone who can reach the server (any device on your tailnet) can lock you out of *new* sign-ins by guessing wrongly on purpose. They cannot get in that way, and you can always unlock from the NAS, which is the point of making unlocking need shell access there. A lock does not sign out existing devices. **Source address:** behind Tailscale Serve every request reaches the container from the NAS itself, so the log's "from" is usually `127.0.0.1`. The log also records the `Tailscale-User-Login` and `X-Forwarded-For` headers when the proxy sends them, labelled as claimed by the proxy; they are for you to read and are not used for any decision.
 
 ## 2. App login (iOS)
 
@@ -43,6 +58,7 @@ The shared `X-API-Key` header of the original handoff is replaced by a real logi
 - **Tailscale (WireGuard):** ChaCha20-Poly1305. The API is not on the public internet; only the webhook receiver is (section 4).
 - **HTTPS inside the tailnet:** TLS 1.3 with a real certificate. No App Transport Security exceptions.
 - **Optional, for extra protection:** certificate or public-key pinning in the app. We can decide later. It adds work every time the certificate renews.
+- **Outbound connections from the NAS:** Plaid (bank data) and, for live prices, **Yahoo Finance** (`query1.finance.yahoo.com`). Yahoo receives ticker symbols only, so it can learn which securities you hold but not how many, their value, or who you are beyond the NAS's IP address. Turn it off with `LIVE_QUOTES=false`. Prices come from an unofficial endpoint, are parsed defensively, and are never used for anything but display.
 
 ## 4. Plaid webhooks (the one public entry point) *(server)*
 

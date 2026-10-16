@@ -21,6 +21,8 @@ services:
       PLAID_COUNTRY_CODES: ${PLAID_COUNTRY_CODES:-CA,US}
       BASE_CURRENCY: ${BASE_CURRENCY:-CAD}
       PUBLIC_WEBHOOK_URL: ${PUBLIC_WEBHOOK_URL:-}   # https://<nas>.<tailnet>.ts.net:8443/plaid/webhook
+      LIVE_QUOTES: ${LIVE_QUOTES:-true}   # live prices from Yahoo Finance; only ticker symbols are sent
+      MAX_FAILED_LOGINS: ${MAX_FAILED_LOGINS:-10}   # failed sign-ins in a row before new sign-ins lock (python -m app.cli unlock)
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-60}   # backup timer; webhooks do the real work
       HF_MASTER_KEY_FILE: /run/secrets/hf_master_key
       PLAID_CLIENT_ID_FILE: /run/secrets/plaid_client_id

@@ -1,0 +1,48 @@
+{
+  "locked": true,
+  "locked_at": "2026-10-16T00:21:51.482913Z",
+  "failed_streak": 10,
+  "max_failed_logins": 10,
+  "events": [
+    {
+      "at": "2026-10-16T00:22:30.104218Z",
+      "result": "locked",
+      "ip": "127.0.0.1",
+      "origin": "forwarded-for=100.101.102.103",
+      "method": null,
+      "device_name": "Web browser",
+      "user_known": true,
+      "count": 4
+    },
+    {
+      "at": "2026-10-16T00:21:51.482913Z",
+      "result": "lockout",
+      "ip": "127.0.0.1",
+      "origin": "forwarded-for=100.101.102.103",
+      "method": null,
+      "device_name": "Web browser",
+      "user_known": true,
+      "count": 1
+    },
+    {
+      "at": "2026-10-16T00:21:51.481002Z",
+      "result": "bad_code",
+      "ip": "127.0.0.1",
+      "origin": "forwarded-for=100.101.102.103",
+      "method": null,
+      "device_name": "Web browser",
+      "user_known": true,
+      "count": 1
+    },
+    {
+      "at": "2026-10-15T21:06:02.771455Z",
+      "result": "success",
+      "ip": "127.0.0.1",
+      "origin": null,
+      "method": "totp",
+      "device_name": "iPhone",
+      "user_known": true,
+      "count": 1
+    }
+  ]
+}

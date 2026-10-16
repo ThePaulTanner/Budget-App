@@ -6,7 +6,7 @@ sign-in form: it can show nothing until you log in.
 """
 
 import re
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -23,6 +23,7 @@ from .bootstrap import Services
 from .crypto import seal
 from .db import utcnow
 from .plaid import PlaidError
+from .quotes import FRESH_SECONDS, LIVE_TYPES, PERIODS, Wanted, reference_prices
 from .rules import EFFECTIVE_CATEGORY_SQL, EXCLUDED_FROM_SPENDING, normalize_category
 from .sync import PlaidNotConfigured, SyncBusy, compute_networth, today_str
 
@@ -38,6 +39,30 @@ LINK_PAGE_CSP = (
     "img-src 'self' data: https://*.plaid.com; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
+
+# The web app has no inline script or style, loads nothing from other sites, and
+# cannot be framed. That is what keeps injected script (XSS) out of your data.
+APP_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+# `__Host-` makes browsers insist on Secure, Path=/ and no Domain, so a sibling site
+# cannot plant or overwrite it.
+WEB_COOKIE = "__Host-hf_rt"
+WEB_COOKIE_MAX_AGE = 30 * 24 * 3600  # renewed each time the page refreshes
+WEB_HEADER = "x-requested-with"
+WEB_HEADER_VALUE = "HomeFinance"
+
+
+def origin_of(request: Request) -> str:
+    """What the proxy says about the caller. Logged for the owner to read, never trusted for
+    any decision (the real peer behind Tailscale Serve is always the NAS itself)."""
+    parts = []
+    for label, header in (("tailscale-user", "tailscale-user-login"), ("forwarded-for", "x-forwarded-for")):
+        value = request.headers.get(header)
+        if value:
+            parts.append(f"{label}={value}")
+    return "; ".join(parts)[:120]
 
 
 def num(value: Any) -> float | None:
@@ -57,6 +82,12 @@ class LoginBody(BaseModel):
 
 class RefreshBody(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=200)
+
+
+class WebLoginBody(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=1000)
+    code: str = Field(min_length=1, max_length=64)
 
 
 class HiddenBody(BaseModel):
@@ -218,7 +249,8 @@ def create_api_app(services: Services) -> FastAPI:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        if request.url.path.startswith(("/api/", "/auth/")):
+        path = request.url.path
+        if path == "/app" or path.startswith(("/api/", "/auth/", "/web/")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -254,7 +286,7 @@ def create_api_app(services: Services) -> FastAPI:
     @app.post("/auth/login")
     def login(body: LoginBody, request: Request):
         ip = request.client.host if request.client else "-"
-        return auth.login(body.username, body.password, body.code, body.device_name, ip)
+        return auth.login(body.username, body.password, body.code, body.device_name, ip, origin_of(request))
 
     @app.post("/auth/refresh")
     def refresh(body: RefreshBody):
@@ -265,6 +297,10 @@ def create_api_app(services: Services) -> FastAPI:
         auth.revoke(ctx, ctx.session_id)
         return {"ok": True}
 
+    @app.get("/auth/login-log")
+    def login_log(ctx: Auth, limit: Annotated[int, Query(ge=1, le=500)] = 50):
+        return auth.login_log(limit)
+
     @app.get("/auth/sessions")
     def sessions(ctx: Auth):
         return auth.sessions(ctx)
@@ -274,6 +310,75 @@ def create_api_app(services: Services) -> FastAPI:
         if not auth.revoke(ctx, session_id):
             raise HTTPException(404, "session not found")
         return {"ok": True}
+
+    # -- web page sign-in (cookie session) ------------------------------------
+    # The refresh token lives only in an HttpOnly cookie that page script cannot read.
+    # The page keeps the short-lived access token in memory and sends it as a bearer
+    # token, exactly like the iPhone app, so /api/* needs no changes and is not exposed
+    # to cross-site request forgery (a browser never adds a bearer header by itself).
+    # These three routes are the only ones that accept the cookie, so they also demand a
+    # custom header and refuse requests the browser marks as cross-site.
+
+    def require_same_site(request: Request) -> None:
+        site = request.headers.get("sec-fetch-site")
+        if request.headers.get(WEB_HEADER) != WEB_HEADER_VALUE or site not in (None, "same-origin"):
+            raise AuthError(403, "Cross-site request refused")
+
+    def web_tokens(tokens: dict) -> JSONResponse:
+        response = JSONResponse(
+            {
+                "access_token": tokens["access_token"],
+                "token_type": tokens["token_type"],
+                "expires_in": tokens["expires_in"],
+                "session_id": tokens["session_id"],
+            }
+        )
+        response.set_cookie(
+            WEB_COOKIE,
+            tokens["refresh_token"],
+            max_age=WEB_COOKIE_MAX_AGE,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
+    def web_signed_out(status: int, detail: str) -> JSONResponse:
+        response = JSONResponse({"detail": detail}, status_code=status)
+        response.delete_cookie(WEB_COOKIE, path="/", secure=True, httponly=True, samesite="strict")
+        return response
+
+    @app.post("/web/login")
+    def web_login(body: WebLoginBody, request: Request):
+        require_same_site(request)
+        ip = request.client.host if request.client else "-"
+        return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip, origin_of(request)))
+
+    @app.post("/web/refresh")
+    def web_refresh(request: Request):
+        require_same_site(request)
+        token = request.cookies.get(WEB_COOKIE)
+        if not token:
+            raise AuthError(401, "Not signed in")
+        try:
+            return web_tokens(auth.refresh(token))
+        except AuthError as exc:
+            if exc.status == 401:
+                return web_signed_out(401, exc.detail)
+            raise
+
+    @app.post("/web/logout")
+    def web_logout(request: Request):
+        require_same_site(request)
+        token = request.cookies.get(WEB_COOKIE)
+        if token:
+            auth.revoke_refresh(token)
+        return web_signed_out(200, "Signed out")
+
+    @app.get("/app", include_in_schema=False)
+    def web_app():
+        return FileResponse(STATIC_DIR / "web" / "index.html", headers={"Content-Security-Policy": APP_CSP})
 
     # -- summary -------------------------------------------------------------
 
@@ -536,6 +641,109 @@ def create_api_app(services: Services) -> FastAPI:
                 }
             )
         return {"totals": {c: num(v) for c, v in sorted(totals.items())}, "holdings": out}
+
+    @app.get("/api/holdings/live")
+    def holdings_live(ctx: Auth):
+        """Positions valued at live prices (Yahoo Finance), with the change since the open,
+        the previous close, a week, a month, three months, the start of the year and a year
+        ago. Anything without a live price keeps Plaid's last price and says so. Changes
+        assume today's quantity was held throughout the period."""
+        rows = db.query(
+            "SELECT h.*, a.name AS account_name, a.mask AS account_mask FROM holdings h "
+            "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0"
+        )
+        service = services.quotes
+        wanted = {
+            r["security_id"]: Wanted(r["ticker"], r["mic"], r["currency"])
+            for r in rows
+            if r["ticker"] and (r["type"] or "").lower() in LIVE_TYPES and r["quantity"] is not None
+        }
+        found = service.lookup(wanted.values()) if service is not None and wanted else None
+        now_epoch = service.clock() if service is not None else 0.0
+        cent, pct = Decimal("0.01"), Decimal("0.01")
+        out, totals = [], {}
+        for r in rows:
+            qty = Decimal(r["quantity"]) if r["quantity"] is not None else None
+            plaid_value = Decimal(r["value"]) if r["value"] is not None else None
+            cost = Decimal(r["cost_basis"]) if r["cost_basis"] is not None else None
+            live = found.live.get(wanted[r["security_id"]]) if found is not None and r["security_id"] in wanted else None
+            price = Decimal(r["price"]) if r["price"] is not None else None
+            value, changes = plaid_value, {p: None for p in PERIODS}
+            if live is not None and qty is not None:
+                price = live.quote.price
+                value = (qty * price).quantize(cent, ROUND_HALF_UP)
+                for period, ref in reference_prices(live.quote, live.bars).items():
+                    if ref is not None and ref > 0:
+                        changes[period] = {
+                            "amount": (qty * (price - ref)).quantize(cent, ROUND_HALF_UP),
+                            "percent": ((price / ref - 1) * 100).quantize(pct, ROUND_HALF_UP),
+                            "_then": qty * ref,
+                        }
+            bucket = totals.setdefault(r["currency"], {"value": Decimal(0), "periods": {p: [Decimal(0), Decimal(0), 0] for p in PERIODS}})
+            if value is not None:
+                bucket["value"] += value
+            for period, change in changes.items():
+                if change is not None:
+                    acc = bucket["periods"][period]
+                    acc[0] += change["amount"]
+                    acc[1] += change["_then"]
+                    acc[2] += 1
+            out.append(
+                {
+                    "account_id": r["account_id"],
+                    "account_name": r["account_name"],
+                    "account_mask": r["account_mask"],
+                    "security_id": r["security_id"],
+                    "name": r["name"],
+                    "ticker": r["ticker"],
+                    "type": r["type"],
+                    "quantity": num(qty),
+                    "price": num(price),
+                    "value": num(value),
+                    "cost_basis": num(cost),
+                    "gain": num(value - cost) if value is not None and cost is not None else None,
+                    "currency": r["currency"],
+                    "live": live is not None,
+                    "symbol": live.symbol if live is not None else None,
+                    "price_time": datetime.fromtimestamp(live.quote.time, UTC).isoformat().replace("+00:00", "Z") if live is not None else None,
+                    "market_open": live is not None and now_epoch - live.quote.time <= FRESH_SECONDS,
+                    "open": num(live.quote.open) if live is not None else None,
+                    "previous_close": num(live.quote.previous_close) if live is not None else None,
+                    "changes": {
+                        p: None if c is None else {"amount": num(c["amount"]), "percent": float(c["percent"])}
+                        for p, c in changes.items()
+                    },
+                }
+            )
+        out.sort(key=lambda h: h["value"] if h["value"] is not None else float("-inf"), reverse=True)
+        live_count = sum(1 for h in out if h["live"])
+        return {
+            "status": {
+                "source": "yahoo" if service is not None else None,
+                "enabled": service is not None,
+                "live_positions": live_count,
+                "positions": len(out),
+                "stale": bool(found.stale) if found is not None else False,
+                "message": found.unavailable if found is not None else (None if service is not None else "Live prices are turned off on the server."),
+            },
+            "totals": {
+                c: {
+                    "value": num(b["value"]),
+                    "changes": {
+                        p: None
+                        if acc[2] == 0
+                        else {
+                            "amount": num(acc[0].quantize(cent, ROUND_HALF_UP)),
+                            "percent": float((acc[0] / acc[1] * 100).quantize(pct, ROUND_HALF_UP)) if acc[1] > 0 else None,
+                            "positions": acc[2],
+                        }
+                        for p, acc in b["periods"].items()
+                    },
+                }
+                for c, b in sorted(totals.items())
+            },
+            "holdings": out,
+        }
 
     @app.get("/api/networth")
     def networth(

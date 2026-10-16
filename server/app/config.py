@@ -39,6 +39,8 @@ class Settings:
     webhook_port: int = 8081
     host: str = "0.0.0.0"
     sync_interval_minutes: int = 60
+    live_quotes: bool = True  # live prices for investment positions from Yahoo Finance
+    max_failed_logins: int = 10  # in a row; then new sign-ins stay locked until `cli unlock`
     # Test-only escape hatches. Never set these in production.
     insecure_plaintext_db: bool = False
     plaid_base_url: str | None = None
@@ -80,5 +82,7 @@ def load_settings() -> Settings:
         webhook_port=int(os.environ.get("WEBHOOK_PORT", "8081")),
         host=os.environ.get("HF_HOST", "0.0.0.0"),
         sync_interval_minutes=int(os.environ.get("SYNC_INTERVAL_MINUTES", "60")),
+        live_quotes=_bool("LIVE_QUOTES", True),
+        max_failed_logins=max(3, min(100, int(os.environ.get("MAX_FAILED_LOGINS", "10")))),
         insecure_plaintext_db=_bool("HF_INSECURE_PLAINTEXT_DB"),
     )
