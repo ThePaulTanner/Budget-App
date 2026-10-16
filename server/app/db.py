@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE users (
@@ -159,6 +159,17 @@ CREATE TABLE networth (
   net_worth TEXT NOT NULL,
   PRIMARY KEY (date, currency)
 );
+CREATE TABLE card_dues (
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  due_date TEXT,
+  minimum_payment TEXT,
+  statement_balance TEXT,
+  statement_date TEXT,
+  last_payment_amount TEXT,
+  last_payment_date TEXT,
+  is_overdue INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
 """
 
 # Upgrades for databases created by an older version: {from_version: SQL}.
@@ -202,6 +213,19 @@ CREATE UNIQUE INDEX merchant_aliases_unique ON merchant_aliases(match_field, mat
 CREATE INDEX merchant_aliases_merchant ON merchant_aliases(merchant_id);
 ALTER TABLE transactions ADD COLUMN merchant_id INTEGER REFERENCES merchants(id) ON DELETE SET NULL;
 CREATE INDEX transactions_merchant ON transactions(merchant_id);
+""",
+    4: """
+CREATE TABLE card_dues (
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  due_date TEXT,
+  minimum_payment TEXT,
+  statement_balance TEXT,
+  statement_date TEXT,
+  last_payment_amount TEXT,
+  last_payment_date TEXT,
+  is_overdue INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
 """,
 }
 

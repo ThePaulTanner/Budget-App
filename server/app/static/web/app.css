@@ -112,6 +112,12 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .seg button { border: 0; border-radius: 0; background: transparent; padding: .35rem .85rem; }
 .seg button + button { border-left: 1px solid var(--border); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.pill { display: inline-block; font-size: .72rem; padding: 1px 9px; border-radius: 99px; margin-left: 8px; vertical-align: middle; font-weight: 650; background: var(--accent-soft); color: var(--accent); }
+.pill.bad { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.pill.warn { background: var(--amber-bg); color: var(--amber-text); }
+.pill.good { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); }
+.card.due.overdue { border-color: color-mix(in srgb, var(--red) 55%, transparent); }
+.big.small { font-size: 1.4rem; }
 .badge { display: inline-block; font-size: .7rem; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border-strong); color: var(--muted); margin-left: 6px; vertical-align: middle; font-weight: 500; }
 .env { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); align-self: flex-start; }
 .env.prod { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }

@@ -68,6 +68,7 @@ class FakePlaid:
         self.accounts = []
         self.pages = []  # transactions/sync responses, returned in order
         self.holdings = {"accounts": [], "holdings": [], "securities": []}
+        self.liabilities = {"liabilities": {"credit": []}}
         self.errors: dict[str, PlaidError] = {}
         self.calls: list[str] = []
         self.removed: list[str] = []
@@ -91,6 +92,10 @@ class FakePlaid:
     def investments_holdings_get(self, token):
         self._check("investments_holdings_get")
         return self.holdings
+
+    def liabilities_get(self, token):
+        self._check("liabilities_get")
+        return self.liabilities
 
     def link_token_create(self, client_user_id, country_codes, webhook, access_token=None):
         self._check("link_token_create")
@@ -248,6 +253,13 @@ def seed_fixture_data(services) -> None:
         )
     from app.merchants import assign_merchants
 
+    db.run(
+        "INSERT INTO card_dues(account_id, due_date, minimum_payment, statement_balance, "
+        "statement_date, last_payment_amount, last_payment_date, is_overdue, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        ("acc_visa", "2026-10-25", "35.00", "612.40", "2026-09-28", "500.00", "2026-09-10", 0,
+         "2026-10-02T00:00:00Z"),
+    )
     assign_merchants(db)  # as after a sync: Plaid's merchant names become merchants
     for p in fixture("networth.json"):
         db.run(

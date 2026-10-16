@@ -191,13 +191,14 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 4
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 5
     assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
     assert "merchant_id" in [c[1] for c in db.query("PRAGMA table_info(transactions)")]
     assert db.query("SELECT * FROM merchants") == [] and db.query("SELECT * FROM merchant_aliases") == []
     user = db.one("SELECT username, failed_streak, locked_at FROM users")
     assert (user["username"], user["failed_streak"], user["locked_at"]) == ("paul", 0, None)
     assert db.query("SELECT * FROM login_events") == []
+    assert db.query("SELECT * FROM card_dues") == []
     db.close()
     Database(path, None, insecure_plaintext=True).close()  # reopening is a no-op
 

@@ -11,7 +11,7 @@ This document turns those requirements into concrete choices. It is a **plan**. 
 - **Use proven, standard cryptography only.** That means AES-256, Argon2id, TLS 1.3 / WireGuard, and TOTP. No home-made crypto.
 - **Keys are kept away from the data they protect.** Encryption only helps if the key isn't stored next to it.
 - **Defence in depth.** Even if one layer fails (Tailscale, TLS, a stolen phone, a stolen NAS disk or backup), the data stays protected.
-- **Plaid access is read-only.** The server requests only the `transactions` and `investments` products (plus `liabilities` if loan details are wanted). **Auth** (full account numbers) and **Transfer / Payment Initiation** (moving money) stay off in the link token and in the Plaid dashboard. Then even a stolen access token can only read data. *(server: check the current link-token settings)*
+- **Plaid access is read-only.** The server requests only the `transactions` product, plus `investments` and `liabilities` (credit card due dates) as optional products, so a bank without them still links. **Auth** (full account numbers) and **Transfer / Payment Initiation** (moving money) stay off in the link token and in the Plaid dashboard. Then even a stolen access token can only read data. *(server: check the current link-token settings)*
 - **The app never sees bank passwords.** Plaid Link handles bank credentials. What we must protect most carefully are the **Plaid access tokens** on the server.
 
 ## 1. Server login *(server)*

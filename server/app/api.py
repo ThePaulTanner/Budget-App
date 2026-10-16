@@ -650,6 +650,90 @@ def create_api_app(services: Services) -> FastAPI:
             raise HTTPException(404, "budget not found")
         return {"ok": True}
 
+    # -- credit card payments ------------------------------------------------
+
+    @app.get("/api/payments-due")
+    def payments_due(ctx: Auth):
+        today = date.fromisoformat(today_str())
+        rows = db.query(
+            "SELECT a.*, i.institution AS institution, d.account_id AS dues_id, d.due_date, "
+            "d.minimum_payment, d.statement_balance, d.statement_date, d.last_payment_amount, "
+            "d.last_payment_date, d.is_overdue FROM accounts a "
+            "JOIN items i ON i.id = a.item_id LEFT JOIN card_dues d ON d.account_id = a.id "
+            "WHERE a.type = 'credit' AND a.hidden = 0"
+        )
+        cards: list[dict[str, Any]] = []
+        totals: dict[str, dict[str, Decimal]] = {}
+        for r in rows:
+            owed = Decimal(r["current_balance"] or "0")
+            statement = None if r["statement_balance"] is None else Decimal(r["statement_balance"])
+            minimum = None if r["minimum_payment"] is None else Decimal(r["minimum_payment"])
+            last_paid = None if r["last_payment_amount"] is None else Decimal(r["last_payment_amount"])
+            due = r["due_date"]
+            days = (date.fromisoformat(due) - today).days if due else None
+            statement_paid = statement is not None and (
+                statement <= 0
+                or (
+                    last_paid is not None
+                    and r["last_payment_date"]
+                    and r["statement_date"]
+                    and r["last_payment_date"] >= r["statement_date"]
+                    and last_paid >= statement
+                )
+            )
+            if bool(r["is_overdue"]) and not statement_paid:
+                status = "overdue"
+            elif owed <= 0:
+                status = "nothing_owed"
+            elif statement_paid:
+                status = "paid"
+            elif days is not None and days < 0:
+                status = "overdue"
+            elif days is not None and days <= 7:
+                status = "due_soon"
+            elif days is not None:
+                status = "upcoming"
+            else:
+                status = "unknown"
+            limit = None if r["credit_limit"] is None else Decimal(r["credit_limit"])
+            cards.append(
+                {
+                    "account_id": r["id"],
+                    "institution": r["institution"],
+                    "name": r["name"],
+                    "mask": r["mask"],
+                    "currency": r["currency"],
+                    "current_balance": num(owed),
+                    "credit_limit": num(limit),
+                    "available_credit": num(None if limit is None else limit - owed),
+                    "statement_balance": num(statement),
+                    "statement_date": r["statement_date"],
+                    "minimum_payment": num(minimum),
+                    "due_date": due,
+                    "days_until_due": days,
+                    "status": status,
+                    "statement_paid": statement_paid,
+                    "last_payment_amount": num(last_paid),
+                    "last_payment_date": r["last_payment_date"],
+                    "dues_known": r["dues_id"] is not None,
+                }
+            )
+            t = totals.setdefault(r["currency"], {"owed": Decimal(0), "statement_due": Decimal(0), "minimum_due": Decimal(0)})
+            t["owed"] += max(owed, Decimal(0))
+            if statement is not None and not statement_paid:
+                t["statement_due"] += statement
+            if minimum is not None and not statement_paid:
+                t["minimum_due"] += minimum
+        order = {"overdue": 0, "due_soon": 1, "upcoming": 2, "unknown": 3, "paid": 4, "nothing_owed": 5}
+        cards.sort(key=lambda c: (order[c["status"]], c["due_date"] or "9999-12-31", c["name"]))
+        return {
+            "as_of": today.isoformat(),
+            "base_currency": base,
+            "dues_available": any(c["dues_known"] for c in cards),
+            "totals": {cur: {k: num(v) for k, v in t.items()} for cur, t in totals.items()},
+            "cards": cards,
+        }
+
     # -- investments, net worth, banks ---------------------------------------
 
     @app.get("/api/holdings")

@@ -688,6 +688,65 @@
 
   // ---------------------------------------------------------------- Merchants
 
+  // ---- Money Management: credit card statements, minimums and due dates ------------------------
+
+  const DUE_PILLS = {
+    overdue: ["Overdue", "bad"], due_soon: ["Due soon", "warn"], upcoming: ["Upcoming", ""],
+    paid: ["Statement paid", "good"], nothing_owed: ["Nothing owed", "good"], unknown: ["No due date", ""],
+  };
+
+  function dueText(card) {
+    const days = card.days_until_due;
+    if (card.due_date == null) return "Your bank has not shared a due date.";
+    if (card.status === "paid" || card.status === "nothing_owed") return `Next payment date ${shortDate(card.due_date)}.`;
+    if (days < 0) return `Was due ${shortDate(card.due_date)}, ${-days} day${days === -1 ? "" : "s"} ago.`;
+    if (days === 0) return "Due today.";
+    if (days === 1) return `Due tomorrow, ${dayLabel(card.due_date)}.`;
+    return `Due ${dayLabel(card.due_date)}, in ${days} days.`;
+  }
+
+  async function viewMoney(id) {
+    const data = await api("/api/payments-due");
+    if (id !== navId) return;
+    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    const unpaid = data.cards.filter((c) => c.status !== "paid" && c.status !== "nothing_owed" && c.due_date);
+    const next = unpaid.slice().sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+
+    const summary = el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
+      data.cards.length === 0
+        ? el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." })
+        : [
+          Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
+            stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
+            stat("Minimum payments", money(t.minimum_due, cur)),
+            stat("Total owed on cards", money(t.owed, cur)))),
+          next && el("p", { text: `Next payment: ${next.institution} ${next.name}${next.mask ? ` \u2022\u2022${next.mask}` : ""}. ${dueText(next)}` }),
+          !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances below are still current." }),
+          el("p", { class: "muted", text: "Information only. HomeFinance cannot move money, so pay your cards at your bank." }),
+        ]);
+
+    const rows = data.cards.map((c) => {
+      const [label, tone] = DUE_PILLS[c.status];
+      const cur = c.currency;
+      return el("section", { class: `card due ${c.status}` },
+        el("div", { class: "row" },
+          el("div", { class: "grow" },
+            el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+              el("span", { class: `pill ${tone}`, text: label })),
+            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
+          el("div", { class: "amount" },
+            el("div", { class: "big small", text: money(c.statement_balance ?? c.current_balance, cur) }),
+            el("div", { class: "muted", text: c.statement_balance == null ? "balance" : "statement balance" }))),
+        el("div", { class: "stats" },
+          stat("Minimum payment", c.minimum_payment == null ? "\u2014" : money(c.minimum_payment, cur)),
+          stat("Balance now", money(c.current_balance, cur)),
+          stat("Available credit", c.available_credit == null ? "\u2014" : money(c.available_credit, cur)),
+          stat("Last payment", c.last_payment_amount == null ? "\u2014" : `${money(c.last_payment_amount, cur)}${c.last_payment_date ? ` on ${shortDate(c.last_payment_date)}` : ""}`)),
+        c.statement_date && el("p", { class: "muted", text: `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""}` }));
+    });
+    view().replaceChildren(summary, ...rows);
+  }
+
   const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
   const FIELD_LABELS = { name: "the description", merchant_name: "the bank's merchant name" };
   let merchPeriod = "12m";
@@ -1105,10 +1164,11 @@
     transactions: ["Transactions", "Search, filter and re-categorize"],
     merchants: ["Merchants", "Where your money goes, over time"],
     budgets: ["Budgets", "Limits and spending by month"],
+    money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "Banks, sign-in activity and appearance"],
   };
-  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
   // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
   async function refreshStatus() {
