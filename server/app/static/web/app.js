@@ -1217,7 +1217,7 @@
     return card;
   }
 
-  const SETTINGS_TABS = [["banks", "Banks"], ["accounts", "Accounts"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
   let settingsTab = "banks";
 
   async function viewSettings(id, params = new URLSearchParams()) {
@@ -1245,22 +1245,6 @@
     } });
 
     const linkButton = el("button", { type: "button", class: "primary", text: "Link a bank", onclick: () => startLink(null, reload) });
-    const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }),
-      el("div", { class: "actions" }, linkButton, syncButton), syncOut,
-      items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
-      items.map((i) => el("div", { class: "row" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
-        el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
-        i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
-        el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
-          const name = i.institution || "this bank";
-          if (!(await confirmBox({
-            title: `Remove ${name}?`,
-            intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
-            points: ["The Plaid bank slot it used is not given back.", "If the bank only needs attention, use Reconnect instead."],
-            confirmText: "Remove bank", cancelText: "Keep it", danger: true }))) return;
-          try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
-          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
-        } }))));
     // A bank still waiting for its first sync: check again every 6 seconds, at most 10 times,
     // and never while a dialog is open.
     if (items.some((i) => !i.last_synced_at && !i.needs_reauth) && syncPolls < 10) {
@@ -1316,34 +1300,60 @@
       catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
     }
     const unowned = people.length > 0 ? accounts.filter((a) => !a.hidden && (a.owner_ids || []).length === 0).length : 0;
-    const banksOf = new Map();
-    for (const a of accounts) banksOf.set(a.item_id, [...(banksOf.get(a.item_id) || []), a]);
-    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+    const accountsOf = new Map();
+    for (const a of accounts) accountsOf.set(a.item_id, [...(accountsOf.get(a.item_id) || []), a]);
+
+    function accountRow(a) {
+      const chosen = new Set(a.owner_ids || []);
+      return el("div", { class: "row" }, el("div", { class: "grow" },
+        el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
+        people.length > 0 && el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
+          el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
+            if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
+            putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
+          } }), p.name)))),
+        el("label", { class: "checkline" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
+          try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
+          catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }), "Hide"));
+    }
+
+    // One block per bank: the bank and its status, then its accounts with who owns them and Hide.
+    function bankBlock(i) {
+      const group = accountsOf.get(i.id) || [];
+      const name = i.institution || "this bank";
+      const ownersPath = `/api/items/${encodeURIComponent(i.id)}/owners`;
+      return el("div", { class: "bank-block" },
+        el("div", { class: "row bank-line" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
+          el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
+          i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
+          el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+            if (!(await confirmBox({
+              title: `Remove ${name}?`,
+              intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
+              points: ["The Plaid bank slot it used is not given back.", "If the bank only needs attention, use Reconnect instead."],
+              confirmText: "Remove bank", cancelText: "Keep it", danger: true }))) return;
+            try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
+            catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+          } })),
+        people.length > 0 && group.length > 0 && el("div", { class: "bank-owners" }, el("span", { class: "muted", text: "Set every account here to" }),
+          people.map((p) => el("button", { type: "button", class: "small", text: p.name,
+            onclick: () => putOwners(ownersPath, [p.id], () => { toast(`Every ${name} account is now ${p.name}'s.`); reload(); }) })),
+          people.length > 1 && el("button", { type: "button", class: "small", text: "Shared by everyone",
+            onclick: () => putOwners(ownersPath, people.map((p) => p.id), () => { toast("Shared by everyone."); reload(); }) })),
+        group.map(accountRow),
+        group.length === 0 && el("p", { class: "muted bank-note", text: i.last_synced_at ? "No accounts at this bank." : "Its accounts appear after the first sync." }));
+    }
+
+    const banks = el("section", { class: "card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton)),
+      syncOut,
       el("p", { class: "muted", text: people.length > 0
-        ? "Choose who owns each account. Give an account more than one owner to share it; it still counts once in the household totals. Tick Hide to leave an account out of totals and budgets."
-        : "Add the people in your household on the People tab, then choose who owns each account here. Tick Hide to leave an account out of totals and budgets." }),
+        ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or tick Hide to leave it out of totals and budgets."
+        : "Each bank lists its accounts. Tick Hide to leave an account out of totals and budgets. To say who owns what, add the people in your household on the People tab first." }),
       unowned > 0 && el("p", { class: "muted", text: `${unowned} account${unowned === 1 ? " has" : "s have"} no owner yet. They count in the household but not in anyone's own view.` }),
-      [...banksOf.entries()].map(([itemId, group]) => [
-        el("div", { class: "bank-head" }, el("h3", { text: group[0].institution || "Bank" }),
-          people.length > 0 && el("div", { class: "actions" },
-            people.map((p) => el("button", { type: "button", class: "small", text: `All ${p.name}`,
-              onclick: () => putOwners(`/api/items/${encodeURIComponent(itemId)}/owners`, [p.id], () => { toast(`Every ${group[0].institution || "bank"} account is now ${p.name}'s.`); reload(); }) })),
-            people.length > 1 && el("button", { type: "button", class: "small", text: "Shared by everyone",
-              onclick: () => putOwners(`/api/items/${encodeURIComponent(itemId)}/owners`, people.map((p) => p.id), () => { toast("Shared by everyone."); reload(); }) }))),
-        group.map((a) => {
-          const chosen = new Set(a.owner_ids || []);
-          return el("div", { class: "row" }, el("div", { class: "grow" },
-            el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
-            people.length > 0 && el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
-              el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
-                if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
-                putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
-              } }), p.name)))),
-            el("label", { class: "checkline" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
-              try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
-              catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
-            } }), "Hide"));
-        })]));
+      items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
+      items.map(bankBlock));
 
     // The household's people. They are labels for organising accounts, not logins.
     const newName = el("input", { maxlength: 40, placeholder: "Name, for example Sam", "aria-label": "New person's name" });
@@ -1393,7 +1403,7 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], accounts: [accountsCard], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
     const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
       SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
         onclick: () => { settingsTab = key; show(); } })));
