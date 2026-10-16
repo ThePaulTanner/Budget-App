@@ -61,10 +61,13 @@ def _unlock(_: argparse.Namespace) -> int:
     from .bootstrap import build_services
 
     services = build_services(load_settings())
-    if services.auth.unlock():
-        print("Sign-in unlocked. The failed-attempt count is back to zero.")
-    else:
-        print("Sign-in was not locked. The failed-attempt count is back to zero.")
+    try:
+        if services.auth.unlock():
+            print("Sign-in unlocked. The failed-attempt count is back to zero.")
+        else:
+            print("Sign-in was not locked. The failed-attempt count is back to zero.")
+    finally:
+        services.db.close()
     return 0
 
 
@@ -72,7 +75,10 @@ def _login_log(args: argparse.Namespace) -> int:
     from .bootstrap import build_services
 
     services = build_services(load_settings())
-    data = services.auth.login_log(args.limit)
+    try:
+        data = services.auth.login_log(args.limit)
+    finally:
+        services.db.close()
     state = "LOCKED since " + data["locked_at"] if data["locked"] else "not locked"
     print(f"Sign-in is {state}. Failed in a row: {data['failed_streak']} of {data['max_failed_logins']}.\n")
     for e in data["events"]:
@@ -85,13 +91,19 @@ def _reset_networth(args: argparse.Namespace) -> int:
     from .bootstrap import build_services
 
     services = build_services(load_settings())
-    count = services.db.one("SELECT count(*) AS n FROM networth")["n"]
-    if not args.yes:
-        answer = input(f"Delete all {count} saved daily net-worth points (the chart history)? Type yes: ")
-        if answer.strip().lower() != "yes":
-            print("Nothing deleted.")
-            return 1
-    services.db.run("DELETE FROM networth")
+    try:
+        count = services.db.one("SELECT count(*) AS n FROM networth")["n"]
+        if not args.yes:
+            answer = input(
+                f"Delete all {count} saved daily net-worth points? This is the whole chart history, "
+                "including any from real banks. Type yes: "
+            )
+            if answer.strip().lower() != "yes":
+                print("Nothing deleted.")
+                return 1
+        services.db.run("DELETE FROM networth")
+    finally:
+        services.db.close()
     print(f"Deleted {count} net-worth points. The chart starts again with the next sync.")
     return 0
 

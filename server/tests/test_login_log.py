@@ -264,8 +264,6 @@ def test_login_log_and_423_fixtures_match_the_server(login, client, services):
 
 
 def test_cli_reset_networth(tmp_path, monkeypatch, capsys):
-    import os
-
     monkeypatch.setenv("HF_DATA_DIR", str(tmp_path))
     key = generate_master_key()
     monkeypatch.setenv("HF_MASTER_KEY", key)

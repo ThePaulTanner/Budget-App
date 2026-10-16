@@ -153,7 +153,7 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 **Checklist, in this order**
 
 1. **Check coverage first.** Look up each of your banks and brokerages in Plaid's institution list for Canada, and see which products they support (Transactions, and Investments for brokerages). Coverage is Plaid's and the bank's decision, not this server's.
-2. **Get access.** Complete the Trial plan (or Production) application, wait for Plaid to approve it, then copy your **Production secret** from the dashboard (Developers, Keys). Your client id stays the same.
+2. **Get access.** Complete the Trial plan (or Production) application, wait for Plaid to approve it, then copy your **Production secret** from the dashboard (Developers, Keys). Your client id normally stays the same; confirm that in the dashboard.
 3. **Remove the sandbox bank, while still in sandbox mode.** Web app, Settings, Banks, **Remove**. (Doing this after switching would ask the production Plaid to close a sandbox connection and fail.)
 4. **Clear the fake chart history:** `docker exec -it homefinance python -m app.cli reset-networth`. Otherwise the net-worth chart keeps the sandbox's invented balances.
 5. **Swap the secret** (SSH on, no echo, one command at a time; use your own volume in the path):
@@ -161,7 +161,7 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
    read -rs -p "Plaid PRODUCTION secret: " V; echo; printf '%s' "$V" | sudo tee /volume1/docker/homefinance/secrets/plaid_secret >/dev/null; unset V
    ```
 6. **Switch the environment.** In `.env` set `PLAID_ENV=production`, then `sudo docker compose up -d --force-recreate`. Check `curl http://127.0.0.1:18080/health` prints `"plaid_env":"production"`. A secret and environment that do not match show as `INVALID_API_KEYS` when you link a bank.
-7. **Link each bank once** from the web app: Settings, **Link a bank** (it reminds you about the slot limit before it opens). Some banks send you to their own site or app to approve; if one is not offered or fails, note the exact message and tell me rather than retrying, because each successful link uses a slot.
+7. **Link each bank once** from the web app: Settings, **Link a bank** (it reminds you about the slot limit before it opens). Some banks send you to their own site or app to approve; if one is not offered or fails, stop and note the exact message before retrying, because each successful link uses a slot.
 8. **Wait for the first sync.** Years of history can take a few minutes. Webhooks (`PUBLIC_WEBHOOK_URL`) then bring new transactions within minutes.
 9. **Check it against your bank's own app:** balances on Overview, a few recent transactions, and for a brokerage the positions and "Live" prices on Investments.
 10. **Turn SSH off** again, and keep the master key and recovery codes backed up away from the NAS.
