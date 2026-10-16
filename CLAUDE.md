@@ -74,7 +74,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 
 Use a tab bar with five tabs.
 
-**Whose money (optional).** If `/api/people` returns anyone, show a "Household / each person" picker and pass `person_id` to `summary`, `accounts`, `transactions`, `spending`, `spending/monthly`, `holdings`, `holdings/live`, `networth` and `payments-due`. **Household (no `person_id`) counts every account once, however many owners it has.** A person's view shows the accounts they own in full, so a shared account appears in each owner's view and the people's totals do not add up to the household's; say so near the picker. Budgets and merchants are household-wide: in a person's view `budgeted_this_month` is null and `over_budget` is empty. A person's net-worth history only starts when they were added.
+**Whose money (optional).** If `/api/people` returns anyone, show a "Household / each person" picker and pass `person_id` to `summary`, `accounts`, `transactions`, `spending`, `spending/monthly`, `holdings`, `holdings/live`, `networth` and `payments-due`. **Household (no `person_id`) counts every account once, however many owners it has.** A person's view shows the accounts they own in full, so a shared account appears in each owner's view and the people's totals do not add up to the household's; say so near the picker. Budgets and merchants are household-wide: in a person's view `budgeted_this_month` is null and `over_budget` is empty. A person's net-worth history only starts when they were added, and changing an account's owners later does not rewrite earlier points.
 
 **1. Overview**
 - A large net-worth figure, with assets, liabilities and investments beneath it.
