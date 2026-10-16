@@ -430,7 +430,10 @@ def test_429_carries_the_wait_yahoo_asked_for():
     assert "429" in str(caught.value) and "too many requests" in str(caught.value)
 
 
-@pytest.mark.parametrize("header, expected", [(None, None), ("soon", None), ("999999", q.MAX_COOLDOWN)])
+@pytest.mark.parametrize(
+    "header, expected",
+    [(None, None), ("soon", None), ("nan", None), ("inf", None), ("-5", None), ("0", None), ("Wed, 21 Oct 2026 07:28:00 GMT", None), ("999999", q.MAX_COOLDOWN), ("45", 45.0)],
+)
 def test_429_without_a_usable_wait(header, expected):
     def handler(request):
         return httpx.Response(429, headers={} if header is None else {"Retry-After": header})

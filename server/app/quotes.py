@@ -12,6 +12,7 @@ and one-year changes.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -120,9 +121,10 @@ class YahooProvider:
             raise QuoteError("unknown", "symbol not found")
         if response.status_code == 429:
             try:
-                wait = min(float(response.headers.get("Retry-After", "")), MAX_COOLDOWN)
+                asked = float(response.headers.get("Retry-After", ""))
             except ValueError:
-                wait = None
+                asked = float("nan")
+            wait = min(asked, MAX_COOLDOWN) if math.isfinite(asked) and asked > 0 else None  # "nan", "-5" and dates are ignored
             raise QuoteError("unavailable", "Yahoo Finance answered 429 (too many requests)", retry_after=wait)
         if response.status_code != 200:
             raise QuoteError("unavailable", f"Yahoo Finance answered {response.status_code}")
@@ -344,14 +346,15 @@ class QuoteService:
             # Slow but moving is fine: what was fetched is kept and the next look carries on.
             if not_done and problem is None and not done:
                 problem = "Yahoo Finance was too slow"
-            if problem:
-                self._failures += 1
-                rest = min(max(COOLDOWN * 2 ** (self._failures - 1), asked), MAX_COOLDOWN)
-                self._last_error = problem
-                self._cooldown_until = self.clock() + rest
-                log.warning("live prices unavailable: %s (resting %d s)", problem, rest)
-            else:
-                self._failures = 0
+            with self._lock:  # two requests can be here at once
+                if problem:
+                    self._failures += 1
+                    rest = min(max(COOLDOWN * 2 ** (self._failures - 1), asked), MAX_COOLDOWN)
+                    self._last_error = problem
+                    self._cooldown_until = self.clock() + rest
+                    log.warning("live prices unavailable: %s (resting %d s)", problem, rest)
+                else:
+                    self._failures = 0
         live: dict[Wanted, Live] = {}
         stale = False
         with self._lock:
