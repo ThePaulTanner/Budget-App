@@ -754,19 +754,61 @@
         message);
     }
 
+    // Clicking a budget or a spending row lists the transactions behind that amount in the box under the chart.
+    const detail = el("section", { class: "card" });
+    let picked = null;
+    const markPicked = () => view().querySelectorAll("[data-pick]").forEach((r) => r.classList.toggle("picked", r.dataset.pick === picked));
+    async function showTransactions(category) {
+      picked = category;
+      markPicked();
+      const label = categoryLabel(category);
+      detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }), el("p", { class: "empty", text: "Loading…" }));
+      try {
+        const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+        const q = new URLSearchParams({ category, start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, "0")}`, limit: "200" });
+        if (viewer != null) q.set("person_id", String(viewer));
+        const [page, accounts] = await Promise.all([api(`/api/transactions?${q}`), api(scoped("/api/accounts"))]);
+        if (id !== navId || picked !== category) return;
+        const names = Object.fromEntries(accounts.map((a) => [a.id, `${a.institution ? a.institution + " " : ""}${a.name}`]));
+        const net = page.transactions.reduce((sum, t) => sum + (t.currency === cur ? t.amount : 0), 0);
+        const rows = [];
+        let day = null;
+        for (const tx of page.transactions) {
+          if (tx.date !== day) { day = tx.date; rows.push(el("div", { class: "dayhead", text: dayLabel(tx.date) })); }
+          const amount = signed(tx.amount, tx.currency);
+          rows.push(el("div", { class: "row" },
+            el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
+            el("div", { class: "grow" },
+              el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
+              el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} \u00B7 ${names[tx.account_id] || ""}` })),
+            el("div", { class: `amount ${amount.cls}`, text: amount.text })));
+        }
+        const shown = page.total > page.transactions.length ? ` (showing the newest ${page.transactions.length})` : "";
+        detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }),
+          el("p", { class: "muted", text: page.total === 0 ? "No transactions." : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total${shown}.` }),
+          ...rows,
+          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", text: "Search all transactions" })));
+      } catch (err) {
+        if (err instanceof SignedOut) showLogin(); else detail.replaceChildren(el("h2", { text: "Transactions" }), el("p", { class: "error", text: err.message }));
+      }
+    }
+    detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
+    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.key === "Enter") showTransactions(category); } });
+
     const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
     if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
     const budgeted = new Set(budgets.budgets.map((b) => b.category));
     for (const b of budgets.budgets) {
       const left = b.remaining >= 0 ? `${money(b.remaining, cur)} left` : `${money(-b.remaining, cur)} over`;
       const inside = b.parent && budgeted.has(b.parent) ? ` \u00B7 also counted in ${categoryLabel(b.parent)}` : "";
-      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, onclick: () => budgetDialog(b),
-        onkeydown: (e) => { if (e.key === "Enter") budgetDialog(b); } },
+      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, ...pickable(b.category) },
         el("div", { class: "icon", text: icon(b.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
           el("div", {}, el("strong", { text: categoryLabel(b.category) })),
           progress(b.percent),
-          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} · ${left}${inside}` }))));
+          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} \u00B7 ${left}${inside}` })),
+        el("button", { type: "button", class: "secondary", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
+          onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() })));
     }
 
     const maxSpent = Math.max(...spending.categories.map((c) => Math.abs(c.spent)), 1);
@@ -774,23 +816,23 @@
       el("p", { class: "muted", text: `${money(spending.total, cur)} in ${monthLabel(month)}. Transfers, loan and card payments and income are left out.` }));
     if (spending.categories.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
     for (const c of spending.categories) {
-      spendCard.append(el("div", { class: "row" },
+      spendCard.append(el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
         el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
         el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
         el("div", { class: "amount", text: money(c.spent, cur) })));
       // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
       const split = c.subcategories || [];
       const rest = c.spent - split.reduce((sum, s) => sum + s.spent, 0);
-      const parts = split.map((s) => [subLabel(s.category), s.spent]);
+      const parts = split.map((s) => [subLabel(s.category), s.spent, s.category]);
       if (split.length > 0 && Math.abs(rest) >= 0.005) parts.push(["Not in a sub-category", rest]);
-      for (const [label, spent] of parts) {
-        spendCard.append(el("div", { class: "row sub" },
+      for (const [label, spent, code] of parts) {
+        spendCard.append(el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
           el("div", { class: "grow" }, el("div", { class: "muted", text: label }), progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true)),
           el("div", { class: "amount muted", text: money(spent, cur) })));
       }
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, trendCard));
+    view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
   }
 
   // ---------------------------------------------------------------- Investments
