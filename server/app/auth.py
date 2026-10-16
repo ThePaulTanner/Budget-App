@@ -105,6 +105,10 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def _printable(value: str) -> str:
+    return "".join(ch for ch in value if ch.isprintable())
+
+
 def _normalize_recovery(code: str) -> str:
     return "".join(ch for ch in code.lower() if ch.isalnum())
 
@@ -218,8 +222,10 @@ class AuthService:
         with self._login_lock:
             user = self.db.one("SELECT * FROM users WHERE username=?", (key,))
             known = user is not None
-            if user is not None and user["locked_at"] is not None:
-                self._log("locked", ip, origin, device=device_name, known=True)
+            # One user: if the account is locked, every attempt gets the same refusal, so the
+            # answer does not reveal whether the username exists.
+            if self.db.one("SELECT 1 FROM users WHERE locked_at IS NOT NULL") is not None:
+                self._log("locked", ip, origin, device=device_name, known=known)
                 raise AuthError(LOCKED_STATUS, LOCKED_MESSAGE)
             try:
                 self.user_limiter.check(key)
@@ -285,6 +291,9 @@ class AuthService:
         """Record one attempt. Only metadata: never the password, the code, or a username
         that is not the real one (people sometimes type a password into the username box)."""
         now = utcnow()
+        # Text from the request is attacker-controlled: keep printable characters only, so
+        # nothing can inject terminal escape codes when the owner runs `cli login-log`.
+        ip, origin, device = (_printable(v) for v in (ip, origin, device or ""))
         if result in COLLAPSED_RESULTS:
             last = self.db.one("SELECT id, result, ip FROM login_events ORDER BY id DESC LIMIT 1")
             if last is not None and last["result"] == result and last["ip"] == ip[:64]:

@@ -226,3 +226,38 @@ def test_cli_login_log_and_unlock(tmp_path, monkeypatch, capsys):
     assert "unlocked" in capsys.readouterr().out.lower()
     assert cli.main(["unlock"]) == 0
     assert "was not locked" in capsys.readouterr().out
+
+
+def test_lock_answer_does_not_reveal_whether_the_username_exists(login, client, services):
+    services.auth.max_failed_logins = 3
+    for _ in range(3):
+        attempt(client)
+    real = attempt(client, username="paul")
+    other = attempt(client, username="not-a-user")
+    assert (real.status_code, real.json()) == (other.status_code, other.json()) == (LOCKED_STATUS, real.json())
+
+
+def test_control_characters_in_attacker_text_never_reach_the_log(login, client, services, capsys):
+    client.post(
+        "/auth/login",
+        json={"username": "paul", "password": "wrong-password-123", "code": "000000", "device_name": "evil\x1b[2Jdevice\x07"},
+        headers={"X-Forwarded-For": "1.2.3.4\x1b]0;pwned\x07"},
+    )
+    event = services.auth.login_log()["events"][0]
+    assert "\x1b" not in event["device_name"] and "\x07" not in event["device_name"]
+    assert event["device_name"] == "evil[2Jdevice" and "\x1b" not in event["origin"]
+
+
+def test_login_log_and_423_fixtures_match_the_server(login, client, services):
+    from .conftest import fixture_float
+
+    services.auth.max_failed_logins = 3
+    for _ in range(3):
+        attempt(client)
+    locked = login.sign_in()
+    assert locked.status_code == LOCKED_STATUS
+    assert locked.json() == fixture_float("error_423.json")
+    shape = fixture_float("login_log.json")
+    live = services.auth.login_log()
+    assert set(live) == set(shape)
+    assert all(set(e) == set(shape["events"][0]) for e in live["events"])
