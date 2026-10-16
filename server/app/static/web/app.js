@@ -1432,10 +1432,14 @@
     try {
       const { plaid_env: env } = await (await plainFetch("/health")).json();
       const badge = $("env-badge");
-      badge.textContent = env === "production" ? "Live banks" : "Sandbox";
-      badge.title = env === "production" ? "Connected to real banks through Plaid" : "Plaid's sandbox: fake banks and test data";
-      badge.className = env === "production" ? "env prod" : "env";
-      badge.hidden = false;
+      // Real banks are the normal state and need no label. Only the sandbox is flagged, because
+      // its balances and transactions are fake.
+      badge.hidden = env === "production";
+      if (env !== "production") {
+        badge.textContent = "Sandbox";
+        badge.title = "Plaid's sandbox: fake banks and test data";
+        badge.className = "env";
+      }
     } catch (_) { /* the badge is only a convenience */ }
   }
 
