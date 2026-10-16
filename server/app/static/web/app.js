@@ -790,7 +790,7 @@
       }
     }
     detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
-    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showTransactions(category); } } });
+    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
 
     const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
     if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
