@@ -13,6 +13,7 @@
     "credit_limit": 5000.0,
     "currency": "CAD",
     "hidden": false,
+    "owner_ids": [],
     "updated_at": "2026-10-02T23:41:42.782649Z"
   },
   {
@@ -29,6 +30,7 @@
     "credit_limit": null,
     "currency": "CAD",
     "hidden": false,
+    "owner_ids": [],
     "updated_at": "2026-10-02T23:41:42.781645Z"
   },
   {
@@ -45,6 +47,7 @@
     "credit_limit": null,
     "currency": "CAD",
     "hidden": false,
+    "owner_ids": [],
     "updated_at": "2026-10-02T23:41:42.783079Z"
   },
   {
@@ -61,6 +64,7 @@
     "credit_limit": null,
     "currency": "CAD",
     "hidden": false,
+    "owner_ids": [],
     "updated_at": "2026-10-02T23:41:42.788227Z"
   }
 ]

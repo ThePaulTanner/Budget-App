@@ -108,3 +108,7 @@ Webhooks need Plaid to reach the server from the internet. We open **only** the 
 3. **Users:** the server is built for exactly one user. Say if someone else needs a login.
 4. **Webhook exposure:** Tailscale Funnel on port 8443 is what the setup guide uses. Say if you prefer a Cloudflare Tunnel.
 5. ~~Signing~~ **Decided: free Apple ID** (reinstall every 7 days).
+
+## People are labels, not access control
+
+The web app lets you list the people in your household and say who owns each account (`people`, `account_owners`). This only changes what is shown: there is still one login, and anyone who signs in can read every account and can switch to any person's view or to the household. If your wife should not see your accounts, or the reverse, that needs a separate login with its own access rules, which is not built.

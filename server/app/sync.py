@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import queue
+import re
 import threading
 from datetime import datetime
 from decimal import Decimal
@@ -56,6 +58,32 @@ def map_account_type(plaid_type: str | None) -> str:
     if plaid_type == "brokerage":
         return "investment"
     return "other"
+
+
+def clean_logo(value: Any) -> str | None:
+    """Plaid's logo is a base64 PNG. Keep it only if it really is one and is small."""
+    if not isinstance(value, str) or not value or len(value) > 200_000:
+        return None
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except ValueError:
+        return None
+    return value if raw.startswith(b"\x89PNG\r\n\x1a\n") else None
+
+
+def clean_color(value: Any) -> str | None:
+    return value if isinstance(value, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value) else None
+
+
+def store_institution(db: Database, item_id: str, details: dict[str, Any] | None) -> None:
+    """Remember a bank's logo and colour. Only a real answer from Plaid counts as checked,
+    so a failed call is tried again at the next sync."""
+    if details is None:
+        return
+    db.run(
+        "UPDATE items SET logo=?, color=?, logo_checked=1 WHERE id=?",
+        (clean_logo(details.get("logo")), clean_color(details.get("color")), item_id),
+    )
 
 
 def item_token(keys: Keys, item: Any) -> str:
@@ -287,10 +315,19 @@ def sync_liabilities(db: Database, plaid: PlaidClient, token: str, item_id: str)
 # -- net worth ---------------------------------------------------------------
 
 
-def compute_networth(db: Database) -> dict[str, dict[str, Decimal]]:
-    """Assets, liabilities, investments and net worth per currency (hidden accounts excluded)."""
+def compute_networth(db: Database, person_id: int | None = None) -> dict[str, dict[str, Decimal]]:
+    """Assets, liabilities, investments and net worth per currency (hidden accounts excluded).
+
+    Without a person this is the whole household and every account counts once, however many
+    owners it has. With a person it is the accounts that person owns, in full: an account shared
+    with someone else shows in both people's totals, never twice in the household's."""
     totals: dict[str, dict[str, Decimal]] = {}
-    for acct in db.query("SELECT type, current_balance, currency FROM accounts WHERE hidden=0"):
+    sql = "SELECT type, current_balance, currency FROM accounts WHERE hidden=0"
+    params: tuple = ()
+    if person_id is not None:
+        sql += " AND id IN (SELECT account_id FROM account_owners WHERE person_id=?)"
+        params = (person_id,)
+    for acct in db.query(sql, params):
         if acct["current_balance"] is None:
             continue
         t = totals.setdefault(
@@ -315,28 +352,40 @@ def compute_networth(db: Database) -> dict[str, dict[str, Decimal]]:
 
 
 def snapshot_networth(db: Database, date: str | None = None) -> None:
-    """Record today's net worth per currency (one row per day, overwritten on re-sync)."""
+    """Record today's net worth per currency for the household (person_id 0) and for each
+    person (one row per day and scope, overwritten on re-sync)."""
     date = date or today_str()
+    scopes: list[tuple[int, int | None]] = [(0, None)]
+    scopes += [(r["id"], r["id"]) for r in db.query("SELECT id FROM people")]
     with db.transaction():
-        for currency, t in compute_networth(db).items():
-            db.run(
-                "INSERT OR REPLACE INTO networth(date, currency, assets, liabilities, "
-                "investments, net_worth) VALUES (?,?,?,?,?,?)",
-                (
-                    date,
-                    currency,
-                    str(t["assets"]),
-                    str(t["liabilities"]),
-                    str(t["investments"]),
-                    str(t["net_worth"]),
-                ),
-            )
+        for stored_id, person in scopes:
+            for currency, t in compute_networth(db, person).items():
+                db.run(
+                    "INSERT OR REPLACE INTO networth(date, currency, person_id, assets, liabilities, "
+                    "investments, net_worth) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        date,
+                        currency,
+                        stored_id,
+                        str(t["assets"]),
+                        str(t["liabilities"]),
+                        str(t["investments"]),
+                        str(t["net_worth"]),
+                    ),
+                )
 
 
 # -- one bank ----------------------------------------------------------------
 
 
-def sync_item(db: Database, plaid: PlaidClient, keys: Keys, item: Any, base: str) -> dict[str, Any]:
+def sync_item(
+    db: Database,
+    plaid: PlaidClient,
+    keys: Keys,
+    item: Any,
+    base: str,
+    country_codes: tuple[str, ...] = ("CA", "US"),
+) -> dict[str, Any]:
     result: dict[str, Any] = {
         "item_id": item["id"],
         "institution": item["institution"],
@@ -346,6 +395,8 @@ def sync_item(db: Database, plaid: PlaidClient, keys: Keys, item: Any, base: str
     }
     try:
         token = item_token(keys, item)
+        if not item["logo_checked"] and item["institution_id"]:
+            store_institution(db, item["id"], plaid.institution_details(item["institution_id"], country_codes))
         sync_accounts(db, plaid, token, item["id"], base)
         result["transactions_changed"] = sync_transactions(db, plaid, token, item, base)
         result["holdings"], has_investments = sync_holdings(db, plaid, token, item["id"], base)
@@ -403,7 +454,7 @@ class SyncManager:
                     if (row := self.db.one("SELECT * FROM items WHERE id=?", (item_id,)))
                 ]
             results = [
-                sync_item(self.db, self.plaid, self.keys, item, self.settings.base_currency)
+                sync_item(self.db, self.plaid, self.keys, item, self.settings.base_currency, self.settings.plaid_country_codes)
                 for item in items
             ]
             snapshot_networth(self.db)

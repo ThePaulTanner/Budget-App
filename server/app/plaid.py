@@ -91,15 +91,27 @@ class PlaidClient:
     def item_get(self, access_token: str) -> dict[str, Any]:
         return self._post("/item/get", {"access_token": access_token})
 
-    def institution_name(self, institution_id: str, country_codes: tuple[str, ...]) -> str | None:
+    def institution_details(self, institution_id: str, country_codes: tuple[str, ...]) -> dict[str, Any] | None:
+        """The bank's name, its logo (a base64 PNG) and brand colour. None if Plaid cannot say."""
         try:
             data = self._post(
                 "/institutions/get_by_id",
-                {"institution_id": institution_id, "country_codes": list(country_codes)},
+                {
+                    "institution_id": institution_id,
+                    "country_codes": list(country_codes),
+                    "options": {"include_optional_metadata": True},
+                },
             )
         except PlaidError:
             return None
-        return data.get("institution", {}).get("name")
+        bank = data.get("institution")
+        if not isinstance(bank, dict):
+            return None  # an unexpected reply is treated like a failed lookup
+        return {"name": bank.get("name"), "logo": bank.get("logo"), "color": bank.get("primary_color")}
+
+    def institution_name(self, institution_id: str, country_codes: tuple[str, ...]) -> str | None:
+        details = self.institution_details(institution_id, country_codes)
+        return details["name"] if details else None
 
     def item_remove(self, access_token: str) -> None:
         self._post("/item/remove", {"access_token": access_token})

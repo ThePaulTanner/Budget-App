@@ -265,6 +265,115 @@
   let navId = 0;
   const view = () => $("view");
 
+  // The household's people, and whose money is on screen (null = the whole household, where every
+  // account counts once however many owners it has).
+  let people = [];
+  let viewer = null;
+  const scoped = (path) => (viewer == null ? path : `${path}${path.includes("?") ? "&" : "?"}person_id=${viewer}`);
+  const personName = (personId) => people.find((p) => p.id === personId)?.name;
+  function ownerText(account) {
+    if (people.length === 0) return null;
+    const names = (account.owner_ids || []).map(personName).filter(Boolean);
+    if (names.length === 0) return "No owner yet";
+    return names.length === 1 ? names[0] : `Shared: ${names.join(" & ")}`;
+  }
+  const iconSvg = (id, size = 20) => svg("svg", { class: "ico", width: size, height: size, "aria-hidden": "true" }, svg("use", { href: `#${id}` }));
+
+  // A bank's logo (Plaid sends it as a small PNG), or its initials on the bank's colour.
+  function readableOn(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    return lum > 0.6 ? "#111827" : "#ffffff";
+  }
+  function bankLogo(item, name, size = 36) {
+    if (item && item.logo) {
+      const img = el("img", { class: "bank-logo", alt: "", width: size, height: size });
+      img.src = `data:image/png;base64,${item.logo}`;
+      return img;
+    }
+    const label = (name || "Bank").trim();
+    let hue = 0;
+    for (const ch of label) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
+    const color = item && /^#[0-9a-fA-F]{6}$/.test(item.color || "") ? item.color : null;
+    const badge = el("span", { class: "bank-logo initials", "aria-hidden": "true", text: label.slice(0, 2).toUpperCase() });
+    badge.style.width = badge.style.height = `${size}px`;
+    badge.style.background = color || `hsl(${hue} 50% 36%)`;
+    badge.style.color = color ? readableOn(color) : "#ffffff";
+    return badge;
+  }
+
+  // The Overview's account sections. Each is its own card with a total, then a table.
+  const ACCOUNT_SECTIONS = [
+    ["investment", "Investments", "i-trend"], ["depository", "Cash", "i-cash"], ["credit", "Credit", "i-card"],
+    ["loan", "Loans", "i-home"], ["other", "Other", "i-list"],
+  ];
+  function sectionTotals(rows, kind) {
+    const totals = {};
+    for (const a of rows) if (a.current_balance != null) totals[a.currency] = (totals[a.currency] || 0) + a.current_balance;
+    return Object.entries(totals).sort(([a], [b]) => (a === baseCurrency ? -1 : b === baseCurrency ? 1 : a.localeCompare(b)))
+      .map(([cur, value]) => money(value, cur)).join(" \u00B7 ") + (kind === "credit" || kind === "loan" ? " owed" : "");
+  }
+  function ownersCell(a) {
+    const names = (a.owner_ids || []).map(personName).filter(Boolean);
+    if (names.length === 0) return el("span", { class: "muted", text: "No owner yet" });
+    return el("span", {}, names.join(" & "), names.length > 1 && el("span", { class: "pill", text: "Shared" }));
+  }
+  function accountSection(kind, label, iconId, rows, itemsById) {
+    const credit = kind === "credit";
+    const showOwner = people.length > 0;
+    const open = (a) => { location.hash = `#/transactions?account=${encodeURIComponent(a.id)}`; };
+    const headers = [["Account", "col-account"], ["Bank", "col-bank"], showOwner && ["Owner", "col-owner"],
+      credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
+      kind === "depository" && ["Available", "num col-extra"],
+      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance"]].filter(Boolean);
+    const sorted = rows.slice().sort((a, b) => Math.abs(b.current_balance || 0) - Math.abs(a.current_balance || 0));
+    const body = sorted.map((a) => {
+      const item = itemsById.get(a.item_id);
+      const available = credit && a.credit_limit != null
+        ? (a.available_balance ?? (a.current_balance != null ? a.credit_limit - a.current_balance : null)) : null;
+      const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
+      const cells = [
+        el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, a.institution),
+          el("div", {}, el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+            a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
+            el("div", { class: "muted narrow-only", text: [a.institution, showOwner ? (ownerText(a) || "") : ""].filter(Boolean).join(" \u00B7 ") })))),
+        el("td", { class: "col-bank", text: a.institution || "" }),
+        showOwner && el("td", { class: "col-owner" }, ownersCell(a)),
+        credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
+        credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
+        credit && el("td", { class: `num col-extra${used != null && used >= 80 ? " neg" : ""}`, text: used != null ? `${used}%` : "\u2014" }),
+        kind === "depository" && el("td", { class: "num col-extra", text: a.available_balance != null ? money(a.available_balance, a.currency) : "\u2014" }),
+        el("td", { class: "num col-balance" }, a.current_balance == null ? "\u2014" : money(a.current_balance, a.currency)),
+      ].filter(Boolean);
+      return el("tr", { class: "click", tabindex: 0, onclick: (e) => { if (!e.target.closest("a")) open(a); },
+        onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(a); } }, cells);
+    });
+    return el("section", { class: `card acct-section ${kind}` },
+      el("div", { class: "section-head" },
+        el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
+        el("div", { class: "grow" }, el("h2", { text: label }), el("div", { class: "muted", text: `${rows.length} account${rows.length === 1 ? "" : "s"}` })),
+        el("div", { class: "section-total", text: sectionTotals(rows, kind) })),
+      el("div", { class: "table-wrap" }, el("table", { class: "acct-table" },
+        el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
+        el("tbody", {}, body))));
+  }
+
+  // A line under the page title in a person's view; empty for the household.
+  function viewerNote(householdOnly = false) {
+    if (viewer == null) return document.createDocumentFragment();  // nothing to show, and nothing printed
+    const name = personName(viewer) || "this person";
+    return el("p", { class: "viewer-note", text: householdOnly
+      ? `This page covers the whole household, not just ${name}.`
+      : `Showing ${name}'s accounts. A shared account counts in full for each owner, so the people's totals add up to more than the household's.` });
+  }
+  async function loadPeople() {
+    try { people = await api("/api/people"); } catch (err) { if (err instanceof SignedOut) throw err; people = []; }
+    if (viewer != null && !people.some((p) => p.id === viewer)) viewer = null;
+    $("viewer").replaceChildren(el("option", { value: "", text: "Household" }),
+      ...people.map((p) => el("option", { value: String(p.id), text: p.name, selected: p.id === viewer })));
+    $("viewer-wrap").hidden = people.length === 0;
+  }
+
   async function categoryChoices(extra = []) {
     let fromServer = [];
     try { fromServer = await api("/api/categories"); } catch (err) { if (err instanceof SignedOut) throw err; }
@@ -292,6 +401,27 @@
   }
   const closeSheet = () => { if ($("sheet").open) $("sheet").close(); };
 
+  // A centered question box on its own layer, so it can sit on top of another open box. Resolves
+  // true only when the confirm button is pressed; Cancel and Esc resolve false. It is closed again
+  // before this resolves.
+  function confirmBox({ title, intro, points = [], confirmText = "Continue", cancelText = "Cancel", danger = false }) {
+    return new Promise((resolve) => {
+      let answer = false;
+      const box = $("confirm");
+      const close = () => { if (box.open) box.close(); };
+      box.replaceChildren(el("div", { class: "confirm" },
+        el("div", { class: `confirm-mark${danger ? " danger" : ""}`, "aria-hidden": "true", text: "!" }),
+        el("h2", { id: "confirm-title", text: title }),
+        intro && el("p", { text: intro }),
+        points.length > 0 && el("ul", {}, points.map((point) => el("li", { text: point }))),
+        el("div", { class: "actions" },
+          el("button", { type: "button", class: danger ? "danger-solid" : "primary", text: confirmText, onclick: () => { answer = true; close(); } }),
+          el("button", { type: "button", class: "secondary", text: cancelText, onclick: close }))));
+      box.addEventListener("close", () => resolve(answer), { once: true });
+      box.showModal();
+    });
+  }
+
   function guard(promise) {
     return promise.catch((err) => {
       if (err instanceof SignedOut) { showLogin(); return undefined; }
@@ -316,7 +446,7 @@
     if (!log || (!log.locked && recent === 0)) { node.hidden = true; return; }
     node.replaceChildren(
       log.locked ? "New sign-ins are locked after too many failed attempts. " : `${recent} failed sign-in attempt${recent === 1 ? "" : "s"} in the last 24 hours. `,
-      el("a", { href: "#/settings", text: "See the sign-in activity" }));
+      el("a", { href: "#/settings?tab=log", text: "See the sign-in activity" }));
     node.hidden = false;
   }
 
@@ -325,9 +455,9 @@
   let nwDays = 365;
 
   async function viewOverview(id) {
-    const [summary, accounts, log, spending] = await Promise.all([
-      api("/api/summary"), api("/api/accounts?include_hidden=false"), api("/auth/login-log?limit=100").catch(() => null),
-      api("/api/spending").catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
+    const [summary, accounts, log, spending, items] = await Promise.all([
+      api(scoped("/api/summary")), api(scoped("/api/accounts?include_hidden=false")), api("/auth/login-log?limit=100").catch(() => null),
+      api(scoped("/api/spending")).catch(() => ({ categories: [] })), api("/api/items").catch(() => [])]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -338,7 +468,7 @@
     const chartBox = el("div");
     const drawChart = async () => {
       try {
-        const rows = await api(`/api/networth?days=${nwDays}&currency=${encodeURIComponent(cur)}`);
+        const rows = await api(scoped(`/api/networth?days=${nwDays}&currency=${encodeURIComponent(cur)}`));
         if (id === navId) chartBox.replaceChildren(lineChart(rows.map((r) => ({ date: r.date, value: r.net_worth })), cur));
       } catch (err) { if (err instanceof SignedOut) showLogin(); else chartBox.replaceChildren(el("p", { class: "error", text: err.message })); }
     };
@@ -363,7 +493,7 @@
       el("h3", { text: `Spent in ${monthLabel(summary.month)}` }),
       el("div", { class: "big", text: money(summary.spent_this_month, cur) }),
       budgeted > 0 ? [progress(pct), el("p", { class: "muted", text: `of ${money(budgeted, cur)} budgeted (${Math.round(pct)}%)` })]
-        : el("p", { class: "muted", text: "No budgets set yet." }),
+        : el("p", { class: "muted", text: viewer != null ? "Budgets cover the whole household." : "No budgets set yet." }),
       summary.over_budget.length > 0 && el("div", { class: "chips" }, summary.over_budget.map((b) =>
         el("span", { class: "chip", text: `${categoryLabel(b.category)} ${money(b.spent - b.monthly_limit, cur)} over` }))),
       spending.categories.length > 0 && [el("h3", { text: "Top categories" }),
@@ -374,31 +504,24 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
-    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }));
-    if (accounts.length === 0) accountsCard.append(el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." }));
-    for (const [type, label] of TYPE_GROUPS) {
-      const group = accounts.filter((a) => (a.type === type) || (type === "other" && !TYPE_GROUPS.some(([t]) => t === a.type)));
-      if (group.length === 0) continue;
-      accountsCard.append(el("h3", { text: label }));
-      for (const a of group) {
-        const owed = a.type === "credit" || a.type === "loan";
-        const available = a.type === "credit" && a.credit_limit != null
-          ? (a.available_balance ?? (a.current_balance != null ? a.credit_limit - a.current_balance : null)) : null;
-        accountsCard.append(el("a", { class: "row click", href: `#/transactions?account=${encodeURIComponent(a.id)}` },
-          el("div", { class: "grow" },
-            el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  ••${a.mask}` })),
-            el("div", { class: "muted", text: [a.institution, available != null ? `${money(available, a.currency)} available` : null].filter(Boolean).join(" · ") })),
-          el("div", { class: "amount" }, a.current_balance == null ? "—" : money(a.current_balance, a.currency), owed && el("div", { class: "muted", text: "owed" }))));
-      }
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    const known = new Set(["investment", "depository", "credit", "loan"]);
+    const sections = ACCOUNT_SECTIONS
+      .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
+      .filter(([, , , rows]) => rows.length > 0)
+      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
+    if (sections.length === 0) {
+      sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+        el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
     }
-    view().replaceChildren(el("div", { class: "grid" }, netCard, spendCard), accountsCard);
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), ...sections);
     drawChart();
   }
 
   // ---------------------------------------------------------------- Transactions
 
   async function viewTransactions(id, params) {
-    const [accounts, choices] = await Promise.all([api("/api/accounts"), categoryChoices()]);
+    const [accounts, choices] = await Promise.all([api(scoped("/api/accounts")), categoryChoices()]);
     if (id !== navId) return;
     const accountName = Object.fromEntries(accounts.map((a) => [a.id, `${a.institution ? a.institution + " " : ""}${a.name}`]));
     const state = { search: "", account: params.get("account") || "", merchant: params.get("merchant") || "", category: "", offset: 0, total: null, loading: false, lastDay: null, rows: new Map() };
@@ -451,6 +574,7 @@
         if (state.account) q.set("account_id", state.account);
         if (state.merchant) q.set("merchant_id", state.merchant);
         if (state.category) q.set("category", state.category);
+        if (viewer != null) q.set("person_id", String(viewer));
         const page = await api(`/api/transactions?${q}`);
         if (id !== navId) return;
         state.total = page.total;
@@ -469,7 +593,7 @@
 
     const merchantNote = state.merchant && el("p", { class: "muted" }, "Showing one merchant's transactions. ",
       el("a", { href: "#/transactions", text: "Show all" }));
-    view().replaceChildren(el("section", { class: "card" },
+    view().replaceChildren(viewerNote(), el("section", { class: "card" },
       el("div", { class: "toolbar" }, search, accountSel, categorySel), merchantNote, list, status, sentinel));
     const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && id === navId) loadMore(false); });
     observer.observe(sentinel);
@@ -631,7 +755,7 @@
       }
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(nav, budgetCard, el("div", { class: "grid" }, spendCard, trendCard));
+    view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, trendCard));
   }
 
   // ---------------------------------------------------------------- Investments
@@ -699,10 +823,10 @@
               c && el("div", { class: c.cls, text: c.text }),
               h.gain != null && el("div", { class: `muted ${gainCls}`, text: `All time ${h.gain > 0 ? "+" : h.gain < 0 ? MINUS : ""}${money(Math.abs(h.gain), h.currency)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}` })));
         })));
-      view().replaceChildren(head, ...cards);
+      view().replaceChildren(viewerNote(), head, ...cards);
     };
 
-    const load = async () => paint(await api("/api/holdings/live", { timeout: 40000 }));
+    const load = async () => paint(await api(scoped("/api/holdings/live"), { timeout: 40000 }));
     await load();
     if (id !== navId) return;
     timer = setInterval(() => {
@@ -732,7 +856,7 @@
   }
 
   async function viewMoney(id) {
-    const data = await api("/api/payments-due");
+    const data = await api(scoped("/api/payments-due"));
     if (id !== navId) return;
     const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
     const unpaid = data.cards.filter((c) => c.status !== "paid" && c.status !== "nothing_owed" && c.due_date);
@@ -770,7 +894,7 @@
           stat("Last payment", c.last_payment_amount == null ? "\u2014" : `${money(c.last_payment_amount, cur)}${c.last_payment_date ? ` on ${shortDate(c.last_payment_date)}` : ""}`)),
         c.dues_known && el("p", { class: "muted", text: `${c.statement_date ? `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""} ` : ""}Bank data updated ${ago(c.dues_updated_at)}.` }));
     });
-    view().replaceChildren(summary, ...rows);
+    view().replaceChildren(viewerNote(), summary, ...rows);
   }
 
   const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
@@ -844,7 +968,7 @@
           onclick: () => { merchTab = key; show(); } })));
     function show() {
       for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
-      view().replaceChildren(el("div", { class: "toolbar" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar" }, tabs), merchTab === "needs" ? todoCard : masterCard);
       if (merchTab === "merchants") draw();
     }
     show();
@@ -963,8 +1087,11 @@
         el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
         el("button", { type: "button", text: "Merge into\u2026", onclick: () => openMerge(d, done) }),
         // Deleting a merchant your bank named, with nothing of yours attached, would change nothing: it comes straight back.
-        (!d.auto || d.alias_list.some((a) => a.source === "user")) && el("button", { type: "button", class: "danger", text: d.auto ? "Delete" : "Delete or reset", onclick: () => {
-          if (!confirm(`Delete ${d.name}?\n\nIt and the names you gave it are forgotten. Transactions your bank named return to an automatic merchant; the rest go back to "Needs a name".`)) return;
+        (!d.auto || d.alias_list.some((a) => a.source === "user")) && el("button", { type: "button", class: "danger", text: d.auto ? "Delete" : "Delete or reset", onclick: async () => {
+          if (!(await confirmBox({
+            title: `Delete ${d.name}?`, intro: "This forgets the merchant and every name you attached to it.",
+            points: ["Transactions your bank named go back to an automatic merchant.", "The rest go back to \u201CNeeds a name\u201D."],
+            confirmText: "Delete merchant", cancelText: "Keep it", danger: true }))) return;
           run(() => api(`/api/merchants/${d.id}`, { method: "DELETE" }), () => { closeSheet(); toast("Merchant deleted."); done(); });
         } }),
         el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
@@ -1023,8 +1150,18 @@
   async function startLink(item, done) {
     let environment = null;
     try { environment = (await (await plainFetch("/health")).json()).plaid_env; } catch (_) { /* the link call will report a real problem */ }
-    if (!item && environment === "production" && !confirm(
-      "This links a real bank. Each real bank uses one slot of your Plaid plan (the free Trial plan allows 10), and removing a bank does not give the slot back.\n\nContinue?")) return;
+    if (!item && environment === "production" && !(await confirmBox({
+      title: "Link a real bank?",
+      intro: "This connects a real bank account through Plaid. It is read-only: HomeFinance can look at your accounts but can never move money.",
+      points: [
+        "It uses one of the 10 bank slots on your free Plaid plan.",
+        "Removing a bank later does not give its slot back, so link each bank only once.",
+        "If a bank later needs attention, use Reconnect instead of removing it.",
+        "Have your bank login and your phone ready. The bank may text you a code.",
+      ],
+      confirmText: "Link this bank",
+      cancelText: "Not now",
+    }))) return;
     let linkToken;
     try {
       await loadPlaidLink();
@@ -1078,12 +1215,17 @@
     return card;
   }
 
-  async function viewSettings(id) {
+  const SETTINGS_TABS = [["banks", "Banks"], ["accounts", "Accounts"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  let settingsTab = "banks";
+
+  async function viewSettings(id, params = new URLSearchParams()) {
+    if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
     const [items, sessions, rules, accounts, choices, log] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
+    await loadPeople();  // the picker and the owner choices below
 
     const syncOut = el("div");
     const syncButton = el("button", { type: "button", class: "primary", text: "Sync now", onclick: async () => {
@@ -1104,19 +1246,23 @@
     const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }),
       el("div", { class: "actions" }, linkButton, syncButton), syncOut,
       items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
-      items.map((i) => el("div", { class: "row" }, el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
+      items.map((i) => el("div", { class: "row" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
         el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
         i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
         el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
           const name = i.institution || "this bank";
-          if (!confirm(`Remove ${name} from HomeFinance?\n\nIts accounts, transactions and holdings are deleted from this server, and the connection is closed at Plaid. Plaid counts every real bank you link against a free plan's limit, and removing one does not give the slot back. If a bank only needs attention, use Reconnect instead.`)) return;
+          if (!(await confirmBox({
+            title: `Remove ${name}?`,
+            intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
+            points: ["The Plaid bank slot it used is not given back.", "If the bank only needs attention, use Reconnect instead."],
+            confirmText: "Remove bank", cancelText: "Keep it", danger: true }))) return;
           try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
           catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
         } }))));
     // A bank still waiting for its first sync: check again every 6 seconds, at most 10 times,
     // and never while a dialog is open.
     if (items.some((i) => !i.last_synced_at && !i.needs_reauth) && syncPolls < 10) {
-      const timer = setTimeout(() => { if ($("sheet").open) return; syncPolls += 1; reload(); }, 6000);
+      const timer = setTimeout(() => { if ($("sheet").open || $("confirm").open || settingsTab !== "banks") return; syncPolls += 1; reload(); }, 6000);
       cleanups.push(() => clearTimeout(timer));
     }
 
@@ -1125,7 +1271,10 @@
         el("strong", { text: s.device_name }), s.current && el("span", { class: "badge", text: "This device" }),
         el("div", { class: "muted", text: `Last used ${ago(s.last_used_at)}` })),
         el("button", { type: "button", class: "danger", text: "Revoke", onclick: async () => {
-          if (!confirm(`Sign out ${s.device_name}?`)) return;
+          if (!(await confirmBox({
+            title: `Sign out ${s.device_name}?`,
+            intro: s.current ? "You will be signed out here and asked for your password and authenticator code again." : "That device will need your password and authenticator code to get back in.",
+            confirmText: "Sign out", cancelText: "Cancel", danger: true }))) return;
           try { await api(`/auth/sessions/${encodeURIComponent(s.id)}`, { method: "DELETE" }); if (s.current) showLogin(); else reload(); }
           catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
         } }))),
@@ -1159,12 +1308,75 @@
           el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })), message);
     }
 
-    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Hide accounts" }),
-      el("p", { class: "muted", text: "Hidden accounts are left out of totals and budgets." }),
-      accounts.map((a) => el("label", { class: "row" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
-        try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
-        catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
-      } }), el("span", { class: "grow", text: `${a.institution || ""} ${a.name}${a.mask ? " ••" + a.mask : ""}` }))));
+    // Who owns which account. A shared account has several owners and still counts once in the household.
+    async function putOwners(path, personIds, done) {
+      try { await api(path, { method: "PUT", body: { person_ids: personIds } }); done(); }
+      catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    }
+    const unowned = people.length > 0 ? accounts.filter((a) => !a.hidden && (a.owner_ids || []).length === 0).length : 0;
+    const banksOf = new Map();
+    for (const a of accounts) banksOf.set(a.item_id, [...(banksOf.get(a.item_id) || []), a]);
+    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+      el("p", { class: "muted", text: people.length > 0
+        ? "Choose who owns each account. Give an account more than one owner to share it; it still counts once in the household totals. Tick Hide to leave an account out of totals and budgets."
+        : "Add the people in your household on the People tab, then choose who owns each account here. Tick Hide to leave an account out of totals and budgets." }),
+      unowned > 0 && el("p", { class: "muted", text: `${unowned} account${unowned === 1 ? " has" : "s have"} no owner yet. They count in the household but not in anyone's own view.` }),
+      [...banksOf.entries()].map(([itemId, group]) => [
+        el("div", { class: "bank-head" }, el("h3", { text: group[0].institution || "Bank" }),
+          people.length > 0 && el("div", { class: "actions" },
+            people.map((p) => el("button", { type: "button", class: "small", text: `All ${p.name}`,
+              onclick: () => putOwners(`/api/items/${encodeURIComponent(itemId)}/owners`, [p.id], () => { toast(`Every ${group[0].institution || "bank"} account is now ${p.name}'s.`); reload(); }) })),
+            people.length > 1 && el("button", { type: "button", class: "small", text: "Shared by everyone",
+              onclick: () => putOwners(`/api/items/${encodeURIComponent(itemId)}/owners`, people.map((p) => p.id), () => { toast("Shared by everyone."); reload(); }) }))),
+        group.map((a) => {
+          const chosen = new Set(a.owner_ids || []);
+          return el("div", { class: "row" }, el("div", { class: "grow" },
+            el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
+            people.length > 0 && el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
+              el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
+                if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
+                putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
+              } }), p.name)))),
+            el("label", { class: "checkline" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
+              try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
+              catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+            } }), "Hide"));
+        })]));
+
+    // The household's people. They are labels for organising accounts, not logins.
+    const newName = el("input", { maxlength: 40, placeholder: "Name, for example Sam", "aria-label": "New person's name" });
+    const addPerson = async () => {
+      try { await api("/api/people", { method: "POST", body: { name: newName.value } }); toast("Added."); reload(); }
+      catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    };
+    newName.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addPerson(); } });
+    function renamePerson(p) {
+      const name = el("input", { value: p.name, maxlength: 40, "aria-label": "Name" });
+      const message = el("p", { class: "error", role: "alert" });
+      openSheet(el("h2", { text: `Rename ${p.name}` }), el("label", {}, "Name", name),
+        el("div", { class: "actions" },
+          el("button", { type: "button", class: "primary", text: "Save", onclick: async () => {
+            try { await api(`/api/people/${p.id}`, { method: "PATCH", body: { name: name.value } }); closeSheet(); toast("Renamed."); reload(); }
+            catch (err) { message.textContent = err.message; }
+          } }),
+          el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })), message);
+    }
+    const peopleCard = el("section", { class: "card" }, el("h2", { text: "People" }),
+      el("p", { class: "muted", text: "The people whose accounts are linked here. They are labels for organising accounts, not logins: anyone who signs in can see everything. Once you add someone, a menu at the top lets you look at the whole household or one person." }),
+      people.length === 0 && el("p", { class: "empty", text: "Nobody yet. Add yourself and anyone else whose accounts are linked here." }),
+      people.map((p) => el("div", { class: "row" }, el("div", { class: "grow" }, el("strong", { text: p.name }),
+        el("div", { class: "muted", text: `${p.accounts} account${p.accounts === 1 ? "" : "s"}` })),
+        el("button", { type: "button", text: "Rename", onclick: () => renamePerson(p) }),
+        el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+          if (!(await confirmBox({
+            title: `Remove ${p.name}?`,
+            intro: `${p.name}'s accounts are kept, but they will no longer be owned by ${p.name}.`,
+            points: [`${p.name}'s own saved net-worth history is deleted. The household's history is not touched.`],
+            confirmText: "Remove person", cancelText: "Keep them", danger: true }))) return;
+          try { await api(`/api/people/${p.id}`, { method: "DELETE" }); toast(`${p.name} removed.`); reload(); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }))),
+      el("div", { class: "toolbar" }, newName, el("button", { type: "button", class: "primary", text: "Add person", onclick: addPerson })));
 
     const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
       log.locked
@@ -1179,7 +1391,15 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    view().replaceChildren(appearanceCard(), banks, el("div", { class: "grid" }, devices, rulesCard), activity, accountsCard);
+    const sections = { banks: [banks], accounts: [accountsCard], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
+    const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
+      SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
+        onclick: () => { settingsTab = key; show(); } })));
+    function show() {
+      for (const [i, [key]] of SETTINGS_TABS.entries()) tabs.children[i].setAttribute("aria-pressed", String(key === settingsTab));
+      view().replaceChildren(el("div", { class: "toolbar" }, tabs), ...sections[settingsTab]);
+    }
+    show();
   }
 
   // ---------------------------------------------------------------- shell: routes, sign-in
@@ -1192,7 +1412,7 @@
     budgets: ["Budgets", "Limits and spending by month"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
-    settings: ["Settings", "Banks, sign-in activity and appearance"],
+    settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
   };
   const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
@@ -1212,10 +1432,14 @@
     try {
       const { plaid_env: env } = await (await plainFetch("/health")).json();
       const badge = $("env-badge");
-      badge.textContent = env === "production" ? "Live banks" : "Sandbox";
-      badge.title = env === "production" ? "Connected to real banks through Plaid" : "Plaid's sandbox: fake banks and test data";
-      badge.className = env === "production" ? "env prod" : "env";
-      badge.hidden = false;
+      // Real banks are the normal state and need no label. Only the sandbox is flagged, because
+      // its balances and transactions are fake.
+      badge.hidden = env === "production";
+      if (env !== "production") {
+        badge.textContent = "Sandbox";
+        badge.title = "Plaid's sandbox: fake banks and test data";
+        badge.className = "env";
+      }
     } catch (_) { /* the badge is only a convenience */ }
   }
 
@@ -1223,7 +1447,7 @@
     const banner = $("banner");
     if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
     banner.replaceChildren(`${institutions.join(", ")} needs to be reconnected. `,
-      el("a", { href: "#/settings", text: "Reconnect it in Settings" }));
+      el("a", { href: "#/settings?tab=banks", text: "Reconnect it in Settings" }));
     banner.hidden = false;
   }
 
@@ -1233,9 +1457,10 @@
     syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
     const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
-    for (const a of document.querySelectorAll("#tabs a, #settings-link")) {
+    for (const a of document.querySelectorAll("#tabs a, #menu-list a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
+    menuButton.classList.toggle("current", name === "settings");
     const [title, subtitle] = PAGES[name];
     $("page-title").textContent = title;
     $("page-sub").textContent = subtitle;
@@ -1243,6 +1468,8 @@
     const id = ++navId;
     view().replaceChildren(el("p", { class: "empty", text: "Loading…" }));
     try {
+      await loadPeople();
+      if (id !== navId) return;
       await ROUTES[name](id, new URLSearchParams(query || ""));
       refreshStatus();
     } catch (err) {
@@ -1312,7 +1539,29 @@
   });
 
   for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
+  // The cog opens a small menu: Settings and Sign out.
+  const menuButton = $("menu-button");
+  const menuList = $("menu-list");
+  function setMenu(open) {
+    menuList.hidden = !open;
+    menuButton.setAttribute("aria-expanded", String(open));
+    if (open) menuList.querySelector("[role=menuitem]").focus();
+  }
+  menuButton.addEventListener("click", () => setMenu(menuList.hidden));
+  menuList.addEventListener("click", () => setMenu(false));
+  document.addEventListener("click", (e) => { if (!menuList.hidden && !e.target.closest("#account-menu")) setMenu(false); });
+  document.addEventListener("keydown", (e) => {
+    if (menuList.hidden) return;
+    if (e.key === "Escape") { setMenu(false); menuButton.focus(); }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = [...menuList.querySelectorAll("[role=menuitem]")];
+      const at = items.indexOf(document.activeElement);
+      items[(at + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+    }
+  });
   $("signout").addEventListener("click", signOut);
+  $("viewer").addEventListener("change", (e) => { viewer = e.target.value === "" ? null : Number(e.target.value); route(); });
   window.addEventListener("hashchange", route);
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });

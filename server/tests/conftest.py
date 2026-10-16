@@ -23,6 +23,8 @@ from app.plaid import PlaidError
 FIXTURES = Path(__file__).resolve().parents[2] / "api-fixtures"
 TODAY = "2026-10-02"  # the day the fixtures were captured
 PASSWORD = "correct horse battery"
+# A 16x16 green PNG, standing in for the logo Plaid sends.
+TEST_LOGO = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFUlEQVR4nGNgWBZIGhrVMKph+GoAAAA29wF/azvKAAAAAElFTkSuQmCC"
 
 
 def fixture(name: str):
@@ -108,6 +110,12 @@ class FakePlaid:
 
     def item_get(self, access_token):
         return {"item": {"institution_id": "ins_1"}}
+
+    def institution_details(self, institution_id, country_codes):
+        self.calls.append("institution_details")
+        if "institution_details" in self.errors:
+            return None  # the real client turns a Plaid error into None
+        return {"name": "Desjardins", "logo": TEST_LOGO, "color": "#00a651"}
 
     def institution_name(self, institution_id, country_codes):
         return "Desjardins"
@@ -195,7 +203,7 @@ def seed_fixture_data(services) -> None:
     for item in items:
         db.run(
             "INSERT INTO items(id, institution, access_token, error_code, needs_reauth, "
-            "has_investments, last_synced_at, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            "has_investments, last_synced_at, created_at, logo, color, logo_checked) VALUES (?,?,?,?,?,?,?,?,?,?,1)",
             (
                 item["id"],
                 item["institution"],
@@ -205,6 +213,8 @@ def seed_fixture_data(services) -> None:
                 int(item["has_investments"]),
                 item["last_synced_at"],
                 "2026-07-01T00:00:00.000000Z",
+                item["logo"],
+                item["color"],
             ),
         )
     for a in fixture("accounts.json"):

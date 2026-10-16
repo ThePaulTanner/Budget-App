@@ -5,6 +5,8 @@
     "error_code": null,
     "needs_reauth": false,
     "has_investments": true,
-    "last_synced_at": "2026-10-02T23:41:42.799072Z"
+    "last_synced_at": "2026-10-02T23:41:42.799072Z",
+    "logo": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFUlEQVR4nGNgWBZIGhrVMKph+GoAAAA29wF/azvKAAAAAElFTkSuQmCC",
+    "color": "#00a651"
   }
 ]

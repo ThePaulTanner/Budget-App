@@ -33,7 +33,7 @@ from .rules import (
     parent_category,
     split_category,
 )
-from .sync import PlaidNotConfigured, SyncBusy, compute_networth, today_str
+from .sync import PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
 
 STATIC_DIR = Path(__file__).parent / "static"
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -111,6 +111,14 @@ class WebLoginBody(BaseModel):
 
 class HiddenBody(BaseModel):
     hidden: bool
+
+
+class PersonBody(BaseModel):
+    name: str
+
+
+class OwnersBody(BaseModel):
+    person_ids: list[int]
 
 
 class CategoryBody(BaseModel):
@@ -236,7 +244,7 @@ def tx_json(row: Any) -> dict[str, Any]:
     }
 
 
-def account_json(row: Any, institution: str | None) -> dict[str, Any]:
+def account_json(row: Any, institution: str | None, owner_ids: list[int] | None = None) -> dict[str, Any]:
     return {
         "id": row["id"],
         "item_id": row["item_id"],
@@ -251,6 +259,7 @@ def account_json(row: Any, institution: str | None) -> dict[str, Any]:
         "credit_limit": num(row["credit_limit"]),
         "currency": row["currency"],
         "hidden": bool(row["hidden"]),
+        "owner_ids": owner_ids or [],
         "updated_at": row["updated_at"],
     }
 
@@ -270,6 +279,22 @@ def rule_json(row: Any) -> dict[str, Any]:
 def create_api_app(services: Services) -> FastAPI:
     db, auth, settings = services.db, services.auth, services.settings
     base = settings.base_currency
+
+    def scope_sql(person_id: int | None, column: str = "a.id") -> tuple[str, list[Any]]:
+        """The condition that limits a query to one person's accounts (empty for the household).
+        Nothing is joined, so an account with several owners is still one row."""
+        if person_id is None:
+            return "", []
+        if not db.one("SELECT 1 FROM people WHERE id = ?", (person_id,)):
+            raise HTTPException(404, "person not found")
+        return f"{column} IN (SELECT account_id FROM account_owners WHERE person_id = ?)", [person_id]
+
+    def owners_by_account() -> dict[str, list[int]]:
+        out: dict[str, list[int]] = {}
+        for r in db.query("SELECT account_id, person_id FROM account_owners ORDER BY person_id"):
+            out.setdefault(r["account_id"], []).append(r["person_id"])
+        return out
+
     app = FastAPI(title="HomeFinance", docs_url=None, redoc_url=None, openapi_url=None)
 
     # -- errors and headers --------------------------------------------------
@@ -424,7 +449,9 @@ def create_api_app(services: Services) -> FastAPI:
 
     # -- summary -------------------------------------------------------------
 
-    def category_totals(start: str, end: str) -> tuple[dict[str, Decimal], dict[str, dict[str, Decimal]]]:
+    def category_totals(
+        start: str, end: str, person_id: int | None = None
+    ) -> tuple[dict[str, Decimal], dict[str, dict[str, Decimal]]]:
         """Spending by top-level category, and inside each one by sub-category. A transaction is
         added once to its top-level category and, when it has one, once to its sub-category, so
         adding up the top level never counts anything twice."""
@@ -433,9 +460,11 @@ def create_api_app(services: Services) -> FastAPI:
             "FROM transactions t JOIN accounts a ON a.id = t.account_id "
             "WHERE a.hidden = 0 AND t.currency = ? AND t.date >= ? AND t.date < ?"
         )
+        condition, extra = scope_sql(person_id, "t.account_id")
+        clause = f" AND {condition}" if condition else ""
         tops: dict[str, Decimal] = {}
         subs: dict[str, dict[str, Decimal]] = {}
-        for row in db.query(sql, (base, start, end)):
+        for row in db.query(sql + clause, (base, start, end, *extra)):
             top, sub = split_category(row)
             amount = Decimal(row["amount"])
             tops[top] = tops.get(top, Decimal(0)) + amount
@@ -444,8 +473,8 @@ def create_api_app(services: Services) -> FastAPI:
                 inner[sub] = inner.get(sub, Decimal(0)) + amount
         return tops, subs
 
-    def totals_for(start: str, end: str) -> dict[str, Decimal]:
-        return category_totals(start, end)[0]
+    def totals_for(start: str, end: str, person_id: int | None = None) -> dict[str, Decimal]:
+        return category_totals(start, end, person_id)[0]
 
     def spend_total(totals: dict[str, Decimal]) -> Decimal:
         return sum(
@@ -483,11 +512,13 @@ def create_api_app(services: Services) -> FastAPI:
         )
 
     @app.get("/api/summary")
-    def summary(ctx: Auth):
+    def summary(ctx: Auth, person_id: int | None = None):
         month = today_str()[:7]
         start, end = month_bounds(month)
-        budgets = budget_entries(month)
-        worth = compute_networth(db)
+        scope_sql(person_id)  # 404 for an unknown person
+        # Budgets belong to the household, so they are left out of one person's view.
+        budgets = budget_entries(month) if person_id is None else []
+        worth = compute_networth(db, person_id)
         currencies = sorted(worth, key=lambda c: (c != base, c))
         items = db.query("SELECT institution, needs_reauth, last_synced_at FROM items")
         synced = [r["last_synced_at"] for r in items if r["last_synced_at"]]
@@ -505,8 +536,8 @@ def create_api_app(services: Services) -> FastAPI:
                 for c in currencies
             ],
             "month": month,
-            "spent_this_month": num(spend_total(totals_for(start, end))),
-            "budgeted_this_month": num(budgeted_total(budgets)),
+            "spent_this_month": num(spend_total(totals_for(start, end, person_id))),
+            "budgeted_this_month": None if person_id is not None else num(budgeted_total(budgets)),
             "over_budget": [b for b in budgets if b["spent"] > b["monthly_limit"]],
             "items_needing_attention": [
                 r["institution"] or "Unknown bank" for r in items if r["needs_reauth"]
@@ -517,22 +548,99 @@ def create_api_app(services: Services) -> FastAPI:
     # -- accounts ------------------------------------------------------------
 
     @app.get("/api/accounts")
-    def accounts(ctx: Auth, include_hidden: bool = True):
+    def accounts(ctx: Auth, include_hidden: bool = True, person_id: int | None = None):
         sql = (
             "SELECT a.*, i.institution AS institution FROM accounts a "
-            "JOIN items i ON i.id = a.item_id"
+            "JOIN items i ON i.id = a.item_id WHERE 1=1"
         )
         if not include_hidden:
-            sql += " WHERE a.hidden = 0"
+            sql += " AND a.hidden = 0"
+        condition, params = scope_sql(person_id)
+        if condition:
+            sql += f" AND {condition}"
         sql += " ORDER BY a.type, a.name"
-        return [account_json(r, r["institution"]) for r in db.query(sql)]
+        owners = owners_by_account()
+        return [account_json(r, r["institution"], owners.get(r["id"])) for r in db.query(sql, params)]
 
     @app.patch("/api/accounts/{account_id}")
     def patch_account(account_id: str, body: HiddenBody, ctx: Auth):
         if db.run("UPDATE accounts SET hidden=? WHERE id=?", (int(body.hidden), account_id)) == 0:
             raise HTTPException(404, "account not found")
         row = db.one("SELECT * FROM accounts WHERE id=?", (account_id,))
-        return account_json(row, None)  # institution is null here, as in the spec
+        return account_json(row, None, owners_by_account().get(account_id))  # institution is null here, as in the spec
+
+    def set_owners(account_ids: list[str], person_ids: list[int]) -> list[int]:
+        wanted = sorted(set(person_ids))
+        known = {r["id"] for r in db.query("SELECT id FROM people")}
+        if not set(wanted) <= known:
+            raise HTTPException(404, "person not found")
+        with db.transaction():
+            for account_id in account_ids:
+                db.run("DELETE FROM account_owners WHERE account_id=?", (account_id,))
+                for person in wanted:
+                    db.run("INSERT INTO account_owners(account_id, person_id) VALUES (?,?)", (account_id, person))
+        return wanted
+
+    @app.put("/api/accounts/{account_id}/owners")
+    def put_account_owners(account_id: str, body: OwnersBody, ctx: Auth):
+        if not db.one("SELECT 1 FROM accounts WHERE id=?", (account_id,)):
+            raise HTTPException(404, "account not found")
+        return {"account_id": account_id, "owner_ids": set_owners([account_id], body.person_ids)}
+
+    @app.put("/api/items/{item_id}/owners")
+    def put_item_owners(item_id: str, body: OwnersBody, ctx: Auth):
+        """Give every account at one bank the same owners (a shortcut for the usual case)."""
+        ids = [r["id"] for r in db.query("SELECT id FROM accounts WHERE item_id=?", (item_id,))]
+        if not ids and not db.one("SELECT 1 FROM items WHERE id=?", (item_id,)):
+            raise HTTPException(404, "bank not found")
+        return {"item_id": item_id, "accounts": len(ids), "owner_ids": set_owners(ids, body.person_ids)}
+
+    # -- people ---------------------------------------------------------------
+
+    def person_json(row: Any) -> dict[str, Any]:
+        return {"id": row["id"], "name": row["name"], "accounts": row["accounts"]}
+
+    def clean_person(name: str) -> str:
+        value = " ".join(name.split())
+        if not 1 <= len(value) <= 40:
+            raise HTTPException(400, "A name is 1 to 40 characters.")
+        return value
+
+    people_sql = (
+        "SELECT p.id, p.name, (SELECT count(*) FROM account_owners o WHERE o.person_id = p.id) AS accounts "
+        "FROM people p"
+    )
+
+    @app.get("/api/people")
+    def people(ctx: Auth):
+        return [person_json(r) for r in db.query(people_sql + " ORDER BY lower(p.name)")]
+
+    @app.post("/api/people", status_code=201)
+    def add_person(body: PersonBody, ctx: Auth):
+        name = clean_person(body.name)
+        if db.one("SELECT 1 FROM people WHERE lower(name) = lower(?)", (name,)):
+            raise HTTPException(409, "Someone with that name already exists.")
+        db.run("INSERT INTO people(name, created_at) VALUES (?,?)", (name, utcnow()))
+        return person_json(db.one(people_sql + " WHERE lower(p.name) = lower(?)", (name,)))
+
+    @app.patch("/api/people/{person_id}")
+    def rename_person(person_id: int, body: PersonBody, ctx: Auth):
+        name = clean_person(body.name)
+        if not db.one("SELECT 1 FROM people WHERE id = ?", (person_id,)):
+            raise HTTPException(404, "person not found")
+        if db.one("SELECT 1 FROM people WHERE lower(name) = lower(?) AND id != ?", (name, person_id)):
+            raise HTTPException(409, "Someone with that name already exists.")
+        db.run("UPDATE people SET name=? WHERE id=?", (name, person_id))
+        return person_json(db.one(people_sql + " WHERE p.id = ?", (person_id,)))
+
+    @app.delete("/api/people/{person_id}")
+    def delete_person(person_id: int, ctx: Auth):
+        """Their accounts are kept; they just lose this owner. Their saved net-worth history goes."""
+        with db.transaction():
+            if db.run("DELETE FROM people WHERE id = ?", (person_id,)) == 0:
+                raise HTTPException(404, "person not found")
+            db.run("DELETE FROM networth WHERE person_id = ?", (person_id,))
+        return {"ok": True}
 
     # -- transactions --------------------------------------------------------
 
@@ -547,8 +655,13 @@ def create_api_app(services: Services) -> FastAPI:
         end: str | None = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
         offset: Annotated[int, Query(ge=0)] = 0,
+        person_id: int | None = None,
     ):
         where, params = ["1=1"], []
+        condition, scope_params = scope_sql(person_id, "t.account_id")
+        if condition:
+            where.append(condition)
+            params += scope_params
         if account_id:
             where.append("t.account_id = ?")
             params.append(account_id)
@@ -631,9 +744,9 @@ def create_api_app(services: Services) -> FastAPI:
     # -- spending and budgets ------------------------------------------------
 
     @app.get("/api/spending")
-    def spending(ctx: Auth, month: str | None = None):
+    def spending(ctx: Auth, month: str | None = None, person_id: int | None = None):
         month = parse_month(month)
-        tops, subs = category_totals(*month_bounds(month))
+        tops, subs = category_totals(*month_bounds(month), person_id)
         totals = {k: v for k, v in tops.items() if not is_excluded(k) and v != 0}
         ranked = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
         return {
@@ -655,7 +768,9 @@ def create_api_app(services: Services) -> FastAPI:
         }
 
     @app.get("/api/spending/monthly")
-    def spending_monthly(ctx: Auth, months: Annotated[int, Query(ge=1, le=60)] = 12):
+    def spending_monthly(
+        ctx: Auth, months: Annotated[int, Query(ge=1, le=60)] = 12, person_id: int | None = None
+    ):
         current = today_str()[:7]
         first = add_months(current, -(months - 1))
         sql = (
@@ -663,8 +778,10 @@ def create_api_app(services: Services) -> FastAPI:
             "JOIN accounts a ON a.id = t.account_id "
             "WHERE a.hidden = 0 AND t.currency = ? AND t.date >= ? AND t.date < ?"
         )
+        condition, extra = scope_sql(person_id, "t.account_id")
+        clause = f" AND {condition}" if condition else ""
         sums: dict[str, Decimal] = {}
-        for row in db.query(sql, (base, f"{first}-01", month_bounds(current)[1])):
+        for row in db.query(sql + clause, (base, f"{first}-01", month_bounds(current)[1], *extra)):
             if is_excluded(row["category"]):
                 continue
             key = row["date"][:7]
@@ -705,14 +822,17 @@ def create_api_app(services: Services) -> FastAPI:
     # -- credit card payments ------------------------------------------------
 
     @app.get("/api/payments-due")
-    def payments_due(ctx: Auth):
+    def payments_due(ctx: Auth, person_id: int | None = None):
         today = date.fromisoformat(today_str())
+        condition, extra = scope_sql(person_id)
+        clause = f" AND {condition}" if condition else ""
         rows = db.query(
             "SELECT a.*, i.institution AS institution, d.account_id AS dues_id, d.due_date, "
             "d.minimum_payment, d.statement_balance, d.statement_date, d.last_payment_amount, "
             "d.last_payment_date, d.is_overdue, d.updated_at AS dues_updated_at FROM accounts a "
             "JOIN items i ON i.id = a.item_id LEFT JOIN card_dues d ON d.account_id = a.id "
-            "WHERE a.type = 'credit' AND a.hidden = 0"
+            "WHERE a.type = 'credit' AND a.hidden = 0" + clause,
+            extra,
         )
         cards: list[dict[str, Any]] = []
         totals: dict[str, dict[str, Decimal]] = {}
@@ -792,10 +912,13 @@ def create_api_app(services: Services) -> FastAPI:
     # -- investments, net worth, banks ---------------------------------------
 
     @app.get("/api/holdings")
-    def holdings(ctx: Auth):
+    def holdings(ctx: Auth, person_id: int | None = None):
+        condition, extra = scope_sql(person_id)
+        clause = f" AND {condition}" if condition else ""
         rows = db.query(
             "SELECT h.*, a.name AS account_name, a.mask AS account_mask FROM holdings h "
-            "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0"
+            "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0" + clause,
+            extra,
         )
         rows.sort(key=lambda r: Decimal(r["value"]) if r["value"] is not None else Decimal("-Infinity"), reverse=True)
         totals: dict[str, Decimal] = {}
@@ -825,14 +948,17 @@ def create_api_app(services: Services) -> FastAPI:
         return {"totals": {c: num(v) for c, v in sorted(totals.items())}, "holdings": out}
 
     @app.get("/api/holdings/live")
-    def holdings_live(ctx: Auth):
+    def holdings_live(ctx: Auth, person_id: int | None = None):
         """Positions valued at live prices (Yahoo Finance), with the change since the open,
         the previous close, a week, a month, three months, the start of the year and a year
         ago. Anything without a live price keeps Plaid's last price and says so. Changes
         assume today's quantity was held throughout the period."""
+        condition, extra = scope_sql(person_id)
+        clause = f" AND {condition}" if condition else ""
         rows = db.query(
             "SELECT h.*, a.name AS account_name, a.mask AS account_mask FROM holdings h "
-            "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0"
+            "JOIN accounts a ON a.id = h.account_id WHERE a.hidden = 0" + clause,
+            extra,
         )
         service = services.quotes
         wanted = {
@@ -932,11 +1058,13 @@ def create_api_app(services: Services) -> FastAPI:
         ctx: Auth,
         days: Annotated[int, Query(ge=1, le=36500)] = 365,
         currency: str | None = None,
+        person_id: int | None = None,
     ):
         since = (date.fromisoformat(today_str()) - timedelta(days=days)).isoformat()
+        scope_sql(person_id)  # 404 for an unknown person
         rows = db.query(
-            "SELECT * FROM networth WHERE currency = ? AND date >= ? ORDER BY date",
-            ((currency or base).upper(), since),
+            "SELECT * FROM networth WHERE currency = ? AND date >= ? AND person_id = ? ORDER BY date",
+            ((currency or base).upper(), since, person_id or 0),
         )
         return [
             {
@@ -959,6 +1087,8 @@ def create_api_app(services: Services) -> FastAPI:
                 "needs_reauth": bool(r["needs_reauth"]),
                 "has_investments": bool(r["has_investments"]),
                 "last_synced_at": r["last_synced_at"],
+                "logo": r["logo"],
+                "color": r["color"],
             }
             for r in db.query("SELECT * FROM items ORDER BY created_at")
         ]
@@ -1018,11 +1148,8 @@ def create_api_app(services: Services) -> FastAPI:
             institution_id = plaid.item_get(access_token).get("item", {}).get("institution_id")
         except PlaidError as exc:
             raise HTTPException(502, exc.message) from None
-        name = (
-            plaid.institution_name(institution_id, settings.plaid_country_codes)
-            if institution_id
-            else None
-        ) or "Bank"
+        details = plaid.institution_details(institution_id, settings.plaid_country_codes) if institution_id else None
+        name = (details or {}).get("name") or "Bank"
         sealed = seal(access_token.encode(), services.keys.kek, b"item:" + item_id.encode())
         db.run(
             "INSERT INTO items(id, institution_id, institution, access_token, created_at) "
@@ -1031,6 +1158,7 @@ def create_api_app(services: Services) -> FastAPI:
             "needs_reauth=0, error_code=NULL",
             (item_id, institution_id, name, sealed, utcnow()),
         )
+        store_institution(db, item_id, details)
         services.sync.request(item_id)  # first sync happens in the background
         return {"item_id": item_id, "institution": name}
 

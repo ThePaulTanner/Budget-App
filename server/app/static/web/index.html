@@ -8,7 +8,10 @@
   <meta name="theme-color" content="#f3f5f9" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)">
   <title>HomeFinance</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/static/web/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/web/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/static/web/favicon-64.png" type="image/png" sizes="64x64">
+  <link rel="apple-touch-icon" href="/static/web/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/web/app.css">
   <script src="/static/web/theme.js"></script>
 </head>
@@ -23,6 +26,7 @@
       <symbol id="i-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/></symbol>
       <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></symbol>
+      <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5h.01M18 14.5h.01"/></symbol>
       <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 4v6h-6"/><path d="M20 15a8 8 0 11-2-8.4L21 10"/></symbol>
       <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></symbol>
     </defs>
@@ -60,7 +64,6 @@
       </nav>
       <div class="side-foot">
         <span id="env-badge" class="env" hidden></span>
-        <button id="signout" type="button" class="ghost"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-logout"/></svg><span>Sign out</span></button>
       </div>
     </aside>
 
@@ -71,8 +74,15 @@
           <p id="page-sub" class="muted"></p>
         </div>
         <div class="top-actions">
+          <label id="viewer-wrap" class="viewer" hidden><span class="sr">Whose money</span><select id="viewer" aria-label="Whose money to show"></select></label>
           <button type="button" class="icon-btn refresh-btn phone-only" title="Reload this page's data (does not sync banks)" aria-label="Reload this page's data"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-refresh"/></svg></button>
-          <a id="settings-link" href="#/settings" data-tab="settings" class="icon-btn" title="Settings" aria-label="Settings"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg></a>
+          <div class="menu" id="account-menu">
+            <button id="menu-button" type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-list" title="Settings and sign out" aria-label="Settings and sign out"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg></button>
+            <div id="menu-list" class="menu-list" role="menu" aria-label="Settings and sign out" hidden>
+              <a role="menuitem" href="#/settings" data-tab="settings"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-gear"/></svg><span>Settings</span></a>
+              <button role="menuitem" type="button" id="signout"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-logout"/></svg><span>Sign out</span></button>
+            </div>
+          </div>
         </div>
       </header>
       <p id="banner" class="banner" hidden></p>
@@ -86,6 +96,7 @@
   </div>
 
   <dialog id="sheet"></dialog>
+  <dialog id="confirm" aria-labelledby="confirm-title"></dialog>
   <p id="toast" role="status" aria-live="polite" hidden></p>
   <div id="cover" class="cover" hidden>HomeFinance</div>
   <script src="/static/web/app.js"></script>

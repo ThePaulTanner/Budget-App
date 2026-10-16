@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE users (
@@ -54,7 +54,10 @@ CREATE TABLE items (
   needs_reauth INTEGER NOT NULL DEFAULT 0,
   has_investments INTEGER NOT NULL DEFAULT 0,
   last_synced_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  logo TEXT,
+  color TEXT,
+  logo_checked INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE accounts (
   id TEXT PRIMARY KEY,
@@ -153,12 +156,25 @@ CREATE INDEX merchant_aliases_merchant ON merchant_aliases(merchant_id);
 CREATE TABLE networth (
   date TEXT NOT NULL,
   currency TEXT NOT NULL,
+  person_id INTEGER NOT NULL DEFAULT 0,
   assets TEXT NOT NULL,
   liabilities TEXT NOT NULL,
   investments TEXT NOT NULL,
   net_worth TEXT NOT NULL,
-  PRIMARY KEY (date, currency)
+  PRIMARY KEY (date, currency, person_id)
 );
+CREATE TABLE people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX people_name ON people(lower(name));
+CREATE TABLE account_owners (
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  PRIMARY KEY (account_id, person_id)
+);
+CREATE INDEX account_owners_person ON account_owners(person_id);
 CREATE TABLE card_dues (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   due_date TEXT,
@@ -227,7 +243,41 @@ CREATE TABLE card_dues (
   updated_at TEXT NOT NULL
 );
 """,
-}
+
+    5: """
+CREATE TABLE people (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX people_name ON people(lower(name));
+CREATE TABLE account_owners (
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  PRIMARY KEY (account_id, person_id)
+);
+CREATE INDEX account_owners_person ON account_owners(person_id);
+CREATE TABLE networth_new (
+  date TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  person_id INTEGER NOT NULL DEFAULT 0,
+  assets TEXT NOT NULL,
+  liabilities TEXT NOT NULL,
+  investments TEXT NOT NULL,
+  net_worth TEXT NOT NULL,
+  PRIMARY KEY (date, currency, person_id)
+);
+INSERT INTO networth_new(date, currency, person_id, assets, liabilities, investments, net_worth)
+  SELECT date, currency, 0, assets, liabilities, investments, net_worth FROM networth;
+DROP TABLE networth;
+ALTER TABLE networth_new RENAME TO networth;
+""",
+
+    6: """
+ALTER TABLE items ADD COLUMN logo TEXT;
+ALTER TABLE items ADD COLUMN color TEXT;
+ALTER TABLE items ADD COLUMN logo_checked INTEGER NOT NULL DEFAULT 0;
+"""}
 
 
 def utcnow() -> str:

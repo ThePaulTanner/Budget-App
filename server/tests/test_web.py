@@ -141,3 +141,18 @@ def test_theme_script_only_keeps_three_harmless_choices():
     css = (WEB_DIR / "app.css").read_text()
     for accent in ("blue", "teal", "green", "purple", "orange", "rose"):
         assert f'[data-accent="{accent}"]' in css
+
+
+def test_every_page_has_the_logo_as_its_icon(web):
+    import re
+
+    for path in ("/app", "/"):
+        page = web.get(path)
+        assert page.status_code == 200
+        hrefs = re.findall(r'<link rel="(?:icon|apple-touch-icon)" href="([^"]+)"', page.text)
+        assert "/static/web/favicon.svg" in hrefs and "/static/web/apple-touch-icon.png" in hrefs
+        for href in hrefs:
+            icon = web.get(href)  # served without signing in, and allowed by the page's own rules
+            assert icon.status_code == 200 and len(icon.content) > 100, href
+    assert web.get("/static/web/favicon.svg").headers["content-type"].startswith("image/svg+xml")
+    assert web.get("/static/web/apple-touch-icon.png").content.startswith(b"\x89PNG")

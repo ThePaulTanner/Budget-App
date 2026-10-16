@@ -86,6 +86,8 @@ button:active { transform: translateY(1px); }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 button.primary:hover { filter: brightness(1.08); background: var(--accent); }
 button.secondary { background: transparent; }
+button.danger-solid { background: var(--red); border-color: var(--red); color: #fff; }
+button.danger-solid:hover { filter: brightness(1.08); }
 button.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 55%, transparent); background: transparent; }
 button.danger:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }
 button.ghost { background: transparent; border-color: transparent; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
@@ -109,6 +111,8 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .toolbar input, .toolbar select { width: auto; flex: 1 1 160px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.seg.wide { max-width: 100%; overflow-x: auto; }
+.seg.wide button { white-space: nowrap; }
 .seg button { border: 0; border-radius: 0; background: transparent; padding: .35rem .85rem; }
 .seg button + button { border-left: 1px solid var(--border); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
@@ -215,7 +219,15 @@ svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 
 /* ---- dialogs, toast, privacy cover ------------------------------------------------------- */
 dialog { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+dialog#confirm { width: min(460px, calc(100vw - 24px)); }
 dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.confirm { text-align: center; }
+.confirm h2 { margin: 6px 0 10px; font-size: 1.35rem; }
+.confirm p { margin: 0 auto 12px; max-width: 42ch; }
+.confirm ul { text-align: left; margin: 0 auto 16px; padding-left: 1.2rem; max-width: 42ch; display: grid; gap: 8px; }
+.confirm .actions { justify-content: center; margin-top: 18px; }
+.confirm-mark.danger { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.confirm-mark { width: 52px; height: 52px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; font-weight: 800; background: var(--amber-bg); color: var(--amber-text); }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 18px; border-radius: 99px; z-index: 40; max-width: 90vw; box-shadow: var(--shadow); }
 #toast.error { background: var(--red); color: #fff; }
 .cover { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; }
@@ -254,3 +266,46 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   dialog { width: calc(100vw - 16px); padding: 18px; }
   #toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }
+
+/* people and owners */
+.viewer select { width: auto; padding: .4rem .8rem; border-radius: 99px; background: var(--surface); font-weight: 600; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.viewer-note { margin: 0 0 12px; padding: 9px 14px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: .9rem; }
+.bank-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: 8px; }
+.bank-head h3 { margin: 10px 0 4px; }
+.bank-head .actions { margin: 0; }
+.owners { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; }
+.owners label { display: inline-flex; align-items: center; gap: 6px; font-size: .92rem; cursor: pointer; }
+
+/* header menu: Settings, Sign out */
+.menu { position: relative; }
+.icon-btn.current { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.menu-list { position: absolute; right: 0; top: calc(100% + 8px); min-width: 190px; padding: 6px; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); z-index: 50; }
+.menu-list a, .menu-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: .55rem .7rem; border: 0; border-radius: 9px; background: transparent; color: var(--text); text-decoration: none; font: inherit; text-align: left; cursor: pointer; }
+.menu-list a:hover, .menu-list button:hover, .menu-list a:focus-visible, .menu-list button:focus-visible { background: var(--hover); }
+.menu-list a[aria-current="page"] { color: var(--accent); font-weight: 650; }
+.menu-list #signout { color: var(--red); }
+
+/* Overview: account sections as tables, with bank logos */
+.section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.section-head h2 { margin: 0; font-size: 1.1rem; }
+.section-icon { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.section-head .grow { flex: 1; min-width: 0; }
+.section-total { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.table-wrap { overflow-x: auto; margin: 0 calc(var(--pad) * -.5); }
+.acct-table { width: 100%; border-collapse: collapse; }
+.acct-table th { padding: 8px 10px; border-top: 0; border-bottom: 1px solid var(--border); font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; white-space: nowrap; }
+.acct-table td { padding: 10px; border-top: 1px solid var(--border); vertical-align: middle; }
+.acct-table tbody tr:first-child td { border-top: 0; }
+.acct-table tr.click { cursor: pointer; }
+.acct-table tr.click:hover { background: var(--hover); }
+.acct-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acct-table .col-balance { font-weight: 650; }
+.acct { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.acct-name { color: var(--text); font-weight: 600; text-decoration: none; }
+.acct-name:hover { text-decoration: underline; }
+.bank-logo { border-radius: 9px; object-fit: contain; background: #fff; border: 1px solid var(--border); flex: none; }
+.bank-logo.initials { display: inline-grid; place-items: center; font-size: .8rem; font-weight: 700; border: 0; }
+.narrow-only { display: none; }
+@media (max-width: 1100px) { .col-bank, .col-owner { display: none; } .narrow-only { display: block; } }
+@media (max-width: 760px) { .col-extra { display: none; } .section-total { font-size: 1.1rem; } }
