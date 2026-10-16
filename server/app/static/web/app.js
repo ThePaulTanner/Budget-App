@@ -321,7 +321,7 @@
   function accountSection(kind, label, iconId, rows, itemsById) {
     const credit = kind === "credit";
     const showOwner = people.length > 0;
-    const open = (a) => { location.hash = `#/transactions?account=${encodeURIComponent(a.id)}`; };
+    const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
     const headers = [["Account", "col-account"], ["Bank", "col-bank"], showOwner && ["Owner", "col-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
@@ -334,7 +334,7 @@
       const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
       const cells = [
         el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, a.institution),
-          el("div", {}, el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+          el("div", {}, el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
             a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
             el("div", { class: "muted narrow-only", text: [a.institution, showOwner ? (ownerText(a) || "") : ""].filter(Boolean).join(" \u00B7 ") })))),
         el("td", { class: "col-bank", text: a.institution || "" }),
@@ -547,7 +547,7 @@
           el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
             progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
           el("div", { class: "amount", text: money(c.spent, cur) }))),
-        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
+        el("p", {}, el("a", { href: "#/spending?tab=budgets", text: "See budgets and trends" }))]);
 
     view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), paymentsSummary(dues));
     drawChart();
@@ -627,7 +627,7 @@
     categorySel.addEventListener("change", () => { state.category = categorySel.value; loadMore(true); });
 
     const merchantNote = state.merchant && el("p", { class: "muted" }, "Showing one merchant's transactions. ",
-      el("a", { href: "#/transactions", text: "Show all" }));
+      el("a", { href: "#/spending?tab=transactions", text: "Show all" }));
     view().replaceChildren(viewerNote(), el("section", { class: "card" },
       el("div", { class: "toolbar" }, search, accountSel, categorySel), merchantNote, list, status, sentinel));
     const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && id === navId) loadMore(false); });
@@ -1118,7 +1118,7 @@
         const a = signed(t.amount, t.currency);
         return el("div", { class: "row" }, el("div", { class: "grow" }, el("div", { text: t.name }), el("div", { class: "muted", text: shortDate(t.date) })),
           el("div", { class: `amount ${a.cls}`, text: a.text }));
-      }), el("p", {}, el("a", { href: `#/transactions?merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
+      }), el("p", {}, el("a", { href: `#/spending?tab=transactions&merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
       message,
       el("div", { class: "actions" },
         el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
@@ -1458,17 +1458,38 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
+  // Spending is one page with three tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
+  const SPENDING_TABS = [
+    ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
+    ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
+    ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
+  ];
+  let spendingTab = "transactions";
+  const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
+  function viewSpending(id, params) {
+    const [, , run, subtitle] = SPENDING_TABS.find(([key]) => key === spendingTab);
+    $("page-sub").textContent = subtitle;
+    return run(id, params);
+  }
+  // The tab bar lives outside the page content, so each tab can redraw itself without losing it.
+  function renderSubtabs(name) {
+    const bar = $("subtabs");
+    if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); return; }
+    bar.replaceChildren(el("div", { class: "seg", role: "group", "aria-label": "Spending sections" },
+      SPENDING_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === spendingTab), text: label,
+        onclick: () => { location.hash = `#/spending?tab=${key}`; } }))));
+    bar.hidden = false;
+  }
+
   const PAGES = {
     overview: ["Overview", "Net worth, spending and credit card payments"],
     accounts: ["Accounts", "Balances by bank and account"],
-    transactions: ["Transactions", "Search, filter and re-categorize"],
-    merchants: ["Merchants", "Where your money goes, over time"],
-    budgets: ["Budgets", "Limits and spending by month"],
+    spending: ["Spending", "Transactions, merchants and budgets"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
   };
-  const ROUTES = { overview: viewOverview, accounts: viewAccounts, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
   // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
   async function refreshStatus() {
@@ -1510,7 +1531,12 @@
     while (cleanups.length) cleanups.pop()();
     syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
-    const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
+    const asked = path.replace(/^\//, "");
+    const params = new URLSearchParams(query || "");
+    let name = asked in ROUTES || isSpendingTab(asked) ? asked : "overview";
+    if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
+    if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
+    renderSubtabs(name);
     for (const a of document.querySelectorAll("#tabs a, #menu-list a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
@@ -1524,7 +1550,7 @@
     try {
       await loadPeople();
       if (id !== navId) return;
-      await ROUTES[name](id, new URLSearchParams(query || ""));
+      await ROUTES[name](id, params);
       refreshStatus();
     } catch (err) {
       if (err instanceof SignedOut) showLogin();

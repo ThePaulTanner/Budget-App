@@ -320,3 +320,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .bank-owners { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 4px 0 4px 48px; }
 .bank-note { margin-left: 48px; }
 @media (max-width: 760px) { .bank-block .row:not(.bank-line), .bank-owners, .bank-note { margin-left: 0; } }
+
+/* sub-tabs under the page title (Spending) */
+.subtabs { margin: 14px var(--gutter) 0; }
+.subtabs .seg { max-width: 100%; }
