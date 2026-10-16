@@ -596,3 +596,48 @@ def test_quote_test_command_reports_both_outcomes(monkeypatch, capsys):
     assert cli.main(["quote-test"]) == 1
     out = capsys.readouterr().out
     assert "XIU.TO" in out and "429" in out and "wait 120 seconds" in out
+
+
+def test_a_first_load_fetches_prices_for_all_but_histories_a_few_at_a_time():
+    symbols = [f"AA{i}.TO" for i in range(7)]
+    provider = FakeProvider(known=symbols)
+    service = QuoteService(provider, Clock())
+    positions = [wanted(f"AA{i}") for i in range(7)]
+    first = service.lookup(positions)
+    assert len(first.live) == 7  # every position has its live price straight away
+    assert len(provider.history_calls) == q.HISTORY_PER_LOOKUP  # but only a few price histories
+    have_history = [w for w, live in first.live.items() if live.bars]
+    assert len(have_history) == q.HISTORY_PER_LOOKUP
+    for _ in range(3):  # the next looks fill in the rest, a few at a time
+        service.lookup(positions)
+    assert sorted(set(provider.history_calls)) == sorted(symbols) and len(provider.history_calls) == 7
+    assert all(live.bars for live in service.lookup(positions).live.values())
+
+
+def test_some_positions_get_live_prices_when_yahoo_refuses_the_rest():
+    class Picky(FakeProvider):
+        def quote(self, symbol):
+            if symbol == "CC.TO":
+                self.quote_calls.append(symbol)
+                raise QuoteError("unavailable", "Yahoo Finance answered 429 (too many requests)")
+            return super().quote(symbol)
+
+    provider = Picky(known=("AA.TO", "BB.TO", "CC.TO"))
+    result = QuoteService(provider, Clock()).lookup([wanted("AA"), wanted("BB"), wanted("CC")])
+    assert "429" in result.unavailable  # the page is told Yahoo is limiting requests
+    assert {w.ticker for w in result.live} == {"AA", "BB"}  # while the two that worked keep their live prices
+
+
+def test_an_old_history_that_is_not_refreshed_this_look_keeps_its_bars():
+    symbols = [f"AA{i}.TO" for i in range(5)]
+    provider = FakeProvider(known=symbols)
+    clock = Clock()
+    service = QuoteService(provider, clock)
+    positions = [wanted(f"AA{i}") for i in range(5)]
+    for _ in range(3):
+        service.lookup(positions)  # all five have a history by now
+    calls = len(provider.history_calls)
+    clock.now += q.HISTORY_TTL + 1  # every history is now out of date
+    result = service.lookup(positions)
+    assert len(provider.history_calls) - calls == q.HISTORY_PER_LOOKUP  # only a few are refreshed this look
+    assert all(live.bars for live in result.live.values())  # none lost its bars

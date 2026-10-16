@@ -30,13 +30,14 @@ USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-QUOTE_TTL = 60.0  # while the market is moving
+QUOTE_TTL = 120.0  # while the market is moving (Yahoo is up to 15 minutes behind anyway)
 CLOSED_QUOTE_TTL = 600.0  # the last price is older than FRESH_SECONDS: nothing is changing
-HISTORY_TTL = 3600.0
+HISTORY_TTL = 6 * 3600.0  # daily closes only change once a day
+HISTORY_PER_LOOKUP = 3  # new price histories fetched per look, so a first load trickles in instead of bursting
 UNKNOWN_TTL = 3600.0  # remember that a ticker was not found, so it is not retried every minute
 COOLDOWN = 300.0  # after Yahoo throttles or fails, leave it alone for this long
 MAX_COOLDOWN = 1800.0  # repeated failures double the rest, up to this
-REQUEST_SPACING = 0.5  # seconds between any two requests to Yahoo: bursts are what get throttled
+REQUEST_SPACING = 1.0  # seconds between any two requests to Yahoo: bursts are what get throttled
 FRESH_SECONDS = 30 * 60
 DEADLINE = 12.0  # one request never waits longer than this for all symbols together
 MAX_WORKERS = 4
@@ -281,7 +282,14 @@ class QuoteService:
         ttl = QUOTE_TTL if age_of_price <= FRESH_SECONDS else CLOSED_QUOTE_TTL
         return now - cached[0] < ttl
 
-    def _refresh(self, wanted: Wanted) -> None:
+    def _take_history_slot(self, slots: list[int]) -> bool:
+        with self._lock:
+            if slots[0] <= 0:
+                return False
+            slots[0] -= 1
+            return True
+
+    def _refresh(self, wanted: Wanted, slots: list[int]) -> None:
         now = self.clock()
         with self._lock:
             known = self._symbols.get(wanted)
@@ -313,7 +321,7 @@ class QuoteService:
             quote = self.provider.quote(symbol)
             with self._lock:
                 self._quotes[symbol] = (now, quote)
-        if bars_cached is None or now - bars_cached[0] >= HISTORY_TTL:
+        if (bars_cached is None or now - bars_cached[0] >= HISTORY_TTL) and self._take_history_slot(slots):
             try:
                 bars = self.provider.history(symbol)
             except QuoteError as exc:
@@ -331,7 +339,8 @@ class QuoteService:
             problem = self._last_error or "Yahoo Finance is being given a rest after an error"
         elif unique:
             pool = ThreadPoolExecutor(max_workers=MAX_WORKERS)
-            futures = {pool.submit(self._refresh, w): w for w in unique}
+            slots = [HISTORY_PER_LOOKUP]  # shared by this look's workers
+            futures = {pool.submit(self._refresh, w, slots): w for w in unique}
             done, not_done = wait(futures, timeout=DEADLINE)
             pool.shutdown(wait=False, cancel_futures=True)
             asked = 0.0

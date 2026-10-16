@@ -321,7 +321,7 @@
   function accountSection(kind, label, iconId, rows, itemsById) {
     const credit = kind === "credit";
     const showOwner = people.length > 0;
-    const open = (a) => { location.hash = `#/transactions?account=${encodeURIComponent(a.id)}`; };
+    const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
     const headers = [["Account", "col-account"], ["Bank", "col-bank"], showOwner && ["Owner", "col-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
@@ -334,7 +334,7 @@
       const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
       const cells = [
         el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, a.institution),
-          el("div", {}, el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+          el("div", {}, el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
             a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
             el("div", { class: "muted narrow-only", text: [a.institution, showOwner ? (ownerText(a) || "") : ""].filter(Boolean).join(" \u00B7 ") })))),
         el("td", { class: "col-bank", text: a.institution || "" }),
@@ -360,11 +360,9 @@
 
   // A line under the page title in a person's view; empty for the household.
   function viewerNote(householdOnly = false) {
-    if (viewer == null) return document.createDocumentFragment();  // nothing to show, and nothing printed
+    if (viewer == null || !householdOnly) return document.createDocumentFragment();  // nothing to show, and nothing printed
     const name = personName(viewer) || "this person";
-    return el("p", { class: "viewer-note", text: householdOnly
-      ? `This page covers the whole household, not just ${name}.`
-      : `Showing ${name}'s accounts. A shared account counts in full for each owner, so the people's totals add up to more than the household's.` });
+    return el("p", { class: "viewer-note", text: `This page covers the whole household, not just ${name}.` });
   }
   async function loadPeople() {
     try { people = await api("/api/people"); } catch (err) { if (err instanceof SignedOut) throw err; people = []; }
@@ -454,10 +452,54 @@
 
   let nwDays = 365;
 
+  // The Overview's credit card payments: what to pay, the minimum, and when, for every card.
+  function paymentsSummary(data) {
+    if (!data || data.cards.length === 0) return document.createDocumentFragment();  // nothing to show, and nothing printed
+    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    return el("section", { class: "card" },
+      el("div", { class: "section-head" },
+        el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg("i-card", 22)),
+        el("div", { class: "grow" }, el("h2", { text: "Credit card payments" }),
+          el("div", { class: "muted", text: `${data.cards.length} card${data.cards.length === 1 ? "" : "s"}` })),
+        el("a", { href: "#/money", text: "Details" })),
+      Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
+        stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
+        stat("Minimum payments", money(t.minimum_due, cur)),
+        stat("Total owed on cards", money(t.owed, cur)))),
+      data.cards.map((c) => {
+        const [label, tone] = DUE_PILLS[c.status];
+        return el("a", { class: "row click", href: "#/money" },
+          el("div", { class: "grow" },
+            el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+              el("span", { class: `pill ${tone}`, text: label })),
+            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
+          el("div", { class: "amount" }, money(c.statement_balance ?? c.current_balance, c.currency),
+            el("div", { class: "muted", text: c.minimum_payment != null ? `minimum ${money(c.minimum_payment, c.currency)}` : c.statement_balance == null ? "balance" : "statement" })));
+      }),
+      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet, so these are the balances now." }));
+  }
+
+  // Every account and its balance, by kind, with each bank's logo.
+  async function viewAccounts(id) {
+    const [accounts, items] = await Promise.all([api(scoped("/api/accounts?include_hidden=false")), api("/api/items").catch(() => [])]);
+    if (id !== navId) return;
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    const known = new Set(["investment", "depository", "credit", "loan"]);
+    const sections = ACCOUNT_SECTIONS
+      .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
+      .filter(([, , , rows]) => rows.length > 0)
+      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
+    if (sections.length === 0) {
+      sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+        el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
+    }
+    view().replaceChildren(viewerNote(), ...sections);
+  }
+
   async function viewOverview(id) {
-    const [summary, accounts, log, spending, items] = await Promise.all([
-      api(scoped("/api/summary")), api(scoped("/api/accounts?include_hidden=false")), api("/auth/login-log?limit=100").catch(() => null),
-      api(scoped("/api/spending")).catch(() => ({ categories: [] })), api("/api/items").catch(() => [])]);  // no month = the current one, same as the summary
+    const [summary, dues, log, spending] = await Promise.all([
+      api(scoped("/api/summary")), api(scoped("/api/payments-due")).catch(() => null), api("/auth/login-log?limit=100").catch(() => null),
+      api(scoped("/api/spending")).catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -485,7 +527,8 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       el("div", { class: "toolbar" }, seg),
       chartBox,
-      el("p", { class: "muted", text: `Last synced ${ago(summary.last_synced_at)}. Pull new bank data from Settings.` }));
+      el("p", { class: "muted", text: `Last synced ${ago(summary.last_synced_at)}. Pull new bank data from Settings.` }),
+      el("p", {}, el("a", { href: "#/accounts", text: "See every account and its balance" })));
 
     const budgeted = summary.budgeted_this_month;
     const pct = budgeted > 0 ? (summary.spent_this_month / budgeted) * 100 : 0;
@@ -502,19 +545,9 @@
           el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
             progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
           el("div", { class: "amount", text: money(c.spent, cur) }))),
-        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
+        el("p", {}, el("a", { href: "#/spending?tab=budgets", text: "See budgets and trends" }))]);
 
-    const itemsById = new Map(items.map((i) => [i.id, i]));
-    const known = new Set(["investment", "depository", "credit", "loan"]);
-    const sections = ACCOUNT_SECTIONS
-      .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
-      .filter(([, , , rows]) => rows.length > 0)
-      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
-    if (sections.length === 0) {
-      sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
-        el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
-    }
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), ...sections);
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), paymentsSummary(dues));
     drawChart();
   }
 
@@ -592,7 +625,7 @@
     categorySel.addEventListener("change", () => { state.category = categorySel.value; loadMore(true); });
 
     const merchantNote = state.merchant && el("p", { class: "muted" }, "Showing one merchant's transactions. ",
-      el("a", { href: "#/transactions", text: "Show all" }));
+      el("a", { href: "#/spending?tab=transactions", text: "Show all" }));
     view().replaceChildren(viewerNote(), el("section", { class: "card" },
       el("div", { class: "toolbar" }, search, accountSel, categorySel), merchantNote, list, status, sentinel));
     const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && id === navId) loadMore(false); });
@@ -719,19 +752,60 @@
         message);
     }
 
+    // Clicking a budget or a spending row lists the transactions behind that amount in the box under the chart.
+    const detail = el("section", { class: "card" });
+    let picked = null;
+    const markPicked = () => view().querySelectorAll("[data-pick]").forEach((r) => r.classList.toggle("picked", r.dataset.pick === picked));
+    async function showTransactions(category) {
+      picked = category;
+      markPicked();
+      const label = categoryLabel(category);
+      detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }), el("p", { class: "empty", text: "Loading…" }));
+      try {
+        const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+        const q = new URLSearchParams({ category, start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, "0")}`, limit: "200" });
+        if (viewer != null) q.set("person_id", String(viewer));
+        const [page, accounts] = await Promise.all([api(`/api/transactions?${q}`), api(scoped("/api/accounts"))]);
+        if (id !== navId || picked !== category) return;
+        const names = Object.fromEntries(accounts.map((a) => [a.id, `${a.institution ? a.institution + " " : ""}${a.name}`]));
+        const net = page.transactions.reduce((sum, t) => sum + (t.currency === cur ? t.amount : 0), 0);
+        const rows = [];
+        let day = null;
+        for (const tx of page.transactions) {
+          if (tx.date !== day) { day = tx.date; rows.push(el("div", { class: "dayhead", text: dayLabel(tx.date) })); }
+          const amount = signed(tx.amount, tx.currency);
+          rows.push(el("div", { class: "row" },
+            el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
+            el("div", { class: "grow" },
+              el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
+              el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} \u00B7 ${names[tx.account_id] || ""}` })),
+            el("div", { class: `amount ${amount.cls}`, text: amount.text })));
+        }
+        detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }),
+          el("p", { class: "muted", text: page.total === 0 ? "No transactions." : (page.total > page.transactions.length ? `${page.total} transactions. The newest ${page.transactions.length} add up to ${money(net, cur)}.` : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total.`) }),
+          ...rows,
+          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", text: "Search all transactions" })));
+      } catch (err) {
+        if (err instanceof SignedOut) showLogin(); else detail.replaceChildren(el("h2", { text: "Transactions" }), el("p", { class: "error", text: err.message }));
+      }
+    }
+    detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
+    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
+
     const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
     if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
     const budgeted = new Set(budgets.budgets.map((b) => b.category));
     for (const b of budgets.budgets) {
       const left = b.remaining >= 0 ? `${money(b.remaining, cur)} left` : `${money(-b.remaining, cur)} over`;
       const inside = b.parent && budgeted.has(b.parent) ? ` \u00B7 also counted in ${categoryLabel(b.parent)}` : "";
-      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, onclick: () => budgetDialog(b),
-        onkeydown: (e) => { if (e.key === "Enter") budgetDialog(b); } },
+      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, ...pickable(b.category) },
         el("div", { class: "icon", text: icon(b.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
           el("div", {}, el("strong", { text: categoryLabel(b.category) })),
           progress(b.percent),
-          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} · ${left}${inside}` }))));
+          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} \u00B7 ${left}${inside}` })),
+        el("button", { type: "button", class: "secondary", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
+          onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() })));
     }
 
     const maxSpent = Math.max(...spending.categories.map((c) => Math.abs(c.spent)), 1);
@@ -739,23 +813,23 @@
       el("p", { class: "muted", text: `${money(spending.total, cur)} in ${monthLabel(month)}. Transfers, loan and card payments and income are left out.` }));
     if (spending.categories.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
     for (const c of spending.categories) {
-      spendCard.append(el("div", { class: "row" },
+      spendCard.append(el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
         el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
         el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
         el("div", { class: "amount", text: money(c.spent, cur) })));
       // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
       const split = c.subcategories || [];
       const rest = c.spent - split.reduce((sum, s) => sum + s.spent, 0);
-      const parts = split.map((s) => [subLabel(s.category), s.spent]);
+      const parts = split.map((s) => [subLabel(s.category), s.spent, s.category]);
       if (split.length > 0 && Math.abs(rest) >= 0.005) parts.push(["Not in a sub-category", rest]);
-      for (const [label, spent] of parts) {
-        spendCard.append(el("div", { class: "row sub" },
+      for (const [label, spent, code] of parts) {
+        spendCard.append(el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
           el("div", { class: "grow" }, el("div", { class: "muted", text: label }), progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true)),
           el("div", { class: "amount muted", text: money(spent, cur) })));
       }
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, trendCard));
+    view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
   }
 
   // ---------------------------------------------------------------- Investments
@@ -787,10 +861,12 @@
       const statusLine = !status.enabled
         ? "Live prices are turned off on the server. Showing your bank's last prices."
         : status.message
-          ? `Live prices unavailable (${status.message}). ${status.live_positions ? "Showing the last prices received." : "Showing your bank's last prices."}`
+          ? (status.live_positions > 0
+            ? `Live prices for ${status.live_positions} of ${status.positions} positions so far. Yahoo Finance is having trouble (${status.message}); the rest follow when it allows.`
+            : `Live prices unavailable (${status.message}). Showing your bank's last prices.`)
           : status.live_positions === 0
             ? "No position has a live price. Showing your bank's last prices."
-            : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Updates every minute while this page is open; Yahoo Finance may delay prices by up to 15 minutes.`;
+            : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Prices refresh about every two minutes while this page is open; Yahoo Finance may delay them by up to 15 minutes.`;
       const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
           : totals.map(([cur, t]) => {
@@ -1081,7 +1157,7 @@
         const a = signed(t.amount, t.currency);
         return el("div", { class: "row" }, el("div", { class: "grow" }, el("div", { text: t.name }), el("div", { class: "muted", text: shortDate(t.date) })),
           el("div", { class: `amount ${a.cls}`, text: a.text }));
-      }), el("p", {}, el("a", { href: `#/transactions?merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
+      }), el("p", {}, el("a", { href: `#/spending?tab=transactions&merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
       message,
       el("div", { class: "actions" },
         el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
@@ -1215,7 +1291,7 @@
     return card;
   }
 
-  const SETTINGS_TABS = [["banks", "Banks"], ["accounts", "Accounts"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
   let settingsTab = "banks";
 
   async function viewSettings(id, params = new URLSearchParams()) {
@@ -1243,22 +1319,6 @@
     } });
 
     const linkButton = el("button", { type: "button", class: "primary", text: "Link a bank", onclick: () => startLink(null, reload) });
-    const banks = el("section", { class: "card" }, el("h2", { text: "Banks" }),
-      el("div", { class: "actions" }, linkButton, syncButton), syncOut,
-      items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
-      items.map((i) => el("div", { class: "row" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
-        el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
-        i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
-        el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
-          const name = i.institution || "this bank";
-          if (!(await confirmBox({
-            title: `Remove ${name}?`,
-            intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
-            points: ["The Plaid bank slot it used is not given back.", "If the bank only needs attention, use Reconnect instead."],
-            confirmText: "Remove bank", cancelText: "Keep it", danger: true }))) return;
-          try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
-          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
-        } }))));
     // A bank still waiting for its first sync: check again every 6 seconds, at most 10 times,
     // and never while a dialog is open.
     if (items.some((i) => !i.last_synced_at && !i.needs_reauth) && syncPolls < 10) {
@@ -1314,34 +1374,66 @@
       catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
     }
     const unowned = people.length > 0 ? accounts.filter((a) => !a.hidden && (a.owner_ids || []).length === 0).length : 0;
-    const banksOf = new Map();
-    for (const a of accounts) banksOf.set(a.item_id, [...(banksOf.get(a.item_id) || []), a]);
-    const accountsCard = el("section", { class: "card" }, el("h2", { text: "Accounts" }),
+    const accountsOf = new Map();
+    for (const a of accounts) accountsOf.set(a.item_id, [...(accountsOf.get(a.item_id) || []), a]);
+    const orphans = accounts.filter((a) => !items.some((i) => i.id === a.item_id));
+
+    function accountRow(a) {
+      const chosen = new Set(a.owner_ids || []);
+      return el("div", { class: "row" }, el("div", { class: "grow" },
+        el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
+        people.length > 0 && el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
+          el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
+            if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
+            putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
+          } }), p.name)))),
+        el("label", { class: "checkline" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
+          try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
+          catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }), "Hide"));
+    }
+
+    // One block per bank: the bank and its status, then its accounts with who owns them and Hide.
+    function bankBlock(i) {
+      const group = accountsOf.get(i.id) || [];
+      const name = i.institution || "this bank";
+      const ownersPath = `/api/items/${encodeURIComponent(i.id)}/owners`;
+      return el("div", { class: "bank-block" },
+        el("div", { class: "row bank-line" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
+          el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
+          i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
+          el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+            if (!(await confirmBox({
+              title: `Remove ${name}?`,
+              intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
+              points: ["The Plaid bank slot it used is not given back.", "If the bank only needs attention, use Reconnect instead."],
+              confirmText: "Remove bank", cancelText: "Keep it", danger: true }))) return;
+            try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
+            catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+          } })),
+        people.length > 0 && group.length > 0 && el("div", { class: "bank-owners" }, el("span", { class: "muted", text: "Set every account here to" }),
+          people.map((p) => el("button", { type: "button", class: "small", text: p.name,
+            onclick: () => putOwners(ownersPath, [p.id], () => { toast(`Every ${name} account is now ${p.name}'s.`); reload(); }) })),
+          people.length > 1 && el("button", { type: "button", class: "small", text: "Shared by everyone",
+            onclick: () => putOwners(ownersPath, people.map((p) => p.id), () => { toast("Shared by everyone."); reload(); }) })),
+        group.map(accountRow),
+        group.length === 0 && el("p", { class: "muted bank-note", text: i.last_synced_at ? "No accounts at this bank." : "Its accounts appear after the first sync." }));
+    }
+
+    const banks = el("section", { class: "card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton)),
+      syncOut,
       el("p", { class: "muted", text: people.length > 0
-        ? "Choose who owns each account. Give an account more than one owner to share it; it still counts once in the household totals. Tick Hide to leave an account out of totals and budgets."
-        : "Add the people in your household on the People tab, then choose who owns each account here. Tick Hide to leave an account out of totals and budgets." }),
+        ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or tick Hide to leave it out of totals and budgets."
+        : "Each bank lists its accounts. Tick Hide to leave an account out of totals and budgets. To say who owns what, add the people in your household on the People tab first." }),
       unowned > 0 && el("p", { class: "muted", text: `${unowned} account${unowned === 1 ? " has" : "s have"} no owner yet. They count in the household but not in anyone's own view.` }),
-      [...banksOf.entries()].map(([itemId, group]) => [
-        el("div", { class: "bank-head" }, el("h3", { text: group[0].institution || "Bank" }),
-          people.length > 0 && el("div", { class: "actions" },
-            people.map((p) => el("button", { type: "button", class: "small", text: `All ${p.name}`,
-              onclick: () => putOwners(`/api/items/${encodeURIComponent(itemId)}/owners`, [p.id], () => { toast(`Every ${group[0].institution || "bank"} account is now ${p.name}'s.`); reload(); }) })),
-            people.length > 1 && el("button", { type: "button", class: "small", text: "Shared by everyone",
-              onclick: () => putOwners(`/api/items/${encodeURIComponent(itemId)}/owners`, people.map((p) => p.id), () => { toast("Shared by everyone."); reload(); }) }))),
-        group.map((a) => {
-          const chosen = new Set(a.owner_ids || []);
-          return el("div", { class: "row" }, el("div", { class: "grow" },
-            el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
-            people.length > 0 && el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
-              el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
-                if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
-                putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
-              } }), p.name)))),
-            el("label", { class: "checkline" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
-              try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
-              catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
-            } }), "Hide"));
-        })]));
+      items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
+      items.map(bankBlock),
+      // An account whose bank is not in the list (for example just after a bank was removed) must never vanish from Hide and owners.
+      orphans.length > 0 && el("div", { class: "bank-block" },
+        el("div", { class: "row bank-line" }, el("div", { class: "grow" }, el("strong", { text: "Other accounts" }),
+          el("div", { class: "muted", text: "Not linked to a bank listed above." }))),
+        orphans.map(accountRow)));
 
     // The household's people. They are labels for organising accounts, not logins.
     const newName = el("input", { maxlength: 40, placeholder: "Name, for example Sam", "aria-label": "New person's name" });
@@ -1391,7 +1483,7 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], accounts: [accountsCard], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
     const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
       SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
         onclick: () => { settingsTab = key; show(); } })));
@@ -1405,16 +1497,38 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
+  // Spending is one page with three tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
+  const SPENDING_TABS = [
+    ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
+    ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
+    ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
+  ];
+  let spendingTab = "transactions";
+  const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
+  function viewSpending(id, params) {
+    const [, , run, subtitle] = SPENDING_TABS.find(([key]) => key === spendingTab);
+    $("page-sub").textContent = subtitle;
+    return run(id, params);
+  }
+  // The tab bar lives outside the page content, so each tab can redraw itself without losing it.
+  function renderSubtabs(name) {
+    const bar = $("subtabs");
+    if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); return; }
+    bar.replaceChildren(el("div", { class: "seg", role: "group", "aria-label": "Spending sections" },
+      SPENDING_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === spendingTab), text: label,
+        onclick: () => { location.hash = `#/spending?tab=${key}`; } }))));
+    bar.hidden = false;
+  }
+
   const PAGES = {
-    overview: ["Overview", "Net worth, spending and accounts"],
-    transactions: ["Transactions", "Search, filter and re-categorize"],
-    merchants: ["Merchants", "Where your money goes, over time"],
-    budgets: ["Budgets", "Limits and spending by month"],
+    overview: ["Overview", "Net worth, spending and credit card payments"],
+    accounts: ["Accounts", "Balances by bank and account"],
+    spending: ["Spending", "Transactions, merchants and budgets"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
   };
-  const ROUTES = { overview: viewOverview, transactions: viewTransactions, merchants: viewMerchants, budgets: viewBudgets, money: viewMoney, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
   // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
   async function refreshStatus() {
@@ -1456,7 +1570,12 @@
     while (cleanups.length) cleanups.pop()();
     syncPolls = 0;
     const [path, query] = (location.hash.slice(1) || "/overview").split("?");
-    const name = path.replace(/^\//, "") in ROUTES ? path.replace(/^\//, "") : "overview";
+    const asked = path.replace(/^\//, "");
+    const params = new URLSearchParams(query || "");
+    let name = asked in ROUTES || isSpendingTab(asked) ? asked : "overview";
+    if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
+    if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
+    renderSubtabs(name);
     for (const a of document.querySelectorAll("#tabs a, #menu-list a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
@@ -1470,7 +1589,7 @@
     try {
       await loadPeople();
       if (id !== navId) return;
-      await ROUTES[name](id, new URLSearchParams(query || ""));
+      await ROUTES[name](id, params);
       refreshStatus();
     } catch (err) {
       if (err instanceof SignedOut) showLogin();
