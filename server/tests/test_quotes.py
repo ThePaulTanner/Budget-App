@@ -596,3 +596,19 @@ def test_quote_test_command_reports_both_outcomes(monkeypatch, capsys):
     assert cli.main(["quote-test"]) == 1
     out = capsys.readouterr().out
     assert "XIU.TO" in out and "429" in out and "wait 120 seconds" in out
+
+
+def test_a_first_load_fetches_prices_for_all_but_histories_a_few_at_a_time():
+    symbols = [f"AA{i}.TO" for i in range(7)]
+    provider = FakeProvider(known=symbols)
+    service = QuoteService(provider, Clock())
+    positions = [wanted(f"AA{i}") for i in range(7)]
+    first = service.lookup(positions)
+    assert len(first.live) == 7  # every position has its live price straight away
+    assert len(provider.history_calls) == q.HISTORY_PER_LOOKUP  # but only a few price histories
+    have_history = [w for w, live in first.live.items() if live.bars]
+    assert len(have_history) == q.HISTORY_PER_LOOKUP
+    for _ in range(3):  # the next looks fill in the rest, a few at a time
+        service.lookup(positions)
+    assert sorted(set(provider.history_calls)) == sorted(symbols) and len(provider.history_calls) == 7
+    assert all(live.bars for live in service.lookup(positions).live.values())

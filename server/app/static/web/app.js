@@ -787,7 +787,9 @@
       const statusLine = !status.enabled
         ? "Live prices are turned off on the server. Showing your bank's last prices."
         : status.message
-          ? `Live prices unavailable (${status.message}). ${status.live_positions ? "Showing the last prices received." : "Showing your bank's last prices."}`
+          ? (status.live_positions > 0
+            ? `Live prices for ${status.live_positions} of ${status.positions} positions so far. Yahoo Finance is limiting requests (${status.message}); the rest follow as it allows.`
+            : `Live prices unavailable (${status.message}). Showing your bank's last prices.`)
           : status.live_positions === 0
             ? "No position has a live price. Showing your bank's last prices."
             : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Updates every minute while this page is open; Yahoo Finance may delay prices by up to 15 minutes.`;
