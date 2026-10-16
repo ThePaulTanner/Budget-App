@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA = """
 CREATE TABLE users (
@@ -175,6 +175,11 @@ CREATE TABLE account_owners (
   PRIMARY KEY (account_id, person_id)
 );
 CREATE INDEX account_owners_person ON account_owners(person_id);
+CREATE TABLE custom_categories (
+  code TEXT PRIMARY KEY,
+  parent TEXT,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE card_dues (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   due_date TEXT,
@@ -277,6 +282,14 @@ ALTER TABLE networth_new RENAME TO networth;
 ALTER TABLE items ADD COLUMN logo TEXT;
 ALTER TABLE items ADD COLUMN color TEXT;
 ALTER TABLE items ADD COLUMN logo_checked INTEGER NOT NULL DEFAULT 0;
+""",
+
+    7: """
+CREATE TABLE custom_categories (
+  code TEXT PRIMARY KEY,
+  parent TEXT,
+  created_at TEXT NOT NULL
+);
 """}
 
 

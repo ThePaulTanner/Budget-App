@@ -95,7 +95,9 @@
   const KNOWN_CATEGORIES = Object.keys(ICONS);
   // Plaid's top-level categories. A sub-category's code starts with its parent's, as in
   // FOOD_AND_DRINK_FAST_FOOD, so the parent can be found from the code alone.
-  const PRIMARIES = KNOWN_CATEGORIES.filter((c) => c !== "GROCERIES");
+  const BUILT_IN_PRIMARIES = KNOWN_CATEGORIES.filter((c) => c !== "GROCERIES");
+  let PRIMARIES = BUILT_IN_PRIMARIES;  // plus the top-level categories you added in Settings
+  let customCategories = [];           // [{code, parent, transactions, budgets, rules}]
   function parentOf(code) {
     let best = null;
     for (const p of PRIMARIES) if (code && code.startsWith(`${p}_`) && (!best || p.length > best.length)) best = p;
@@ -374,7 +376,12 @@
 
   async function categoryChoices(extra = []) {
     let fromServer = [];
-    try { fromServer = await api("/api/categories"); } catch (err) { if (err instanceof SignedOut) throw err; }
+    try {
+      const [codes, custom] = await Promise.all([api("/api/categories"), api("/api/categories/custom")]);
+      fromServer = codes;
+      customCategories = custom.categories;
+      PRIMARIES = [...new Set([...BUILT_IN_PRIMARIES, ...custom.primaries])];
+    } catch (err) { if (err instanceof SignedOut) throw err; }
     return [...new Set([...KNOWN_CATEGORIES, ...fromServer, ...extra].filter(Boolean))].sort((a, b) => categoryLabel(a).localeCompare(categoryLabel(b)));
   }
 
@@ -1291,7 +1298,7 @@
     return card;
   }
 
-  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["categories", "Categories"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
   let settingsTab = "banks";
 
   async function viewSettings(id, params = new URLSearchParams()) {
@@ -1470,6 +1477,53 @@
         } }))),
       el("div", { class: "toolbar" }, newName, el("button", { type: "button", class: "primary", text: "Add person", onclick: addPerson })));
 
+    // ---- Categories: the built-in ones plus the ones you add, each with its sub-categories.
+    const mine = new Map(customCategories.map((c) => [c.code, c]));
+    const byLabel = (a, b) => categoryLabel(a).localeCompare(categoryLabel(b));
+    const addCategoryName = el("input", { placeholder: "New category, e.g. Pets", maxlength: 50, "aria-label": "New category name" });
+    const subParent = el("select", { "aria-label": "Parent category" },
+      [...PRIMARIES].sort(byLabel).map((c) => el("option", { value: c, text: categoryLabel(c) })));
+    const addSubName = el("input", { placeholder: "New sub-category, e.g. Coffee", maxlength: 50, "aria-label": "New sub-category name" });
+    async function addCategory(name, parent, field) {
+      if (!name.trim()) { toast("Type a name first.", true); return; }
+      try {
+        await api("/api/categories", { method: "POST", body: parent ? { name, parent } : { name } });
+        toast("Category added."); field.value = ""; reload();
+      } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    }
+    async function removeCategory(code) {
+      if (!(await confirmBox({ title: `Remove ${categoryLabel(code)}?`,
+        intro: "It is only removed from the list of categories you can choose. It can't be removed while transactions, budgets or rules still use it.",
+        confirmText: "Remove category", cancelText: "Keep it", danger: true }))) return;
+      try { await api(`/api/categories/${encodeURIComponent(code)}`, { method: "DELETE" }); toast("Category removed."); reload(); }
+      catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    }
+    const usage = (c) => { const bits = [c.transactions && `${c.transactions} transactions`, c.budgets && `${c.budgets} budget${c.budgets === 1 ? "" : "s"}`, c.rules && `${c.rules} rule${c.rules === 1 ? "" : "s"}`].filter(Boolean); return bits.length ? bits.join(", ") : "Not used yet"; };
+    const categoryRows = [];
+    for (const top of [...PRIMARIES].sort(byLabel)) {
+      const own = mine.get(top);
+      categoryRows.push(el("div", { class: "row" },
+        el("div", { class: "icon", text: icon(top), "aria-hidden": "true" }),
+        el("div", { class: "grow" }, el("strong", { text: categoryLabel(top) }), el("span", { class: "badge", text: own ? "Yours" : "Built in" }),
+          own && el("div", { class: "muted", text: usage(own) })),
+        own && el("button", { type: "button", class: "danger", text: "Remove", "aria-label": `Remove ${categoryLabel(top)}`, onclick: () => removeCategory(top) })));
+      for (const sub of choices.filter((c) => parentOf(c) === top).sort(byLabel)) {
+        const subOwn = mine.get(sub);
+        categoryRows.push(el("div", { class: "row sub" },
+          el("div", { class: "grow" }, el("span", { text: subLabel(sub) }), subOwn && el("span", { class: "badge", text: "Yours" }),
+            subOwn && el("div", { class: "muted", text: usage(subOwn) })),
+          subOwn && el("button", { type: "button", class: "danger", text: "Remove", "aria-label": `Remove ${categoryLabel(sub)}`, onclick: () => removeCategory(sub) })));
+      }
+    }
+    const categoriesCard = el("section", { class: "card" }, el("h2", { text: "Categories" }),
+      el("p", { class: "muted", text: "Add your own categories and sub-categories. They appear wherever you choose a category: on a transaction, in a rule and in a budget. Spending in a sub-category counts in its category once, so totals are never doubled." }),
+      el("h3", { text: "Add a category" }),
+      el("div", { class: "toolbar" }, addCategoryName, el("button", { type: "button", class: "primary", text: "Add category", onclick: () => addCategory(addCategoryName.value, null, addCategoryName) })),
+      el("h3", { text: "Add a sub-category" }),
+      el("div", { class: "toolbar" }, subParent, addSubName, el("button", { type: "button", class: "primary", text: "Add sub-category", onclick: () => addCategory(addSubName.value, subParent.value, addSubName) })),
+      el("h3", { text: "All categories" }),
+      categoryRows);
+
     const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
       log.locked
         ? el("p", { class: "error", role: "alert", text: "Sign-in is locked. Unlock it from the NAS: docker exec -it homefinance python -m app.cli unlock" })
@@ -1483,7 +1537,7 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
     const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
       SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
         onclick: () => { settingsTab = key; show(); } })));
