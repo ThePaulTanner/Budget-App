@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, condecimal
 
 from . import backup as backup_module
+from . import cashflow as cashflow_mod
 from . import merchants as merchants_mod
 from . import rules as rules_mod
 from .auth import AuthContext, AuthError
@@ -39,6 +40,7 @@ from .rules import (
     split_category,
 )
 from .sync import PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
+from .transfers import match_transfers
 
 STATIC_DIR = Path(__file__).parent / "static"
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -127,7 +129,10 @@ class OwnersBody(BaseModel):
 
 
 class CategoryBody(BaseModel):
-    category: str | None  # required, but may be null (reset to automatic)
+    # Send either or both. `category: null` resets to automatic; `cashflow: null` lets the transfer
+    # matcher decide again. A field you leave out is not changed.
+    category: str | None = None
+    cashflow: Literal["include", "exclude"] | None = None
 
 
 class NewCategoryBody(BaseModel):
@@ -251,6 +256,8 @@ def tx_json(row: Any) -> dict[str, Any]:
         "merchant_id": row["merchant_id"],
         "merchant": row["merchant_display"],
         "display_name": row["merchant_display"] or row["merchant_name"] or row["name"],
+        "cashflow_override": row["cashflow_override"],
+        "transfer_matched": row["transfer_pair_id"] is not None,
     }
 
 
@@ -762,12 +769,22 @@ def create_api_app(services: Services) -> FastAPI:
 
     @app.patch("/api/transactions/{tx_id}")
     def patch_transaction(tx_id: str, body: CategoryBody, ctx: Auth):
+        sent = body.model_fields_set
+        if not sent:
+            raise HTTPException(400, "Send category and/or cashflow.")
         try:
             category = None if body.category is None else normalize_category(body.category)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
-        if db.run("UPDATE transactions SET override_category=? WHERE id=?", (category, tx_id)) == 0:
+        if not db.one("SELECT 1 FROM transactions WHERE id=?", (tx_id,)):
             raise HTTPException(404, "transaction not found")
+        with db.transaction():
+            if "category" in sent:
+                db.run("UPDATE transactions SET override_category=? WHERE id=?", (category, tx_id))
+            if "cashflow" in sent:
+                db.run("UPDATE transactions SET cashflow_override=? WHERE id=?", (body.cashflow, tx_id))
+        if "category" in sent:
+            rematch()
         row = db.one(
             f"SELECT t.*, {EFFECTIVE_CATEGORY_SQL} AS category, m.name AS merchant_display "
             "FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id WHERE t.id=?",
@@ -779,6 +796,17 @@ def create_api_app(services: Services) -> FastAPI:
         set_custom_primaries(r["code"] for r in db.query("SELECT code FROM custom_categories WHERE parent IS NULL"))
 
     load_custom_primaries()
+
+    def rematch() -> None:
+        """Re-pair transfers between your own accounts. A category or rule change can make or break a
+        pair, so this runs right after one (it takes milliseconds) rather than waiting for the next
+        sync. A failure is logged and never fails the request, or the server's start-up."""
+        try:
+            match_transfers(db)
+        except Exception:
+            logging.getLogger("homefinance.transfers").exception("Transfer matching failed")
+
+    rematch()  # also fills in pairs for data from before this feature
 
     @app.get("/api/categories")
     def categories(ctx: Auth):
@@ -907,6 +935,56 @@ def create_api_app(services: Services) -> FastAPI:
             {"month": m, "total": num(sums.get(m, Decimal(0)))}
             for m in (add_months(first, i) for i in range(months))
         ]
+
+    # -- cash flow -------------------------------------------------------------
+
+    def cashflow_params(
+        range: str = "mtd",
+        start: str | None = None,
+        end: str | None = None,
+        group: str | None = None,
+        week_start: str = "mon",
+        accounts: str | None = None,
+        exclude_categories: str | None = None,
+        include_pending: bool = True,
+        include_transfers: bool = False,
+        person_id: int | None = None,
+    ) -> cashflow_mod.Params:
+        scope_sql(person_id)  # 404 for an unknown person
+        s, e = parse_day(start, "start"), parse_day(end, "end")
+        split = lambda text: [v.strip() for v in text.split(",") if v.strip()]  # noqa: E731
+        excluded = set()
+        for code in split(exclude_categories or ""):
+            try:
+                excluded.add(normalize_category(code))
+            except ValueError:
+                raise HTTPException(400, f"Not a category: {code}") from None
+        return cashflow_mod.Params(
+            range=range.lower(), start=date.fromisoformat(s) if s else None, end=date.fromisoformat(e) if e else None,
+            group=group.lower() if group else None, week_start=week_start.lower(),
+            accounts=split(accounts) if accounts is not None else None, exclude_categories=excluded,
+            include_pending=include_pending, include_transfers=include_transfers, person_id=person_id,
+        )
+
+    CashflowParams = Annotated[cashflow_mod.Params, Depends(cashflow_params)]
+
+    @app.get("/api/cashflow")
+    def cashflow(ctx: Auth, p: CashflowParams):
+        """Income and expenses per day, week or month, running totals and the net worth of the
+        accounts in view, for the cash-flow chart."""
+        try:
+            return cashflow_mod.compute(db, p, base, date.fromisoformat(today_str()))
+        except cashflow_mod.CashflowError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.get("/api/cashflow/transactions")
+    def cashflow_transactions(ctx: Auth, p: CashflowParams, period_start: str, period_end: str, side: str = "all"):
+        """Every transaction behind one bar: the ones counted, and the ones left out with the reason."""
+        s, e = parse_day(period_start, "period_start"), parse_day(period_end, "period_end")
+        try:
+            return cashflow_mod.transactions_in(db, p, base, date.fromisoformat(s), date.fromisoformat(e), side.lower())
+        except cashflow_mod.CashflowError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @app.get("/api/budgets")
     def budgets(ctx: Auth, month: str | None = None):
@@ -1429,6 +1507,7 @@ def create_api_app(services: Services) -> FastAPI:
         out = rule_json(db.one("SELECT * FROM rules WHERE id=?", (rule_id,)))
         if body.apply_to_past:
             out["updated_transactions"] = rules_mod.assign_rules(db)
+            rematch()
         return out
 
     @app.patch("/api/rules/{rule_id}")
@@ -1450,6 +1529,7 @@ def create_api_app(services: Services) -> FastAPI:
             ),
         )
         rules_mod.reassign_for_rule(db, rule_id)
+        rematch()
         return rule_json(db.one("SELECT * FROM rules WHERE id=?", (rule_id,)))
 
     @app.delete("/api/rules/{rule_id}")
@@ -1457,13 +1537,16 @@ def create_api_app(services: Services) -> FastAPI:
         if db.run("DELETE FROM rules WHERE id=?", (rule_id,)) == 0:
             raise HTTPException(404, "rule not found")
         rules_mod.reassign_for_rule(db, rule_id)  # falls back to another rule, then Plaid
+        rematch()
         return {"ok": True}
 
     @app.post("/api/rules/{rule_id}/apply")
     def apply_rule(rule_id: int, ctx: Auth):
         if db.one("SELECT 1 FROM rules WHERE id=?", (rule_id,)) is None:
             raise HTTPException(404, "rule not found")
-        return {"updated_transactions": rules_mod.assign_rules(db)}
+        updated = rules_mod.assign_rules(db)
+        rematch()
+        return {"updated_transactions": updated}
 
 
     # -- merchants -----------------------------------------------------------

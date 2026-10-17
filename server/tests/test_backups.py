@@ -102,19 +102,19 @@ def test_upgrading_the_database_keeps_a_copy_first(tmp_path):
             "ip TEXT, origin TEXT, method TEXT, device_name TEXT, user_known INTEGER NOT NULL DEFAULT 0, "
             "count INTEGER NOT NULL DEFAULT 1)")  # a login_events table without its user_id column
     old.run("DROP TABLE login_events_new")
-    old.run("PRAGMA user_version = 9")  # looks like the previous release
+    old.run("PRAGMA user_version = 10")  # looks like the previous release
     old.close()
     upgraded = Database(path, key)  # the migrations run on open
     copies = list_backups(upgraded)
-    assert [c["kind"] for c in copies] == ["upgrade"] and "v9-to-" in copies[0]["name"]
+    assert [c["kind"] for c in copies] == ["upgrade"] and "v10-to-" in copies[0]["name"]
     from sqlcipher3 import dbapi2 as sqlcipher
 
     before = sqlcipher.connect(str(tmp_path / "backups" / copies[0]["name"]))  # raw: opening it must not upgrade it
     before.execute(f"PRAGMA key = \"x'{key}'\"")
-    assert before.execute("PRAGMA user_version").fetchone()[0] == 9  # the copy is from before the upgrade
+    assert before.execute("PRAGMA user_version").fetchone()[0] == 10  # the copy is from before the upgrade
     assert before.execute("SELECT monthly_limit FROM budgets").fetchone()[0] == "100"
     before.close()
-    assert upgraded.one("PRAGMA user_version")[0] > 9
+    assert upgraded.one("PRAGMA user_version")[0] > 10
     upgraded.close()
 
 

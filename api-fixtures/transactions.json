@@ -23,7 +23,9 @@
       "rule_id": null,
       "merchant_id": 1,
       "merchant": "IGA",
-      "display_name": "IGA"
+      "display_name": "IGA",
+      "cashflow_override": null,
+      "transfer_matched": false
     },
     {
       "id": "tx_006",
@@ -45,7 +47,9 @@
       "rule_id": null,
       "merchant_id": 2,
       "merchant": "Mortgage payment",
-      "display_name": "Mortgage payment"
+      "display_name": "Mortgage payment",
+      "cashflow_override": null,
+      "transfer_matched": false
     },
     {
       "id": "tx_001",
@@ -67,7 +71,9 @@
       "rule_id": null,
       "merchant_id": 3,
       "merchant": "Restaurant Le Local",
-      "display_name": "Restaurant Le Local"
+      "display_name": "Restaurant Le Local",
+      "cashflow_override": null,
+      "transfer_matched": false
     },
     {
       "id": "tx_002",
@@ -89,7 +95,9 @@
       "rule_id": null,
       "merchant_id": 4,
       "merchant": "Payroll",
-      "display_name": "Payroll"
+      "display_name": "Payroll",
+      "cashflow_override": null,
+      "transfer_matched": false
     },
     {
       "id": "tx_003",
@@ -111,7 +119,9 @@
       "rule_id": null,
       "merchant_id": 5,
       "merchant": "Visa payment",
-      "display_name": "Visa payment"
+      "display_name": "Visa payment",
+      "cashflow_override": null,
+      "transfer_matched": false
     }
   ]
 }

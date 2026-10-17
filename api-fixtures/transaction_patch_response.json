@@ -18,5 +18,7 @@
   "rule_id": null,
   "merchant_id": 3,
   "merchant": "Restaurant Le Local",
-  "display_name": "Restaurant Le Local"
+  "display_name": "Restaurant Le Local",
+  "cashflow_override": null,
+  "transfer_matched": false
 }

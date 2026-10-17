@@ -156,3 +156,15 @@ def test_missing_credentials_error_shape(seeded):
     response = client.get("/api/summary")
     assert response.status_code == fixture_float("error_401.json")["status"]
     assert isinstance(response.json()["detail"], str)
+
+
+def test_cashflow(seeded):
+    client, auth = seeded
+    body = client.get("/api/cashflow?range=custom&start=2026-09-01&end=2026-10-02&group=week", headers=auth).json()
+    assert_matches(body, fixture_float("cashflow.json"))
+
+
+def test_cashflow_transactions(seeded):
+    client, auth = seeded
+    body = client.get("/api/cashflow/transactions?period_start=2026-09-28&period_end=2026-10-02", headers=auth).json()
+    assert_matches(body, fixture_float("cashflow_transactions.json"))

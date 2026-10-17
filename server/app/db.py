@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA = """
 CREATE TABLE users (
@@ -94,7 +94,9 @@ CREATE TABLE transactions (
   rule_category TEXT,
   logo_url TEXT,
   updated_at TEXT NOT NULL,
-  merchant_id INTEGER REFERENCES merchants(id) ON DELETE SET NULL
+  merchant_id INTEGER REFERENCES merchants(id) ON DELETE SET NULL,
+  cashflow_override TEXT,
+  transfer_pair_id TEXT
 );
 CREATE INDEX transactions_date ON transactions(date DESC);
 CREATE INDEX transactions_account ON transactions(account_id);
@@ -335,7 +337,15 @@ CREATE INDEX investment_transactions_account ON investment_transactions(account_
 CREATE INDEX investment_transactions_security ON investment_transactions(security_id);
 """,
 
+    # Cash flow: your choice to count or leave out a transaction ("include" / "exclude"), and the
+    # other half of a matched transfer between two of your own accounts (set by transfers.py).
     9: """
+ALTER TABLE transactions ADD COLUMN cashflow_override TEXT;
+ALTER TABLE transactions ADD COLUMN transfer_pair_id TEXT;
+""",
+
+    # More than one login: which login each sign-in attempt was for.
+    10: """
 ALTER TABLE login_events ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
 """}
 
