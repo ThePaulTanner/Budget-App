@@ -14,3 +14,6 @@ li { display: flex; justify-content: space-between; align-items: center; gap: 12
 .status.warn { color: #b45309; opacity: 1; }
 #message { min-height: 1.5em; }
 #message.error { color: #b91c1c; }
+.open-app { margin: 4px 0 18px; }
+.open-app a { display: block; padding: 14px 16px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 650; text-decoration: none; text-align: center; }
+.open-app span { display: block; margin-top: 6px; font-size: .85rem; opacity: .75; text-align: center; }

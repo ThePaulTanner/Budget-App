@@ -404,6 +404,20 @@ def create_api_app(services: Services) -> FastAPI:
     def login_log(ctx: Auth, limit: Annotated[int, Query(ge=1, le=500)] = 50):
         return auth.login_log(limit)
 
+    @app.get("/auth/users")
+    def logins(ctx: Auth):
+        """Everyone who can sign in. Each has their own password and authenticator, and all of them
+        see everything. A login is added on the NAS with `python -m app.cli create-user`."""
+        return auth.logins(ctx)
+
+    @app.delete("/auth/users/{user_id}", status_code=204)
+    def remove_login(user_id: int, ctx: Auth):
+        outcome = auth.remove_login(ctx, user_id)
+        if outcome == "self":
+            raise HTTPException(409, "You cannot remove the login you are signed in with.")
+        if outcome == "missing":
+            raise HTTPException(404, "login not found")
+
     @app.get("/auth/sessions")
     def sessions(ctx: Auth):
         return auth.sessions(ctx)
