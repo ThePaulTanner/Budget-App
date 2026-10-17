@@ -108,7 +108,8 @@ label input, label select { margin-top: .25rem; color: var(--text); }
 label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor: pointer; }
 .checkline { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 6px 0; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
-.toolbar input, .toolbar select { width: auto; flex: 1 1 160px; }
+.toolbar input, .toolbar select { width: auto; flex: 1 1 160px; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+@media (max-width: 600px) { .toolbar input, .toolbar select { flex-basis: 100%; } }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
 .seg.wide { max-width: 100%; overflow-x: auto; }
@@ -200,7 +201,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 svg.chart { width: 100%; height: auto; display: block; }
 svg.chart text { fill: var(--muted-2); font-size: 11px; }
 svg.chart .line { fill: none; stroke: var(--chart); stroke-width: 2.2; stroke-linejoin: round; }
-svg.chart .area { fill: var(--chart); opacity: .12; }
+svg.chart .area { fill: var(--chart); opacity: .12; stroke: none; }
 svg.chart .bar { fill: var(--chart); }
 svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 
@@ -328,3 +329,106 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .stack { display: grid; gap: 16px; align-content: start; }
 .stack > .card { margin-bottom: 0; }
 .row.picked { background: rgba(127, 127, 127, .12); border-radius: 8px; }
+
+/* header: the household picker lines up with the icon buttons */
+.top-actions { align-items: center; }
+.viewer { display: flex; align-items: center; margin: 0; }
+.viewer select { margin-top: 0; }
+
+/* net worth chart: one line for each figure, told apart by colour and by dash */
+:root { --c-assets: #0f766e; --c-liab: #c2410c; --c-inv: #7c3aed; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-assets: #2dd4bf; --c-liab: #fb923c; --c-inv: #a78bfa; } }
+:root[data-theme="dark"] { --c-assets: #2dd4bf; --c-liab: #fb923c; --c-inv: #a78bfa; }
+.s-net { --line: var(--chart); }
+.s-assets { --line: var(--c-assets); }
+.s-liab { --line: var(--c-liab); }
+.s-inv { --line: var(--c-inv); }
+svg.chart .line.s-net, svg .line.s-net { stroke: var(--line); stroke-width: 2.8; }
+svg.chart .line.s-assets, svg .line.s-assets { stroke: var(--line); stroke-width: 1.8; }
+svg.chart .line.s-liab, svg .line.s-liab { stroke: var(--line); stroke-width: 1.8; stroke-dasharray: 6 4; }
+svg.chart .line.s-inv, svg .line.s-inv { stroke: var(--line); stroke-width: 1.8; stroke-dasharray: 2 3; }
+svg .line { fill: none; stroke-linejoin: round; }
+svg.chart .area.s-net { fill: var(--line); }
+svg.chart .dot { stroke: var(--surface); stroke-width: 1.5; }
+svg.chart .dot.s-net { fill: var(--c-net, var(--chart)); }
+svg.chart .dot.s-assets { fill: var(--c-assets); }
+svg.chart .dot.s-liab { fill: var(--c-liab); }
+svg.chart .dot.s-inv { fill: var(--c-inv); }
+svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
+.nw-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.nw-chip { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.nw-chip[aria-pressed="false"] { opacity: .45; }
+.nw-chip .nw-label { font-size: .8rem; color: var(--muted); }
+.nw-chip .nw-value { grid-column: 1 / -1; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.nw-swatch .line { stroke: var(--line); }
+
+/* Money Management table */
+.money-table .small { font-size: .78rem; }
+.money-table .pill.nomargin { margin-left: 0; }
+.money-table .narrow-only .pill { margin-top: 3px; }
+.money-table tr.overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.money-table .col-due { white-space: nowrap; }
+.money-table th { white-space: normal; vertical-align: bottom; }
+.money-table .col-account { min-width: 190px; }
+.money-table .acct strong { white-space: nowrap; }
+.tiny-only { display: none; }
+@media (max-width: 760px) { .tiny-only { display: block; } .money-table .col-account { min-width: 0; } .money-table .acct strong { white-space: normal; } }
+
+/* net worth card: the range choice sits at the top right of the header */
+.nw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nw-head h3 { margin: 0; }
+.seg.compact button { padding: .2rem .6rem; font-size: .8rem; }
+@media (max-width: 760px) { .seg.compact button { padding: .15rem .5rem; font-size: .74rem; } }
+.nw-head { margin-bottom: 6px; }
+
+/* Money Management: a heading row per bank, then its cards */
+.money-table .bank-row td { padding: 14px 10px 6px; border-top: 0; background: transparent; }
+.money-table tr.bank-row:not(:first-child) td { border-top: 1px solid var(--border); padding-top: 18px; }
+.money-table .bank-heading { display: flex; align-items: center; gap: 10px; }
+.money-table .bank-heading .bank-logo { flex: none; }
+.money-table .bank-updated { margin-left: auto; font-size: .8rem; }
+.money-table td, .money-table th { padding-left: 8px; padding-right: 8px; }
+.money-table .col-account { min-width: 0; padding-left: 14px; }
+.money-table .acct strong { white-space: nowrap; }
+@media (max-width: 1400px) { .col-wide { display: none; } }
+.money-table th.num { white-space: normal; }
+.money-table td { white-space: nowrap; }
+.money-table .bank-heading { flex-wrap: wrap; }
+.money-table .bank-row td { white-space: normal; }
+@media (max-width: 760px) {
+  .money-table td, .money-table th { padding-left: 4px; padding-right: 4px; }
+  .money-table .col-account { padding-left: 8px; }
+  .money-table td { white-space: normal; font-size: .92rem; }
+  .money-table .col-account strong { white-space: normal; }
+  .money-table .bank-updated { margin-left: 0; flex-basis: 100%; }
+}
+
+/* Money Management: the bank is its own column, one cell spanning that bank's cards */
+.money-table td.shared { vertical-align: middle; border-right: 1px solid var(--border); }
+.money-table td.shared.muted { border-right: 0; border-left: 1px solid var(--border); }
+.money-table tr.bank-first td { border-top: 1px solid var(--border-strong); }
+.money-table tbody tr.bank-first:first-child td { border-top: 0; }
+.money-table .bank-cell { display: flex; align-items: center; gap: 8px; }
+.money-table .bank-cell .bank-logo { flex: none; }
+.money-table .col-bankname { padding-left: 14px; }
+@media (max-width: 760px) {
+  .money-table .bank-cell { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .money-table .bank-cell strong { font-size: .8rem; }
+  .money-table .col-bankname { padding-left: 8px; }
+}
+@media (max-width: 760px) {
+  .money-table .bank-cell strong { font-size: .64rem; overflow-wrap: normal; }
+  .money-table .col-bankname { min-width: 52px; }
+  .money-table .bank-cell .bank-logo { width: 24px; height: 24px; }
+  .money-table .col-due { width: 4.3rem; max-width: 4.3rem; white-space: normal; }
+  .money-table .col-account .pill { font-size: .66rem; padding: 1px 7px; }
+  .money-table .col-account strong { font-size: .88rem; }
+  .money-table .col-balance { font-size: .9rem; }
+}
+
+/* Settings: the groups are the top row; the pages inside a group are a quieter row of tabs under it */
+.tabs-sub { display: flex; gap: 2px; margin: -4px 0 14px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs-sub[hidden] { display: none; }
+.tabs-sub button { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: .5rem .9rem; color: var(--muted); white-space: nowrap; margin-bottom: -1px; }
+.tabs-sub button:hover { color: var(--text); }
+.tabs-sub button[aria-pressed="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 650; }

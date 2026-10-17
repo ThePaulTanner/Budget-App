@@ -132,6 +132,19 @@ class PlaidClient:
     def investments_holdings_get(self, access_token: str) -> dict[str, Any]:
         return self._post("/investments/holdings/get", {"access_token": access_token})
 
+    def investments_transactions_get(
+        self, access_token: str, start_date: str, end_date: str, offset: int = 0, count: int = 500
+    ) -> dict[str, Any]:
+        return self._post(
+            "/investments/transactions/get",
+            {
+                "access_token": access_token,
+                "start_date": start_date,
+                "end_date": end_date,
+                "options": {"count": count, "offset": offset},
+            },
+        )
+
     def liabilities_get(self, access_token: str) -> dict[str, Any]:
         return self._post("/liabilities/get", {"access_token": access_token})
 

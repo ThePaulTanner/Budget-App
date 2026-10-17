@@ -5,6 +5,7 @@ Every `/api/*` and `/auth/*` route except login and refresh needs a bearer token
 sign-in form: it can show nothing until you log in.
 """
 
+import logging
 import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -17,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, condecimal
 
+from . import backup as backup_module
 from . import merchants as merchants_mod
 from . import rules as rules_mod
 from .auth import AuthContext, AuthError
@@ -28,6 +30,9 @@ from .quotes import FRESH_SECONDS, LIVE_TYPES, PERIODS, Wanted, reference_prices
 from .rules import (
     EFFECTIVE_CATEGORY_SQL,
     PRIMARY_CATEGORIES,
+    all_primaries,
+    is_primary,
+    set_custom_primaries,
     is_excluded,
     normalize_category,
     parent_category,
@@ -123,6 +128,11 @@ class OwnersBody(BaseModel):
 
 class CategoryBody(BaseModel):
     category: str | None  # required, but may be null (reset to automatic)
+
+
+class NewCategoryBody(BaseModel):
+    name: str
+    parent: str | None = None
 
 
 class BudgetBody(BaseModel):
@@ -698,7 +708,7 @@ def create_api_app(services: Services) -> FastAPI:
                     "AND t.category_detailed = ?))"
                 )
                 params += [wanted, wanted]
-            elif wanted in PRIMARY_CATEGORIES:
+            elif is_primary(wanted):
                 # A top-level category includes everything in its sub-categories.
                 where.append(f"({EFFECTIVE_CATEGORY_SQL} = ? OR {EFFECTIVE_CATEGORY_SQL} LIKE ? ESCAPE '\\')")
                 params += [wanted, wanted.replace("_", "\\_") + "\\_%"]
@@ -751,6 +761,11 @@ def create_api_app(services: Services) -> FastAPI:
         )
         return tx_json(row)
 
+    def load_custom_primaries() -> None:
+        set_custom_primaries(r["code"] for r in db.query("SELECT code FROM custom_categories WHERE parent IS NULL"))
+
+    load_custom_primaries()
+
     @app.get("/api/categories")
     def categories(ctx: Auth):
         found: set[str] = set()
@@ -758,7 +773,76 @@ def create_api_app(services: Services) -> FastAPI:
             found.update(r[0] for r in db.query(f"SELECT DISTINCT {col} FROM transactions") if r[0])
         found.update(r[0] for r in db.query("SELECT category FROM budgets"))
         found.update(r[0] for r in db.query("SELECT category FROM rules"))
+        found.update(r[0] for r in db.query("SELECT code FROM custom_categories"))
         return sorted(found)
+
+    def custom_json(row: Any) -> dict[str, Any]:
+        code = row["code"]
+        return {
+            "code": code,
+            "parent": row["parent"],
+            "transactions": db.one(
+                f"SELECT count(*) AS n FROM transactions WHERE {EFFECTIVE_CATEGORY_SQL} = ?", (code,)
+            )["n"],
+            "budgets": db.one("SELECT count(*) AS n FROM budgets WHERE category = ?", (code,))["n"],
+            "rules": db.one("SELECT count(*) AS n FROM rules WHERE category = ?", (code,))["n"],
+        }
+
+    @app.get("/api/categories/custom")
+    def custom_categories(ctx: Auth):
+        """The categories and sub-categories you added, with how much uses each."""
+        rows = db.query("SELECT code, parent FROM custom_categories ORDER BY code")
+        return {"primaries": list(all_primaries()), "categories": [custom_json(r) for r in rows]}
+
+    @app.post("/api/categories", status_code=201)
+    def add_category(body: NewCategoryBody, ctx: Auth):
+        """Add a top-level category, or a sub-category when `parent` is given. A sub-category's
+        code is its parent's code, an underscore and its own name (FOOD_AND_DRINK_COFFEE)."""
+        try:
+            name = normalize_category(body.name)
+            parent = normalize_category(body.parent) if body.parent else None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        if parent is not None:
+            if not is_primary(parent):
+                raise HTTPException(400, "A sub-category goes under a top-level category.")
+            code = f"{parent}_{name}"
+        else:
+            code = name
+            for primary in all_primaries():
+                if code.startswith(primary + "_") or primary.startswith(code + "_"):
+                    raise HTTPException(
+                        400, f"That name overlaps the category {primary}. Add it as a sub-category instead."
+                    )
+        if len(code) > 60:
+            raise HTTPException(400, "That name is too long.")
+        if is_primary(code) or db.one("SELECT 1 FROM custom_categories WHERE code = ?", (code,)):
+            raise HTTPException(409, "That category already exists.")
+        if parent is None and db.one(
+            "SELECT 1 FROM custom_categories WHERE parent IS NOT NULL AND code LIKE ? ESCAPE '\\'",
+            (code.replace("_", "\\_") + "\\_%",),
+        ):
+            raise HTTPException(400, "That name overlaps a sub-category you already added.")
+        db.run("INSERT INTO custom_categories(code, parent, created_at) VALUES (?, ?, ?)", (code, parent, utcnow()))
+        load_custom_primaries()
+        return custom_json(db.one("SELECT code, parent FROM custom_categories WHERE code = ?", (code,)))
+
+    @app.delete("/api/categories/{code}", status_code=204)
+    def delete_category(code: str, ctx: Auth):
+        row = db.one("SELECT code, parent FROM custom_categories WHERE code = ?", (code,))
+        if not row:
+            raise HTTPException(404, "That is not a category you added.")
+        if db.one("SELECT 1 FROM custom_categories WHERE parent = ?", (code,)):
+            raise HTTPException(409, "Remove its sub-categories first.")
+        used = custom_json(row)
+        if used["transactions"] or used["budgets"] or used["rules"]:
+            raise HTTPException(
+                409,
+                f"In use by {used['transactions']} transaction(s), {used['budgets']} budget(s) and {used['rules']} rule(s). "
+                "Move them to another category first.",
+            )
+        db.run("DELETE FROM custom_categories WHERE code = ?", (code,))
+        load_custom_primaries()
 
     # -- spending and budgets ------------------------------------------------
 
@@ -1070,6 +1154,105 @@ def create_api_app(services: Services) -> FastAPI:
             },
             "holdings": out,
         }
+
+    @app.get("/api/investments/transactions")
+    def investment_transactions(
+        ctx: Auth,
+        account_id: str | None = None,
+        security_id: str | None = None,
+        type: str | None = None,  # noqa: A002 - the query parameter is called `type`
+        start: str | None = None,
+        end: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        person_id: int | None = None,
+    ):
+        """Buys, sells, dividends and fees, newest first. `amount` follows Plaid: positive is cash
+        leaving the account (a buy or a fee), negative is cash coming in (a sale or a dividend).
+        `quantity` is positive for a buy and negative for a sale."""
+        where, params = ["a.hidden = 0"], []
+        condition, scope_params = scope_sql(person_id, "it.account_id")
+        if condition:
+            where.append(condition)
+            params += scope_params
+        if account_id:
+            where.append("it.account_id = ?")
+            params.append(account_id)
+        if security_id:
+            where.append("it.security_id = ?")
+            params.append(security_id)
+        if type:
+            where.append("it.type = ?")
+            params.append(type.strip().lower())
+        if (s_ := parse_day(start, "start")) is not None:
+            where.append("it.date >= ?")
+            params.append(s_)
+        if (e_ := parse_day(end, "end")) is not None:
+            where.append("it.date <= ?")
+            params.append(e_)
+        clause = " AND ".join(where)
+        join = "FROM investment_transactions it JOIN accounts a ON a.id = it.account_id"
+        total = db.one(f"SELECT count(*) AS n {join} WHERE {clause}", params)["n"]
+        rows = db.query(
+            f"SELECT it.*, a.name AS account_name, a.mask AS account_mask {join} WHERE {clause} "
+            "ORDER BY it.date DESC, it.id LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        )
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "transactions": [
+                {
+                    "id": r["id"],
+                    "account_id": r["account_id"],
+                    "account_name": r["account_name"],
+                    "account_mask": r["account_mask"],
+                    "security_id": r["security_id"],
+                    "date": r["date"],
+                    "name": r["name"],
+                    "ticker": r["ticker"],
+                    "type": r["type"],
+                    "subtype": r["subtype"],
+                    "quantity": num(r["quantity"]),
+                    "price": num(r["price"]),
+                    "amount": num(r["amount"]),
+                    "fees": num(r["fees"]),
+                    "currency": r["currency"],
+                }
+                for r in rows
+            ],
+        }
+
+    # -- backups --------------------------------------------------------------
+
+    @app.get("/api/backups")
+    def backups(ctx: Auth):
+        """Copies of the database kept on the server, newest first. `last_daily` is when the timer
+        last took one (null if it never has)."""
+        found = backup_module.list_backups(db)
+        last = backup_module.last_daily(db)
+        return {
+            "keep": backup_module.KEEP,
+            "last_daily": last.isoformat(timespec="seconds").replace("+00:00", "Z") if last else None,
+            "backups": found,
+        }
+
+    @app.post("/api/backup", status_code=201)
+    def make_backup(ctx: Auth):
+        try:
+            return backup_module.create_backup(db, "manual")
+        except Exception:
+            logging.getLogger("homefinance.backup").exception("A manual backup failed")
+            raise HTTPException(500, "The backup could not be written. Check the free space on the NAS.") from None
+
+    @app.get("/api/backups/{name}")
+    def download_backup(name: str, ctx: Auth):
+        """One copy, as a file. It is encrypted: it opens only with your master key."""
+        path = backup_module.find_backup(db, name)
+        if path is None:
+            raise HTTPException(404, "backup not found")
+        return FileResponse(path, media_type="application/octet-stream", filename=name)
 
     @app.get("/api/networth")
     def networth(

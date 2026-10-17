@@ -196,7 +196,7 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 7
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 9
     assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
     assert "merchant_id" in [c[1] for c in db.query("PRAGMA table_info(transactions)")]
     assert db.query("SELECT * FROM merchants") == [] and db.query("SELECT * FROM merchant_aliases") == []

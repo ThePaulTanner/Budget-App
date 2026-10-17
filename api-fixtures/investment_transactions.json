@@ -1,0 +1,58 @@
+{
+  "total": 3,
+  "limit": 100,
+  "offset": 0,
+  "transactions": [
+    {
+      "id": "it_div",
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_veqt",
+      "date": "2026-09-30",
+      "name": "VEQT dividend",
+      "ticker": "VEQT",
+      "type": "cash",
+      "subtype": "dividend",
+      "quantity": 0.0,
+      "price": 0.0,
+      "amount": -120.5,
+      "fees": null,
+      "currency": "CAD"
+    },
+    {
+      "id": "it_buy",
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_veqt",
+      "date": "2026-09-15",
+      "name": "Buy VEQT",
+      "ticker": "VEQT",
+      "type": "buy",
+      "subtype": "buy",
+      "quantity": 100.0,
+      "price": 46.8,
+      "amount": 4680.0,
+      "fees": 0.0,
+      "currency": "CAD"
+    },
+    {
+      "id": "it_sell",
+      "account_id": "acc_tfsa",
+      "account_name": "TFSA",
+      "account_mask": "5555",
+      "security_id": "sec_veqt",
+      "date": "2026-08-20",
+      "name": "Sell VEQT",
+      "ticker": "VEQT",
+      "type": "sell",
+      "subtype": "sell",
+      "quantity": -20.0,
+      "price": 45.0,
+      "amount": -900.0,
+      "fees": 0.0,
+      "currency": "CAD"
+    }
+  ]
+}

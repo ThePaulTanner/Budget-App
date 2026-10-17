@@ -37,12 +37,30 @@ def normalize_category(raw: str) -> str:
     return value
 
 
+# Top-level categories the user added (the custom_categories table). Loaded when the app starts
+# and refreshed whenever one is added or removed.
+_custom_primaries: frozenset[str] = frozenset()
+
+
+def set_custom_primaries(codes: Any) -> None:
+    global _custom_primaries
+    _custom_primaries = frozenset(codes)
+
+
+def all_primaries() -> tuple[str, ...]:
+    return (*PRIMARY_CATEGORIES, *sorted(_custom_primaries))
+
+
+def is_primary(category: str | None) -> bool:
+    return category in PRIMARY_CATEGORIES or category in _custom_primaries
+
+
 def parent_category(category: str | None) -> str | None:
     """FOOD_AND_DRINK_FAST_FOOD -> FOOD_AND_DRINK. None when it is not a sub-category."""
     if not category:
         return None
     best = None
-    for primary in PRIMARY_CATEGORIES:
+    for primary in all_primaries():
         if category.startswith(primary + "_") and (best is None or len(primary) > len(best)):
             best = primary
     return best

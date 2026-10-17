@@ -100,7 +100,7 @@ Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet, sig
 
 ### 6. Use the web app
 
-Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and sign in with your password and authenticator code. It has five sections in the side panel: Overview (net worth, chart, top categories, and the credit card payments with their due dates), Accounts (every account in Investments, Cash, Credit and Loans tables with each bank's logo, balances, limits and owners), Spending (tabs for Transactions with search, filters, re-categorize and "always categorize" rules, Merchants, and Budgets), Money Management and Investments. The cog at the top right opens a small menu with **Settings** and **Sign out**. Settings has six tabs: Banks (link, reconnect, remove and sync now at the top right, and under each bank its accounts with who owns each and a Hide box that leaves it out of totals), People, Rules, Appearance (colour scheme, accent, density), Devices and Sign-in log; the circular arrow beside the name reloads the page's data and does not sync banks.
+Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and sign in with your password and authenticator code. It has five sections in the side panel: Overview (net worth, chart, top categories, and the credit card payments with their due dates), Accounts (every account in Investments, Cash, Credit and Loans tables with each bank's logo, balances, limits and owners), Spending (tabs for Transactions with search, filters, re-categorize and "always categorize" rules, Merchants, and Budgets), Money Management and Investments (live values with book value and gain, a page of each position's buys, sells and dividends with dates, and an Activity list). The cog at the top right opens a small menu with **Settings** and **Sign out**. Settings has three groups. **App data** has Banks (link, reconnect, remove and sync now at the top right, and under each bank its accounts with who owns each and a Hide box that leaves it out of totals), People, Categories (add your own categories and sub-categories, which then appear in every category picker, rule and budget; one can be removed once nothing uses it) and Rules. **Security** has Devices, Sign-in log and Backups (back up now, the daily copies, download one). **Appearance** has the colour scheme, accent and density; the circular arrow beside the name reloads the page's data and does not sync banks.
 
 **Layout and appearance.** On a computer there is a sidebar with the sections and a reload button beside the HomeFinance name, a top bar with the page title and the cog menu (Settings, Sign out), and a footer showing when your banks last synced. On a phone the sidebar becomes a bar of tabs along the bottom, like an app. In **Settings, Appearance** you can choose a colour scheme (System, Light or Dark), one of six accent colours, and Comfortable or Compact spacing. Those choices are saved in that browser only (a few harmless words in its local storage, nothing from your accounts), so a phone and a computer can look different. While the server is connected to Plaid's sandbox, a small "Sandbox" badge in the sidebar reminds you that the data is fake; with real banks there is no badge.
 
@@ -148,7 +148,17 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 
 - **Sign in from the app/web:** password + a fresh authenticator code. Devices are listed at `GET /auth/sessions` and can be revoked.
 - **Update:** pull the new image and recreate the project (Container Manager → Project → Build/Update).
-- **Backups:** back up the `data` folder (it is encrypted; safe to copy) **and, separately,** the master key.
+- **Backups:** the app copies its database to `data/backups` once a day, when you press **Back up now** (web app → Settings → Backups) and automatically just before it upgrades its database. The newest 14 daily, 10 manual and 5 pre-upgrade copies are kept. Copies are encrypted with the same key, so they are safe to leave on the NAS and to download, and useless without the master key. They live on the same disk as the database, so also back up the whole `data` folder (Hyper Backup) **and, separately,** the master key.
+- **Restore a backup:** stop the app, put the copy in place and start it again:
+  ```
+  cd /volume1/docker/homefinance
+  sudo docker compose stop
+  sudo mv data/homefinance.db data/homefinance.db.broken
+  sudo rm -f data/homefinance.db-wal data/homefinance.db-shm
+  sudo cp data/backups/homefinance-daily-YYYYMMDDTHHMMSSZ.db data/homefinance.db
+  sudo docker compose start
+  ```
+  A copy taken before an upgrade is in the older layout; start the older image with it, or let the new one upgrade it again.
 - **Lost the authenticator:** sign in with a recovery code.
 - **See who tried to sign in:** web app → Settings → Sign-in activity, or `docker exec -it homefinance python -m app.cli login-log`.
 - **Locked out after too many failed attempts:** `docker exec -it homefinance python -m app.cli unlock`. It takes effect at once, no restart.

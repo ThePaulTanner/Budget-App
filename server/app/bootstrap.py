@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .auth import AuthService
+from .backup import BackupScheduler
 from .config import Settings
 from .crypto import Keys, parse_master_key
 from .db import Database
@@ -22,6 +23,7 @@ class Services:
     auth: AuthService
     plaid: PlaidClient | None
     sync: SyncManager
+    backups: BackupScheduler
     quotes: QuoteService | None = None
 
 
@@ -47,5 +49,6 @@ def build_services(
         auth=AuthService(db, keys, max_failed_logins=settings.max_failed_logins),
         plaid=plaid,
         sync=SyncManager(db, keys, plaid, settings),
+        backups=BackupScheduler(db),
         quotes=quotes if quotes is not None else (QuoteService(YahooProvider()) if settings.live_quotes else None),
     )

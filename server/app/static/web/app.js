@@ -95,7 +95,9 @@
   const KNOWN_CATEGORIES = Object.keys(ICONS);
   // Plaid's top-level categories. A sub-category's code starts with its parent's, as in
   // FOOD_AND_DRINK_FAST_FOOD, so the parent can be found from the code alone.
-  const PRIMARIES = KNOWN_CATEGORIES.filter((c) => c !== "GROCERIES");
+  const BUILT_IN_PRIMARIES = KNOWN_CATEGORIES.filter((c) => c !== "GROCERIES");
+  let PRIMARIES = BUILT_IN_PRIMARIES;  // plus the top-level categories you added in Settings
+  let customCategories = [];           // [{code, parent, transactions, budgets, rules}]
   function parentOf(code) {
     let best = null;
     for (const p of PRIMARIES) if (code && code.startsWith(`${p}_`) && (!best || p.length > best.length)) best = p;
@@ -178,51 +180,105 @@
     return data;
   }
 
+  // A file download with the bearer token (a plain link cannot send it). Saves it under `filename`.
+  async function downloadFile(path, filename) {
+    if (!token || Date.now() >= tokenExpiry) { if (!(await renewOnce())) throw new SignedOut(); }
+    let response = await plainFetch(path, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120000) });
+    if (response.status === 401) {
+      if (!(await renewOnce())) throw new SignedOut();
+      response = await plainFetch(path, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120000) });
+    }
+    if (!response.ok) throw new HttpError(response.status, `Download failed (${response.status})`);
+    const url = URL.createObjectURL(await response.blob());
+    const link = el("a", { href: url, download: filename });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   // ---------------------------------------------------------------- charts
 
-  function lineChart(points, currency) {
+  // Net worth over time with a line each for assets, liabilities and investments. The key above the
+  // chart doubles as switches (at least one line stays on) and shows each figure for the day you point at.
+  const NW_SERIES = [["net_worth", "Net worth", "s-net"], ["assets", "Assets", "s-assets"], ["liabilities", "Liabilities", "s-liab"], ["investments", "Investments", "s-inv"]];
+  const nwHidden = new Set();
+  function netWorthChart(rows, currency) {
     const wrap = el("div");
-    if (points.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
-    const W = 640, H = 230, L = 62, R = 12, T = 12, B = 26;
-    const values = points.map((p) => p.value);
-    let lo = Math.min(...values), hi = Math.max(...values);
-    if (lo === hi) { lo -= 1; hi += 1; }
-    const pad = (hi - lo) * 0.08;
-    lo -= pad; hi += pad;
-    const x = (i) => L + (i / (points.length - 1)) * (W - L - R);
-    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    const chart = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Net worth over time" });
-    for (let i = 0; i <= 3; i++) {
-      const v = lo + ((hi - lo) * i) / 3;
-      chart.append(svg("line", { class: "gl", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
-      const label = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
-      label.textContent = money(v, currency, { notation: "compact", maximumFractionDigits: 1 });
-      chart.append(label);
-    }
-    const path = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-    chart.append(svg("path", { class: "area", d: `${path} L${x(points.length - 1)},${H - B} L${L},${H - B} Z` }));
-    chart.append(svg("path", { class: "line", d: path }));
-    for (const i of [0, Math.floor((points.length - 1) / 2), points.length - 1]) {
-      const label = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle" });
-      label.textContent = parseDay(points[i].date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
-      chart.append(label);
-    }
-    const marker = svg("circle", { r: 4, class: "bar", cx: x(points.length - 1), cy: y(points[points.length - 1].value) });
-    chart.append(marker);
+    if (rows.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
+    const W = 640, H = 240, L = 62, R = 12, T = 12, B = 26;
+    const x = (i) => L + (i / (rows.length - 1)) * (W - L - R);
+    const keyButtons = new Map();
     const caption = el("p", { class: "muted" });
-    const show = (i) => {
-      marker.setAttribute("cx", x(i));
-      marker.setAttribute("cy", y(points[i].value));
-      caption.textContent = `${dayLabel(points[i].date)}: ${money(points[i].value, currency)}`;
-    };
-    show(points.length - 1);
-    chart.addEventListener("pointermove", (event) => {
-      const box = chart.getBoundingClientRect();
-      const px = ((event.clientX - box.left) / box.width) * W;
-      show(Math.max(0, Math.min(points.length - 1, Math.round(((px - L) / (W - L - R)) * (points.length - 1)))));
-    });
-    chart.addEventListener("pointerleave", () => show(points.length - 1));
-    wrap.append(chart, caption);
+    const key = el("div", { class: "nw-key", role: "group", "aria-label": "Lines on the chart" });
+    for (const [field, label, cls] of NW_SERIES) {
+      const value = el("span", { class: "nw-value" });
+      const button = el("button", { type: "button", class: `nw-chip ${cls}`, "aria-pressed": String(!nwHidden.has(field)), title: `Show or hide ${label.toLowerCase()}`,
+        onclick: () => {
+          if (nwHidden.has(field)) nwHidden.delete(field);
+          else if (NW_SERIES.length - nwHidden.size > 1) nwHidden.add(field);
+          draw();
+        } },
+        svg("svg", { class: "nw-swatch", width: 22, height: 10, "aria-hidden": "true" }, svg("line", { x1: 1, x2: 21, y1: 5, y2: 5, class: `line ${cls}` })),
+        el("span", { class: "nw-label", text: label }), value);
+      keyButtons.set(field, { button, value });
+      key.append(button);
+    }
+    let chart = null;
+    let current = rows.length - 1;
+    function show(i) {
+      current = i;
+      for (const [field] of NW_SERIES) keyButtons.get(field).value.textContent = money(rows[i][field], currency);
+      caption.textContent = dayLabel(rows[i].date);
+      if (!chart) return;
+      for (const dot of chart.querySelectorAll("circle.dot")) {
+        dot.setAttribute("cx", x(i));
+        dot.setAttribute("cy", dot.dataset.field && chart._y(rows[i][dot.dataset.field]));
+      }
+    }
+    function draw() {
+      for (const [field] of NW_SERIES) keyButtons.get(field).button.setAttribute("aria-pressed", String(!nwHidden.has(field)));
+      const shown = NW_SERIES.filter(([field]) => !nwHidden.has(field));
+      const values = shown.flatMap(([field]) => rows.map((r) => r[field]));
+      let lo = Math.min(...values), hi = Math.max(...values);
+      if (lo === hi) { lo -= 1; hi += 1; }
+      const pad = (hi - lo) * 0.08;
+      lo -= pad; hi += pad;
+      const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+      const next = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Net worth, assets, liabilities and investments over time" });
+      next._y = y;
+      for (let i = 0; i <= 3; i++) {
+        const v = lo + ((hi - lo) * i) / 3;
+        next.append(svg("line", { class: "gl", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+        const label = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+        label.textContent = money(v, currency, { notation: "compact", maximumFractionDigits: 1 });
+        next.append(label);
+      }
+      if (lo < 0 && hi > 0) next.append(svg("line", { class: "gl zero", x1: L, x2: W - R, y1: y(0), y2: y(0) }));
+      for (const [field, , cls] of shown) {
+        const path = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[field]).toFixed(1)}`).join(" ");
+        if (field === "net_worth") next.append(svg("path", { class: `area ${cls}`, d: `${path} L${x(rows.length - 1)},${y(Math.max(lo, Math.min(0, hi)))} L${L},${y(Math.max(lo, Math.min(0, hi)))} Z` }));
+        next.append(svg("path", { class: `line ${cls}`, d: path }));
+      }
+      for (const i of [0, Math.floor((rows.length - 1) / 2), rows.length - 1]) {
+        const label = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === rows.length - 1 ? "end" : "middle" });
+        label.textContent = parseDay(rows[i].date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
+        next.append(label);
+      }
+      for (const [field, , cls] of shown) next.append(svg("circle", { r: 3.5, class: `dot ${cls}`, "data-field": field }));
+      next.addEventListener("pointermove", (event) => {
+        const box = next.getBoundingClientRect();
+        const px = ((event.clientX - box.left) / box.width) * W;
+        show(Math.max(0, Math.min(rows.length - 1, Math.round(((px - L) / (W - L - R)) * (rows.length - 1)))));
+      });
+      next.addEventListener("pointerleave", () => show(rows.length - 1));
+      if (chart) chart.replaceWith(next); else wrap.append(next);
+      chart = next;
+      show(current);
+    }
+    wrap.append(key);
+    draw();
+    wrap.append(caption);
     return wrap;
   }
 
@@ -375,6 +431,11 @@
   async function categoryChoices(extra = []) {
     let fromServer = [];
     try { fromServer = await api("/api/categories"); } catch (err) { if (err instanceof SignedOut) throw err; }
+    try {
+      const custom = await api("/api/categories/custom");
+      customCategories = custom.categories;
+      PRIMARIES = [...new Set([...BUILT_IN_PRIMARIES, ...custom.primaries])];
+    } catch (err) { if (err instanceof SignedOut) throw err; }
     return [...new Set([...KNOWN_CATEGORIES, ...fromServer, ...extra].filter(Boolean))].sort((a, b) => categoryLabel(a).localeCompare(categoryLabel(b)));
   }
 
@@ -511,24 +572,22 @@
     const drawChart = async () => {
       try {
         const rows = await api(scoped(`/api/networth?days=${nwDays}&currency=${encodeURIComponent(cur)}`));
-        if (id === navId) chartBox.replaceChildren(lineChart(rows.map((r) => ({ date: r.date, value: r.net_worth })), cur));
+        if (id === navId) // The last point is today's figures, the same ones shown above, so the two never disagree.
+        if (worth && rows.length) rows[rows.length - 1] = { ...rows[rows.length - 1], net_worth: worth.net_worth, assets: worth.assets, liabilities: worth.liabilities, investments: worth.investments };
+        chartBox.replaceChildren(netWorthChart(rows, cur));
       } catch (err) { if (err instanceof SignedOut) showLogin(); else chartBox.replaceChildren(el("p", { class: "error", text: err.message })); }
     };
     const ranges = [["1M", 30], ["3M", 90], ["1Y", 365], ["All", 3650]];
-    const seg = el("div", { class: "seg", role: "group", "aria-label": "Chart range" });
+    const seg = el("div", { class: "seg compact", role: "group", "aria-label": "Chart range" });
     const paint = () => seg.replaceChildren(...ranges.map(([label, days]) =>
       el("button", { type: "button", "aria-pressed": String(days === nwDays), text: label, onclick: () => { nwDays = days; paint(); drawChart(); } })));
     paint();
 
     const netCard = el("section", { class: "card" },
-      el("h3", { text: "Net worth" }),
+      el("div", { class: "nw-head" }, el("h3", { text: "Net worth" }), seg),
       el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) }),
-      worth && el("p", { class: "muted", text: `Assets ${money(worth.assets, cur)} · Liabilities ${money(worth.liabilities, cur)} · Investments ${money(worth.investments, cur)}` }),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
-      el("div", { class: "toolbar" }, seg),
-      chartBox,
-      el("p", { class: "muted", text: `Last synced ${ago(summary.last_synced_at)}. Pull new bank data from Settings.` }),
-      el("p", {}, el("a", { href: "#/accounts", text: "See every account and its balance" })));
+      chartBox);
 
     const budgeted = summary.budgeted_this_month;
     const pct = budgeted > 0 ? (summary.spent_this_month / budgeted) * 100 : 0;
@@ -849,8 +908,70 @@
     return { text: `${sign}${money(Math.abs(change.amount), currency)}${percent}`, cls: change.amount > 0 ? "income" : change.amount < 0 ? "neg" : "muted" };
   }
 
+  // ---- Investment activity: buys, sells, dividends and fees with their dates ---------------------
+  const INV_LABELS = { buy: "Bought", sell: "Sold", fee: "Fee", transfer: "Transfer", cancel: "Cancelled" };
+  const invLabel = (t) => INV_LABELS[t.type] || (t.subtype && t.subtype !== "other" ? titleCase(t.subtype) : titleCase(t.type));
+  function investmentRow(t, showAccount) {
+    const amount = signed(t.amount, t.currency);
+    const detail = t.quantity && t.price ? `${Math.abs(t.quantity)} @ ${money(t.price, t.currency)}${t.fees ? ` \u00B7 fee ${money(t.fees, t.currency)}` : ""}` : null;
+    return el("div", { class: "row" },
+      el("div", { class: "grow" },
+        el("div", {}, el("strong", { text: invLabel(t) }), t.ticker && el("span", { class: "muted", text: `  ${t.ticker}` })),
+        el("div", { class: "muted", text: [shortDate(t.date), showAccount && `${t.account_name}${t.account_mask ? ` \u2022\u2022${t.account_mask}` : ""}`, detail].filter(Boolean).join(" \u00B7 ") })),
+      el("div", { class: `amount ${amount.cls}`, text: amount.text }));
+  }
+  // A list that loads 50 at a time with a "Show more" button. `query` is the extra URL parameters.
+  function investmentActivity(query, showAccount, id) {
+    const list = el("div");
+    const status = el("p", { class: "empty" });
+    const more = el("button", { type: "button", text: "Show more", hidden: true });
+    let offset = 0;
+    async function load(reset) {
+      if (reset) { offset = 0; list.replaceChildren(); }
+      status.textContent = "Loading\u2026"; more.hidden = true;
+      try {
+        const q = new URLSearchParams({ limit: "50", offset: String(offset), ...query() });
+        if (viewer != null) q.set("person_id", String(viewer));
+        const page = await api(`/api/investments/transactions?${q}`);
+        if (id !== navId) return;
+        offset += page.transactions.length;
+        list.append(...page.transactions.map((t) => investmentRow(t, showAccount)));
+        status.textContent = page.total === 0 ? "No activity yet. Your bank may not share it, or it arrives with the next sync." : "";
+        more.hidden = offset >= page.total;
+      } catch (err) { if (err instanceof SignedOut) showLogin(); else status.textContent = err.message; }
+    }
+    more.addEventListener("click", () => load(false));
+    return { node: el("div", {}, list, status, more), load };
+  }
+
   async function viewInvestments(id) {
     let timer = null;
+    let activityCard = null;  // built on the first paint and kept across the once-a-minute refresh
+    const bookOf = (list, cur) => {
+      const mine = list.filter((h) => h.currency === cur);
+      const known = mine.filter((h) => h.cost_basis != null);
+      const book = known.reduce((sum, h) => sum + h.cost_basis, 0);
+      const value = known.reduce((sum, h) => sum + (h.value || 0), 0);
+      return { book, gain: value - book, pct: book > 0 ? ((value - book) / book) * 100 : null, missing: mine.length - known.length, known: known.length };
+    };
+    const gainText = (gain, pct, cur) => `${gain > 0 ? "+" : gain < 0 ? MINUS : ""}${money(Math.abs(gain), cur)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}`;
+    function openPosition(h) {
+      const history = investmentActivity(() => ({ account_id: h.account_id, security_id: h.security_id }), false, id);
+      const avg = h.cost_basis != null && h.quantity > 0 ? h.cost_basis / h.quantity : null;
+      openSheet(
+        el("h2", { text: h.ticker || h.name }),
+        h.ticker && el("p", { class: "muted", text: h.name }),
+        el("div", { class: "row" }, el("div", { class: "grow", text: "Quantity" }), el("div", { class: "amount", text: String(h.quantity) })),
+        el("div", { class: "row" }, el("div", { class: "grow", text: "Book value" }), el("div", { class: "amount", text: h.cost_basis != null ? money(h.cost_basis, h.currency) : "Not reported by your bank" })),
+        avg != null && el("div", { class: "row" }, el("div", { class: "grow", text: "Average cost per unit" }), el("div", { class: "amount", text: money(avg, h.currency) })),
+        el("div", { class: "row" }, el("div", { class: "grow", text: "Value" }), el("div", { class: "amount", text: h.value != null ? money(h.value, h.currency) : "\u2014" })),
+        h.gain != null && el("div", { class: "row" }, el("div", { class: "grow", text: "Gain" }),
+          el("div", { class: `amount ${h.gain > 0 ? "income" : h.gain < 0 ? "neg" : ""}`, text: gainText(h.gain, h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null, h.currency) })),
+        el("h3", { text: "Buys, sells and dividends" }),
+        history.node,
+        el("div", { class: "actions" }, el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
+      history.load(true);
+    }
     const paint = (data) => {
       const totals = Object.entries(data.totals);
       const status = data.status;
@@ -871,7 +992,11 @@
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
           : totals.map(([cur, t]) => {
             const c = changeText(t.changes[invPeriod], cur);
+            const b = bookOf(data.holdings, cur);
             return el("div", {}, el("div", { class: "big" }, money(t.value, cur), el("span", { class: "muted", text: `  ${cur}` })),
+              b.known > 0 && el("div", { class: "muted" }, `Book value ${money(b.book, cur)} \u00B7 `,
+                el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: `All time ${gainText(b.gain, b.pct, cur)}` }),
+                b.missing > 0 && ` \u00B7 ${b.missing} position${b.missing === 1 ? " has" : "s have"} no book value from the bank`),
               c ? el("div", { class: c.cls }, el("strong", { text: c.text }), el("span", { class: "muted", text: `  ${PERIOD_HELP[invPeriod]}` }))
                 : el("div", { class: "muted", text: "No change available for this period yet." }));
           }),
@@ -886,20 +1011,41 @@
         byAccount.get(key).push(h);
       }
       const cards = [...byAccount].map(([name, holdings]) => el("section", { class: "card" }, el("h2", { text: name }),
+        [...new Set(holdings.map((h) => h.currency))].map((cur) => {
+          const b = bookOf(holdings, cur);
+          const v = holdings.filter((h) => h.currency === cur).reduce((sum, h) => sum + (h.value || 0), 0);
+          return el("p", { class: "muted" }, `Value ${money(v, cur)}`, b.known > 0 && ` \u00B7 Book value ${money(b.book, cur)} \u00B7 `,
+            b.known > 0 && el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }));
+        }),
         holdings.map((h) => {
           const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
           const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
           const c = changeText(h.changes[invPeriod], h.currency);
           const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price");
-          return el("div", { class: "row" },
+          return el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => openPosition(h),
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },
               el("strong", { text: h.ticker || h.name }), h.live && h.market_open && el("span", { class: "badge", text: "Live" }),
               el("div", { class: "muted", text: `${h.ticker ? h.name + " \u00B7 " : ""}${h.quantity} @ ${h.price != null ? money(h.price, h.currency) : "\u2014"} (${priceNote})` })),
             el("div", { class: "amount" }, h.value != null ? money(h.value, h.currency) : "\u2014",
               c && el("div", { class: c.cls, text: c.text }),
+              h.cost_basis != null && el("div", { class: "muted", text: `Book value ${money(h.cost_basis, h.currency)}` }),
               h.gain != null && el("div", { class: `muted ${gainCls}`, text: `All time ${h.gain > 0 ? "+" : h.gain < 0 ? MINUS : ""}${money(Math.abs(h.gain), h.currency)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}` })));
         })));
-      view().replaceChildren(viewerNote(), head, ...cards);
+      if (!activityCard && data.holdings.length > 0) {
+        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`]))];
+        const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }), accounts.map(([v, t]) => el("option", { value: v, text: t })));
+        const typeSel = el("select", { "aria-label": "Type" }, el("option", { value: "", text: "Everything" }),
+          [["buy", "Buys"], ["sell", "Sells"], ["cash", "Dividends and cash"], ["fee", "Fees"], ["transfer", "Transfers"]].map(([v, t]) => el("option", { value: v, text: t })));
+        const activity = investmentActivity(() => Object.fromEntries([["account_id", accountSel.value], ["type", typeSel.value]].filter(([, v]) => v)), true, id);
+        accountSel.addEventListener("change", () => activity.load(true));
+        typeSel.addEventListener("change", () => activity.load(true));
+        activityCard = el("section", { class: "card" }, el("h2", { text: "Activity" }),
+          el("p", { class: "muted", text: "Buys, sells, dividends and fees with their dates, as your bank reports them (about the last two years). Click a position above to see just its history." }),
+          el("div", { class: "toolbar" }, accountSel, typeSel), activity.node);
+        activity.load(true);
+      }
+      view().replaceChildren(viewerNote(), head, ...cards, activityCard);
     };
 
     const load = async () => paint(await api(scoped("/api/holdings/live"), { timeout: 40000 }));
@@ -932,45 +1078,65 @@
   }
 
   async function viewMoney(id) {
-    const data = await api(scoped("/api/payments-due"));
+    const [data, items, accounts] = await Promise.all([api(scoped("/api/payments-due")), api("/api/items").catch(() => []), api(scoped("/api/accounts")).catch(() => [])]);
     if (id !== navId) return;
-    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
-    const unpaid = data.cards.filter((c) => c.status !== "paid" && c.status !== "nothing_owed" && c.due_date);
-    const next = unpaid.slice().sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    const itemOfAccount = new Map(accounts.map((a) => [a.id, a.item_id]));
+    const empty = data.cards.length === 0
+      ? el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
+        el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." }))
+      : null;
 
-    const summary = el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
-      data.cards.length === 0
-        ? el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." })
-        : [
-          Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
-            stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
-            stat("Minimum payments", money(t.minimum_due, cur)),
-            stat("Total owed on cards", money(t.owed, cur)))),
-          next && el("p", { text: `Next payment: ${next.institution} ${next.name}${next.mask ? ` \u2022\u2022${next.mask}` : ""}. ${dueText(next)}` }),
-          !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances below are still current." }),
-          el("p", { class: "muted", text: "Information only. HomeFinance cannot move money, so pay your cards at your bank." }),
-        ]);
-
-    const rows = data.cards.map((c) => {
-      const [label, tone] = DUE_PILLS[c.status];
-      const cur = c.currency;
-      return el("section", { class: `card due ${c.status}` },
-        el("div", { class: "row" },
-          el("div", { class: "grow" },
-            el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
-              el("span", { class: `pill ${tone}`, text: label })),
-            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
-          el("div", { class: "amount" },
-            el("div", { class: "big small", text: money(c.statement_balance ?? c.current_balance, cur) }),
-            el("div", { class: "muted", text: c.statement_balance == null ? "balance" : "statement balance" }))),
-        el("div", { class: "stats" },
-          stat("Minimum payment", c.minimum_payment == null ? "\u2014" : money(c.minimum_payment, cur)),
-          stat("Balance now", money(c.current_balance, cur)),
-          stat("Available credit", c.available_credit == null ? "\u2014" : money(c.available_credit, cur)),
-          stat("Last payment", c.last_payment_amount == null ? "\u2014" : `${money(c.last_payment_amount, cur)}${c.last_payment_date ? ` on ${shortDate(c.last_payment_date)}` : ""}`)),
-        c.dues_known && el("p", { class: "muted", text: `${c.statement_date ? `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""} ` : ""}Bank data updated ${ago(c.dues_updated_at)}.` }));
-    });
-    view().replaceChildren(viewerNote(), summary, ...rows);
+    // One table. Each bank gets a heading row, so the bank is shown once for all its cards, and every
+    // column holds a single kind of figure. The less important columns drop away on narrower screens.
+    const dueRelative = (c) => (c.days_until_due === 0 ? "today" : c.days_until_due > 0 ? `in ${c.days_until_due} day${c.days_until_due === 1 ? "" : "s"}` : `${-c.days_until_due} day${c.days_until_due === -1 ? "" : "s"} ago`);
+    const dash = () => el("span", { class: "muted", text: "\u2014" });
+    const headers = [["Bank", "col-bankname"], ["Card", "col-account"], ["Status", "col-bank"], ["Due date", "col-due"], ["Due in", "col-extra col-wide"],
+      ["Statement balance", "num col-balance"], ["Minimum", "num col-extra"], ["Balance now", "num col-extra"],
+      ["Available credit", "num col-extra col-wide"], ["Last payment", "num col-extra col-wide"], ["Paid on", "col-extra col-wide"],
+      ["Bank data updated", "col-extra col-wide"]];
+    const bankKey = (c) => itemOfAccount.get(c.account_id) || c.institution || "";
+    const banks = new Map();
+    for (const c of data.cards) {
+      if (!banks.has(bankKey(c))) banks.set(bankKey(c), []);
+      banks.get(bankKey(c)).push(c);
+    }
+    // The bank, and when its data was last refreshed, are shared by all its cards: each is one cell
+    // spanning the bank's rows, so it is shown once.
+    const body = [];
+    for (const [key, cards] of banks) {
+      const item = itemsById.get(key);
+      const name = cards[0].institution || (item && item.institution) || "Bank";
+      const stamp = cards.filter((c) => c.dues_known && c.dues_updated_at).map((c) => c.dues_updated_at).sort().pop();
+      cards.forEach((c, index) => {
+        const [label, tone] = DUE_PILLS[c.status];
+        const cur = c.currency;
+        const settled = c.status === "paid" || c.status === "nothing_owed";
+        const bad = c.status === "overdue" ? "neg" : "";
+        body.push(el("tr", { class: `${c.status === "overdue" ? "overdue" : ""}${index === 0 ? " bank-first" : ""}` },
+          index === 0 && el("td", { class: "col-bankname shared", rowspan: cards.length },
+            el("div", { class: "bank-cell" }, bankLogo(item, name, 28), el("strong", { text: name }))),
+          el("td", { class: "col-account" }, el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+            el("div", { class: "narrow-only" }, el("span", { class: `pill nomargin ${tone}`, text: label }))),
+          el("td", { class: "col-bank" }, el("span", { class: `pill nomargin ${tone}`, text: label })),
+          el("td", { class: `col-due ${bad}` }, c.due_date ? shortDate(c.due_date) : dash()),
+          el("td", { class: `col-extra col-wide ${bad}` }, c.due_date && !settled ? dueRelative(c) : dash()),
+          el("td", { class: "num col-balance" }, c.statement_balance == null ? dash() : money(c.statement_balance, cur)),
+          el("td", { class: "num col-extra" }, c.minimum_payment == null ? dash() : money(c.minimum_payment, cur)),
+          el("td", { class: "num col-extra" }, money(c.current_balance, cur)),
+          el("td", { class: "num col-extra col-wide" }, c.available_credit == null ? dash() : money(c.available_credit, cur)),
+          el("td", { class: "num col-extra col-wide" }, c.last_payment_amount == null ? dash() : money(c.last_payment_amount, cur)),
+          el("td", { class: "col-extra col-wide" }, c.last_payment_date ? shortDate(c.last_payment_date) : dash()),
+          index === 0 && el("td", { class: "col-extra col-wide shared muted", rowspan: cards.length, text: stamp ? ago(stamp) : "\u2014" })));
+      });
+    }
+    const rows = data.cards.length === 0 ? [] : [el("section", { class: "card acct-section" },
+      el("div", { class: "table-wrap" }, el("table", { class: "acct-table money-table" },
+        el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
+        el("tbody", {}, body))),
+      el("p", { class: "muted", text: "Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed." }),
+      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances here are still current." }))];
+    view().replaceChildren(viewerNote(), ...(empty ? [empty] : []), ...rows);
   }
 
   const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
@@ -1291,13 +1457,21 @@
     return card;
   }
 
-  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
+  const SETTINGS_GROUPS = [
+    ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
+    ["security", "Security", [["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
+    ["look", "Appearance", [["appearance", "Appearance"]]],
+  ];
+  const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, , tabs]) => tabs);
+  const groupOf = (tab) => SETTINGS_GROUPS.find(([, , tabs]) => tabs.some(([key]) => key === tab)) || SETTINGS_GROUPS[0];
   let settingsTab = "banks";
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log] = await Promise.all([
-      api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
+    const [items, sessions, rules, accounts, choices, log, backups] = await Promise.all([
+      api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
+      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} }))]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -1470,6 +1644,79 @@
         } }))),
       el("div", { class: "toolbar" }, newName, el("button", { type: "button", class: "primary", text: "Add person", onclick: addPerson })));
 
+    // ---- Categories: the built-in ones plus the ones you add, each with its sub-categories.
+    const mine = new Map(customCategories.map((c) => [c.code, c]));
+    const byLabel = (a, b) => categoryLabel(a).localeCompare(categoryLabel(b));
+    const addCategoryName = el("input", { placeholder: "New category, e.g. Pets", maxlength: 50, "aria-label": "New category name" });
+    const subParent = el("select", { "aria-label": "Parent category" },
+      [...PRIMARIES].sort(byLabel).map((c) => el("option", { value: c, text: categoryLabel(c) })));
+    const addSubName = el("input", { placeholder: "New sub-category, e.g. Coffee", maxlength: 50, "aria-label": "New sub-category name" });
+    async function addCategory(name, parent, field) {
+      if (!name.trim()) { toast("Type a name first.", true); return; }
+      try {
+        await api("/api/categories", { method: "POST", body: parent ? { name, parent } : { name } });
+        toast("Category added."); field.value = ""; reload();
+      } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    }
+    async function removeCategory(code) {
+      if (!(await confirmBox({ title: `Remove ${categoryLabel(code)}?`,
+        intro: "It is only removed from the list of categories you can choose. It can't be removed while transactions, budgets or rules still use it.",
+        confirmText: "Remove category", cancelText: "Keep it", danger: true }))) return;
+      try { await api(`/api/categories/${encodeURIComponent(code)}`, { method: "DELETE" }); toast("Category removed."); reload(); }
+      catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    }
+    const usage = (c) => { const bits = [c.transactions && `${c.transactions} transaction${c.transactions === 1 ? "" : "s"}`, c.budgets && `${c.budgets} budget${c.budgets === 1 ? "" : "s"}`, c.rules && `${c.rules} rule${c.rules === 1 ? "" : "s"}`].filter(Boolean); return bits.length ? bits.join(", ") : "Not used yet"; };
+    const categoryRows = [];
+    for (const top of [...PRIMARIES].sort(byLabel)) {
+      const own = mine.get(top);
+      categoryRows.push(el("div", { class: "row" },
+        el("div", { class: "icon", text: icon(top), "aria-hidden": "true" }),
+        el("div", { class: "grow" }, el("strong", { text: categoryLabel(top) }), el("span", { class: "badge", text: own ? "Yours" : "Built in" }),
+          own && el("div", { class: "muted", text: usage(own) })),
+        own && el("button", { type: "button", class: "danger", text: "Remove", "aria-label": `Remove ${categoryLabel(top)}`, onclick: () => removeCategory(top) })));
+      for (const sub of choices.filter((c) => parentOf(c) === top).sort(byLabel)) {
+        const subOwn = mine.get(sub);
+        categoryRows.push(el("div", { class: "row sub" },
+          el("div", { class: "grow" }, el("span", { text: subLabel(sub) }), subOwn && el("span", { class: "badge", text: "Yours" }),
+            subOwn && el("div", { class: "muted", text: usage(subOwn) })),
+          subOwn && el("button", { type: "button", class: "danger", text: "Remove", "aria-label": `Remove ${categoryLabel(sub)}`, onclick: () => removeCategory(sub) })));
+      }
+    }
+    const categoriesCard = el("section", { class: "card" }, el("h2", { text: "Categories" }),
+      el("p", { class: "muted", text: "Add your own categories and sub-categories. They appear wherever you choose a category: on a transaction, in a rule and in a budget. Spending in a sub-category counts in its category once, so totals are never doubled." }),
+      el("h3", { text: "Add a category" }),
+      el("div", { class: "toolbar" }, addCategoryName, el("button", { type: "button", class: "primary", text: "Add category", onclick: () => addCategory(addCategoryName.value, null, addCategoryName) })),
+      el("h3", { text: "Add a sub-category" }),
+      el("div", { class: "toolbar" }, subParent, addSubName, el("button", { type: "button", class: "primary", text: "Add sub-category", onclick: () => addCategory(addSubName.value, subParent.value, addSubName) })),
+      el("h3", { text: "All categories" }),
+      categoryRows);
+
+    // ---- Backups: copies of the encrypted database, kept on the NAS next to it.
+    const BACKUP_KINDS = { daily: "Daily", manual: "Manual", upgrade: "Before an upgrade" };
+    const sizeText = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+    const backupButton = el("button", { type: "button", class: "primary", text: "Back up now", onclick: async () => {
+      backupButton.disabled = true; backupButton.textContent = "Backing up\u2026";
+      try { await api("/api/backup", { method: "POST", timeout: 120000 }); toast("Backup saved."); reload(); }
+      catch (err) { backupButton.disabled = false; backupButton.textContent = "Back up now"; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    } });
+    const backupsCard = el("section", { class: "card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Backups" }), backupButton),
+      el("p", { class: "muted", text: backups.last_daily
+        ? `A copy is taken automatically every day. The last one was ${ago(backups.last_daily)}.`
+        : "A copy is taken automatically every day. None has been taken yet." }),
+      el("p", { class: "muted", text: `The newest ${backups.keep.daily || 14} daily copies and ${backups.keep.manual || 10} manual ones are kept. A copy is also taken just before the app upgrades its database.` }),
+      backups.backups.length === 0 && el("p", { class: "empty", text: "No backups yet. Press Back up now." }),
+      backups.backups.map((b) => el("div", { class: "row" },
+        el("div", { class: "grow" }, el("strong", { text: BACKUP_KINDS[b.kind] || b.kind }),
+          el("div", { class: "muted", text: `${new Date(b.created_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })} \u00B7 ${sizeText(b.size_bytes)}` })),
+        el("button", { type: "button", text: "Download", onclick: async (e) => {
+          e.target.disabled = true;
+          try { await downloadFile(`/api/backups/${encodeURIComponent(b.name)}`, b.name); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+          finally { e.target.disabled = false; }
+        } }))),
+      el("p", { class: "muted", text: "Copies are encrypted with your master key and saved in the backups folder inside your data folder. They stay on the NAS, so a disk failure would take them too: download one now and then and keep it somewhere else, along with your master key (a copy is useless without it)." }));
+
     const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
       log.locked
         ? el("p", { class: "error", role: "alert", text: "Sign-in is locked. Unlock it from the NAS: docker exec -it homefinance python -m app.cli unlock" })
@@ -1483,13 +1730,19 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
-    const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
-      SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
-        onclick: () => { settingsTab = key; show(); } })));
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], backups: [backupsCard], log: [activity] };
+    const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
+    const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
+    const tabBar = el("div", { class: "tabs-sub", role: "group", "aria-label": "Settings pages" });
+    const choose = (tab) => { settingsTab = tab; show(); };
     function show() {
-      for (const [i, [key]] of SETTINGS_TABS.entries()) tabs.children[i].setAttribute("aria-pressed", String(key === settingsTab));
-      view().replaceChildren(el("div", { class: "toolbar" }, tabs), ...sections[settingsTab]);
+      const [groupKey, , groupTabs] = groupOf(settingsTab);
+      lastTab[groupKey] = settingsTab;
+      groupBar.replaceChildren(...SETTINGS_GROUPS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === groupKey), text: label,
+        onclick: () => choose(lastTab[key]) })));
+      tabBar.replaceChildren(...groupTabs.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label, onclick: () => choose(key) })));
+      tabBar.hidden = groupTabs.length < 2;
+      view().replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar, ...sections[settingsTab]);
     }
     show();
   }
@@ -1526,7 +1779,7 @@
     spending: ["Spending", "Transactions, merchants and budgets"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
-    settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
+    settings: ["Settings", "App data, security and appearance"],
   };
   const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 

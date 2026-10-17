@@ -267,6 +267,82 @@ def sync_holdings(db: Database, plaid: PlaidClient, token: str, item_id: str, ba
     return count, True
 
 
+# -- investment transactions --------------------------------------------------
+
+FIRST_INVESTMENT_DAYS = 730  # Plaid keeps about two years
+RECENT_INVESTMENT_DAYS = 60  # later syncs only look back this far (they re-read, so edits are caught)
+INVESTMENT_PAGE = 500
+
+
+def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, item_id: str, base: str) -> int:
+    """Buys, sells, dividends and fees with their dates. Best effort, like the due dates: a bank
+    that cannot give them (or is not ready yet) must not fail the whole sync. Returns rows stored."""
+    from datetime import date, timedelta
+
+    account_ids = {r["id"] for r in db.query("SELECT id FROM accounts WHERE item_id=?", (item_id,))}
+    if not account_ids:
+        return 0
+    marks = ",".join("?" * len(account_ids))
+    have = db.one(f"SELECT count(*) AS n FROM investment_transactions WHERE account_id IN ({marks})", list(account_ids))["n"]
+    today = date.fromisoformat(today_str())
+    start = today - timedelta(days=RECENT_INVESTMENT_DAYS if have else FIRST_INVESTMENT_DAYS)
+    stored = 0
+    offset = 0
+    seen: set[str] = set()
+    try:
+        while True:
+            data = plaid.investments_transactions_get(token, start.isoformat(), today.isoformat(), offset, INVESTMENT_PAGE)
+            securities = {s["security_id"]: s for s in data.get("securities", [])}
+            rows = data.get("investment_transactions", [])
+            now = utcnow()
+            with db.transaction():
+                for t in rows:
+                    if t.get("account_id") not in account_ids:
+                        continue
+                    sec = securities.get(t.get("security_id"), {})
+                    db.run(
+                        "INSERT OR REPLACE INTO investment_transactions(id, account_id, security_id, date, name, "
+                        "ticker, type, subtype, quantity, price, amount, fees, currency, updated_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            t["investment_transaction_id"],
+                            t["account_id"],
+                            t.get("security_id"),
+                            t["date"],
+                            t.get("name") or sec.get("name") or "Investment activity",
+                            sec.get("ticker_symbol"),
+                            t.get("type") or "other",
+                            t.get("subtype"),
+                            as_text(to_dec(t.get("quantity"))),
+                            as_text(to_dec(t.get("price"))),
+                            as_text(to_dec(t.get("amount"))) or "0",
+                            as_text(to_dec(t.get("fees"))),
+                            _currency(t, base),
+                            now,
+                        ),
+                    )
+                    seen.add(t["investment_transaction_id"])
+                    stored += 1
+            offset += len(rows)
+            if not rows or offset >= int(data.get("total_investment_transactions") or 0):
+                break
+        # Everything Plaid still reports in the window has been stored. Anything else it held there
+        # was removed or re-issued under a new id, so drop it rather than show a duplicate. An empty
+        # answer is more likely a hiccup than "everything was removed", so it prunes nothing.
+        with db.transaction():
+            for row in db.query(
+                f"SELECT id FROM investment_transactions WHERE account_id IN ({marks}) AND date >= ?",
+                [*account_ids, start.isoformat()],
+            ) if seen else []:
+                if row["id"] not in seen:
+                    db.run("DELETE FROM investment_transactions WHERE id=?", (row["id"],))
+    except PlaidError as exc:
+        log.info("No investment transactions for item %s: %s", item_id, exc.error_code)
+    except Exception:
+        log.exception("Could not store investment transactions for item %s", item_id)
+    return stored
+
+
 # -- credit card due dates ---------------------------------------------------
 
 
@@ -400,6 +476,8 @@ def sync_item(
         sync_accounts(db, plaid, token, item["id"], base)
         result["transactions_changed"] = sync_transactions(db, plaid, token, item, base)
         result["holdings"], has_investments = sync_holdings(db, plaid, token, item["id"], base)
+        if has_investments:
+            sync_investment_transactions(db, plaid, token, item["id"], base)
         sync_liabilities(db, plaid, token, item["id"])
         db.run(
             "UPDATE items SET last_synced_at=?, error_code=NULL, needs_reauth=0, "

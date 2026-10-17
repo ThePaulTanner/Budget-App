@@ -71,6 +71,8 @@ class FakePlaid:
         self.pages = []  # transactions/sync responses, returned in order
         self.holdings = {"accounts": [], "holdings": [], "securities": []}
         self.liabilities = {"liabilities": {"credit": []}}
+        self.investment_txns = {"investment_transactions": [], "securities": [], "total_investment_transactions": 0}
+        self.investment_calls: list[dict] = []
         self.errors: dict[str, PlaidError] = {}
         self.calls: list[str] = []
         self.removed: list[str] = []
@@ -94,6 +96,13 @@ class FakePlaid:
     def investments_holdings_get(self, token):
         self._check("investments_holdings_get")
         return self.holdings
+
+    def investments_transactions_get(self, token, start_date, end_date, offset=0, count=500):
+        self._check("investments_transactions_get")
+        self.investment_calls.append({"start": start_date, "end": end_date, "offset": offset})
+        rows = self.investment_txns["investment_transactions"]
+        return {**self.investment_txns, "investment_transactions": rows[offset:offset + count],
+                "total_investment_transactions": len(rows)}
 
     def liabilities_get(self, token):
         self._check("liabilities_get")
@@ -251,6 +260,17 @@ def seed_fixture_data(services) -> None:
     for b in fixture("budgets.json")["budgets"]:
         db.run("INSERT INTO budgets(category, monthly_limit) VALUES (?,?)",
                (b["category"], str(b["monthly_limit"])))
+    for row in (
+        ("it_div", "2026-09-30", "VEQT dividend", "VEQT", "cash", "dividend", "0", "0", "-120.5", None),
+        ("it_buy", "2026-09-15", "Buy VEQT", "VEQT", "buy", "buy", "100", "46.8", "4680", "0"),
+        ("it_sell", "2026-08-20", "Sell VEQT", "VEQT", "sell", "sell", "-20", "45", "-900", "0"),
+    ):
+        db.run(
+            "INSERT INTO investment_transactions(id, account_id, security_id, date, name, ticker, type, subtype, "
+            "quantity, price, amount, fees, currency, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (row[0], "acc_tfsa", "sec_veqt", row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8],
+             row[9], "CAD", "2026-10-02T00:00:00Z"),
+        )
     for h in fixture("holdings.json")["holdings"]:
         db.run(
             "INSERT INTO holdings(account_id, security_id, name, ticker, type, quantity, price, "

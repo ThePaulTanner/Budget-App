@@ -7,6 +7,7 @@ as TEXT decimals, never floats, and summed in Python with `Decimal`.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -14,7 +15,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 7
+log = logging.getLogger("homefinance.db")
+
+SCHEMA_VERSION = 9
 
 SCHEMA = """
 CREATE TABLE users (
@@ -175,6 +178,29 @@ CREATE TABLE account_owners (
   PRIMARY KEY (account_id, person_id)
 );
 CREATE INDEX account_owners_person ON account_owners(person_id);
+CREATE TABLE custom_categories (
+  code TEXT PRIMARY KEY,
+  parent TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE investment_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  security_id TEXT,
+  date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  ticker TEXT,
+  type TEXT NOT NULL,
+  subtype TEXT,
+  quantity TEXT,
+  price TEXT,
+  amount TEXT NOT NULL,
+  fees TEXT,
+  currency TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX investment_transactions_account ON investment_transactions(account_id, date DESC);
+CREATE INDEX investment_transactions_security ON investment_transactions(security_id);
 CREATE TABLE card_dues (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   due_date TEXT,
@@ -277,6 +303,35 @@ ALTER TABLE networth_new RENAME TO networth;
 ALTER TABLE items ADD COLUMN logo TEXT;
 ALTER TABLE items ADD COLUMN color TEXT;
 ALTER TABLE items ADD COLUMN logo_checked INTEGER NOT NULL DEFAULT 0;
+""",
+
+    7: """
+CREATE TABLE custom_categories (
+  code TEXT PRIMARY KEY,
+  parent TEXT,
+  created_at TEXT NOT NULL
+);
+""",
+
+    8: """
+CREATE TABLE investment_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  security_id TEXT,
+  date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  ticker TEXT,
+  type TEXT NOT NULL,
+  subtype TEXT,
+  quantity TEXT,
+  price TEXT,
+  amount TEXT NOT NULL,
+  fees TEXT,
+  currency TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX investment_transactions_account ON investment_transactions(account_id, date DESC);
+CREATE INDEX investment_transactions_security ON investment_transactions(security_id);
 """}
 
 
@@ -298,6 +353,8 @@ class Database:
         insecure_plaintext: bool = False,
     ) -> None:
         self._lock = threading.RLock()
+        self.path = Path(path)
+        self._key_hex = key_hex
         if key_hex is None and not insecure_plaintext:
             raise DatabaseError("Refusing to open an unencrypted database.")
         module: Any = sqlite3
@@ -312,6 +369,7 @@ class Database:
             self._conn = sqlcipher.connect(str(path), check_same_thread=False)
             # Raw key form: skips the passphrase KDF. Fine, the key is 256 random bits.
             self._conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
+        self._module = module
         self._conn.isolation_level = None  # explicit transactions below
         self._conn.row_factory = module.Row
         try:
@@ -333,6 +391,15 @@ class Database:
                     f"This database is from a newer version (schema {version}); "
                     "update the server image instead of downgrading."
                 )
+            if 0 < version < SCHEMA_VERSION:
+                # An upgrade cannot be undone by an older image, so keep a copy first. Best effort:
+                # a failure here (a full disk, say) is logged and does not stop the server starting.
+                try:
+                    from .backup import create_backup
+
+                    create_backup(self, "upgrade", label=f"v{version}-to-v{SCHEMA_VERSION}")
+                except Exception:
+                    log.exception("Could not back up the database before upgrading it")
             while version < SCHEMA_VERSION:
                 script = SCHEMA if version == 0 else MIGRATIONS[version]
                 target = SCHEMA_VERSION if version == 0 else version + 1
@@ -347,6 +414,18 @@ class Database:
                     self._conn.execute("ROLLBACK")
                     raise
                 version = target
+
+    def backup_to(self, target: Path | str) -> None:
+        """Write a consistent copy of the database to `target`, encrypted with the same key.
+        Other work waits for the few moments this takes."""
+        with self._lock:
+            dest = self._module.connect(str(target))
+            try:
+                if self._key_hex is not None:
+                    dest.execute(f"PRAGMA key = \"x'{self._key_hex}'\"")
+                self._conn.backup(dest)
+            finally:
+                dest.close()
 
     def query(self, sql: str, params: tuple | list = ()) -> list[Any]:
         with self._lock:
