@@ -361,3 +361,15 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 .nw-chip .nw-label { font-size: .8rem; color: var(--muted); }
 .nw-chip .nw-value { grid-column: 1 / -1; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .nw-swatch .line { stroke: var(--line); }
+
+/* Money Management table */
+.money-table .small { font-size: .78rem; }
+.money-table .pill.nomargin { margin-left: 0; }
+.money-table .narrow-only .pill { margin-top: 3px; }
+.money-table tr.overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+.money-table .col-due { white-space: nowrap; }
+.money-table th { white-space: normal; vertical-align: bottom; }
+.money-table .col-account { min-width: 190px; }
+.money-table .acct strong { white-space: nowrap; }
+.tiny-only { display: none; }
+@media (max-width: 760px) { .tiny-only { display: block; } .money-table .col-account { min-width: 0; } .money-table .acct strong { white-space: normal; } }

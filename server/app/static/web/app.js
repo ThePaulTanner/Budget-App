@@ -571,8 +571,7 @@
       el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) }),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       el("div", { class: "toolbar" }, seg),
-      chartBox,
-      el("p", {}, el("a", { href: "#/accounts", text: "See every account and its balance" })));
+      chartBox);
 
     const budgeted = summary.budgeted_this_month;
     const pct = budgeted > 0 ? (summary.spent_this_month / budgeted) * 100 : 0;
@@ -1063,8 +1062,10 @@
   }
 
   async function viewMoney(id) {
-    const data = await api(scoped("/api/payments-due"));
+    const [data, items, accounts] = await Promise.all([api(scoped("/api/payments-due")), api("/api/items").catch(() => []), api(scoped("/api/accounts")).catch(() => [])]);
     if (id !== navId) return;
+    const itemsById = new Map(items.map((i) => [i.id, i]));
+    const itemOfAccount = new Map(accounts.map((a) => [a.id, a.item_id]));
     const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
     const unpaid = data.cards.filter((c) => c.status !== "paid" && c.status !== "nothing_owed" && c.due_date);
     const next = unpaid.slice().sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
@@ -1082,25 +1083,45 @@
           el("p", { class: "muted", text: "Information only. HomeFinance cannot move money, so pay your cards at your bank." }),
         ]);
 
-    const rows = data.cards.map((c) => {
+    // One table, a card per row. The less important columns drop away on narrower screens.
+    const dueRelative = (c) => (c.days_until_due === 0 ? "today" : c.days_until_due > 0 ? `in ${c.days_until_due} day${c.days_until_due === 1 ? "" : "s"}` : `${-c.days_until_due} day${c.days_until_due === -1 ? "" : "s"} ago`);
+    const dueCell = (c) => {
+      if (c.due_date == null) return el("td", { class: "col-due col-extra" }, el("span", { class: "muted", text: "Not shared" }));
+      const days = c.days_until_due;
+      const settled = c.status === "paid" || c.status === "nothing_owed";
+      const relative = dueRelative(c);
+      return el("td", { class: "col-due col-extra" }, el("div", { class: c.status === "overdue" ? "neg" : "", text: shortDate(c.due_date) }),
+        el("div", { class: c.status === "overdue" ? "neg small" : "muted small", text: settled ? "next payment date" : relative }));
+    };
+    const cardRows = data.cards.map((c) => {
       const [label, tone] = DUE_PILLS[c.status];
       const cur = c.currency;
-      return el("section", { class: `card due ${c.status}` },
-        el("div", { class: "row" },
-          el("div", { class: "grow" },
-            el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
-              el("span", { class: `pill ${tone}`, text: label })),
-            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
-          el("div", { class: "amount" },
-            el("div", { class: "big small", text: money(c.statement_balance ?? c.current_balance, cur) }),
-            el("div", { class: "muted", text: c.statement_balance == null ? "balance" : "statement balance" }))),
-        el("div", { class: "stats" },
-          stat("Minimum payment", c.minimum_payment == null ? "\u2014" : money(c.minimum_payment, cur)),
-          stat("Balance now", money(c.current_balance, cur)),
-          stat("Available credit", c.available_credit == null ? "\u2014" : money(c.available_credit, cur)),
-          stat("Last payment", c.last_payment_amount == null ? "\u2014" : `${money(c.last_payment_amount, cur)}${c.last_payment_date ? ` on ${shortDate(c.last_payment_date)}` : ""}`)),
-        c.dues_known && el("p", { class: "muted", text: `${c.statement_date ? `Statement closed ${shortDate(c.statement_date)}.${c.statement_paid && c.status !== "nothing_owed" ? " It has been paid in full." : ""} ` : ""}Bank data updated ${ago(c.dues_updated_at)}.` }));
+      const item = itemsById.get(itemOfAccount.get(c.account_id));
+      const dash = el("span", { class: "muted", text: "\u2014" });
+      return el("tr", { class: c.status === "overdue" ? "overdue" : "" },
+        el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, c.institution),
+          el("div", {}, el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+            el("div", { class: "muted", text: c.institution || "" }),
+            el("div", {}, el("span", { class: `pill nomargin ${tone}`, text: label })),
+            c.due_date && el("div", { class: `small tiny-only ${c.status === "overdue" ? "neg" : "muted"}`, text: `Due ${shortDate(c.due_date)}${c.status === "paid" || c.status === "nothing_owed" ? "" : ` (${dueRelative(c)})`}` }),
+            c.minimum_payment != null && el("div", { class: "muted small tiny-only", text: `Minimum ${money(c.minimum_payment, cur)}` })))),
+        dueCell(c),
+        el("td", { class: "num col-balance" }, c.statement_balance == null ? dash : money(c.statement_balance, cur)),
+        el("td", { class: "num col-extra" }, c.minimum_payment == null ? dash : money(c.minimum_payment, cur)),
+        el("td", { class: "num col-extra" }, money(c.current_balance, cur)),
+        el("td", { class: "num col-extra" }, c.available_credit == null ? dash : money(c.available_credit, cur)),
+        el("td", { class: "num col-extra" }, c.last_payment_amount == null ? dash : [money(c.last_payment_amount, cur),
+          c.last_payment_date && el("div", { class: "muted small", text: shortDate(c.last_payment_date) })]),
+      );
     });
+    const updated = data.cards.filter((c) => c.dues_known && c.dues_updated_at).map((c) => c.dues_updated_at).sort().pop();
+    const headers = [["Card", "col-account"], ["Due", "col-due col-extra"], ["Statement balance", "num col-balance"], ["Minimum", "num col-extra"],
+      ["Balance now", "num col-extra"], ["Available credit", "num col-extra"], ["Last payment", "num col-extra"]];
+    const rows = data.cards.length === 0 ? [] : [el("section", { class: "card acct-section" },
+      el("div", { class: "table-wrap" }, el("table", { class: "acct-table money-table" },
+        el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
+        el("tbody", {}, cardRows))),
+      el("p", { class: "muted", text: `Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed.${updated ? ` Bank data updated ${ago(updated)}.` : ""}` }))];
     view().replaceChildren(viewerNote(), summary, ...rows);
   }
 
