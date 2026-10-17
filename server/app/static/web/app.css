@@ -373,3 +373,10 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 .money-table .acct strong { white-space: nowrap; }
 .tiny-only { display: none; }
 @media (max-width: 760px) { .tiny-only { display: block; } .money-table .col-account { min-width: 0; } .money-table .acct strong { white-space: normal; } }
+
+/* net worth card: the range choice sits at the top right of the header */
+.nw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nw-head h3 { margin: 0; }
+.seg.compact button { padding: .2rem .6rem; font-size: .8rem; }
+@media (max-width: 760px) { .seg.compact button { padding: .15rem .5rem; font-size: .74rem; } }
+.nw-head { margin-bottom: 6px; }

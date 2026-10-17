@@ -561,16 +561,15 @@
       } catch (err) { if (err instanceof SignedOut) showLogin(); else chartBox.replaceChildren(el("p", { class: "error", text: err.message })); }
     };
     const ranges = [["1M", 30], ["3M", 90], ["1Y", 365], ["All", 3650]];
-    const seg = el("div", { class: "seg", role: "group", "aria-label": "Chart range" });
+    const seg = el("div", { class: "seg compact", role: "group", "aria-label": "Chart range" });
     const paint = () => seg.replaceChildren(...ranges.map(([label, days]) =>
       el("button", { type: "button", "aria-pressed": String(days === nwDays), text: label, onclick: () => { nwDays = days; paint(); drawChart(); } })));
     paint();
 
     const netCard = el("section", { class: "card" },
-      el("h3", { text: "Net worth" }),
+      el("div", { class: "nw-head" }, el("h3", { text: "Net worth" }), seg),
       el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) }),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
-      el("div", { class: "toolbar" }, seg),
       chartBox);
 
     const budgeted = summary.budgeted_this_month;
