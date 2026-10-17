@@ -150,3 +150,12 @@ def test_a_removed_or_reissued_transaction_does_not_linger(services, plaid):
     run(services, services.db.one("SELECT * FROM items"))
     ids = sorted(r["id"] for r in services.db.query("SELECT id FROM investment_transactions"))
     assert ids == ["pit_2", "pit_3"]
+
+
+def test_an_empty_answer_does_not_wipe_recent_activity(services, plaid):
+    item = setup(services, plaid, [plaid_tx(1)])
+    run(services, item)
+    plaid.investment_txns = {"investment_transactions": [], "securities": [], "total_investment_transactions": 0}
+    plaid.pages = [page(cursor="c2")]
+    run(services, services.db.one("SELECT * FROM items"))
+    assert [r["id"] for r in services.db.query("SELECT id FROM investment_transactions")] == ["pit_1"]

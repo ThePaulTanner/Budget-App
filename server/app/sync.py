@@ -327,12 +327,13 @@ def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, i
             if not rows or offset >= int(data.get("total_investment_transactions") or 0):
                 break
         # Everything Plaid still reports in the window has been stored. Anything else it held there
-        # was removed or re-issued under a new id, so drop it rather than show a duplicate.
+        # was removed or re-issued under a new id, so drop it rather than show a duplicate. An empty
+        # answer is more likely a hiccup than "everything was removed", so it prunes nothing.
         with db.transaction():
             for row in db.query(
                 f"SELECT id FROM investment_transactions WHERE account_id IN ({marks}) AND date >= ?",
                 [*account_ids, start.isoformat()],
-            ):
+            ) if seen else []:
                 if row["id"] not in seen:
                     db.run("DELETE FROM investment_transactions WHERE id=?", (row["id"],))
     except PlaidError as exc:
