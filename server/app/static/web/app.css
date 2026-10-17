@@ -448,3 +448,6 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
   .bank-grouped td, .bank-grouped th { padding-left: 4px; padding-right: 4px; }
   .bank-grouped .col-account { padding-left: 8px; }
 }
+
+/* Banks: Remove only shows once Edit is pressed */
+.banks-card:not(.editing) .bank-remove { display: none; }

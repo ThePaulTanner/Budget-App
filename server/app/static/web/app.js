@@ -1589,7 +1589,7 @@
         el("div", { class: "row bank-line" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
           el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
           i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
-          el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+          el("button", { type: "button", class: "danger bank-remove", text: "Remove", onclick: async () => {
             if (!(await confirmBox({
               title: `Remove ${name}?`,
               intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
@@ -1607,8 +1607,15 @@
         group.length === 0 && el("p", { class: "muted bank-note", text: i.last_synced_at ? "No accounts at this bank." : "Its accounts appear after the first sync." }));
     }
 
-    const banks = el("section", { class: "card" },
-      el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton)),
+    // Removing a bank is hidden until you press Edit, so it takes a deliberate extra click.
+    const editButton = el("button", { type: "button", text: "Edit", "aria-pressed": "false", onclick: () => {
+      const on = !banks.classList.contains("editing");
+      banks.classList.toggle("editing", on);
+      editButton.textContent = on ? "Done" : "Edit";
+      editButton.setAttribute("aria-pressed", String(on));
+    } });
+    const banks = el("section", { class: "card banks-card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton, items.length > 0 && editButton)),
       syncOut,
       el("p", { class: "muted", text: people.length > 0
         ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or tick Hide to leave it out of totals and budgets."
