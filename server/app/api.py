@@ -769,6 +769,8 @@ def create_api_app(services: Services) -> FastAPI:
                 db.run("UPDATE transactions SET override_category=? WHERE id=?", (category, tx_id))
             if "cashflow" in sent:
                 db.run("UPDATE transactions SET cashflow_override=? WHERE id=?", (body.cashflow, tx_id))
+        if "category" in sent:
+            rematch()
         row = db.one(
             f"SELECT t.*, {EFFECTIVE_CATEGORY_SQL} AS category, m.name AS merchant_display "
             "FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id WHERE t.id=?",
@@ -780,7 +782,17 @@ def create_api_app(services: Services) -> FastAPI:
         set_custom_primaries(r["code"] for r in db.query("SELECT code FROM custom_categories WHERE parent IS NULL"))
 
     load_custom_primaries()
-    match_transfers(db)
+
+    def rematch() -> None:
+        """Re-pair transfers between your own accounts. A category or rule change can make or break a
+        pair, so this runs right after one (it takes milliseconds) rather than waiting for the next
+        sync. A failure is logged and never fails the request, or the server's start-up."""
+        try:
+            match_transfers(db)
+        except Exception:
+            logging.getLogger("homefinance.transfers").exception("Transfer matching failed")
+
+    rematch()  # also fills in pairs for data from before this feature
 
     @app.get("/api/categories")
     def categories(ctx: Auth):
@@ -1481,6 +1493,7 @@ def create_api_app(services: Services) -> FastAPI:
         out = rule_json(db.one("SELECT * FROM rules WHERE id=?", (rule_id,)))
         if body.apply_to_past:
             out["updated_transactions"] = rules_mod.assign_rules(db)
+            rematch()
         return out
 
     @app.patch("/api/rules/{rule_id}")
@@ -1502,6 +1515,7 @@ def create_api_app(services: Services) -> FastAPI:
             ),
         )
         rules_mod.reassign_for_rule(db, rule_id)
+        rematch()
         return rule_json(db.one("SELECT * FROM rules WHERE id=?", (rule_id,)))
 
     @app.delete("/api/rules/{rule_id}")
@@ -1509,13 +1523,16 @@ def create_api_app(services: Services) -> FastAPI:
         if db.run("DELETE FROM rules WHERE id=?", (rule_id,)) == 0:
             raise HTTPException(404, "rule not found")
         rules_mod.reassign_for_rule(db, rule_id)  # falls back to another rule, then Plaid
+        rematch()
         return {"ok": True}
 
     @app.post("/api/rules/{rule_id}/apply")
     def apply_rule(rule_id: int, ctx: Auth):
         if db.one("SELECT 1 FROM rules WHERE id=?", (rule_id,)) is None:
             raise HTTPException(404, "rule not found")
-        return {"updated_transactions": rules_mod.assign_rules(db)}
+        updated = rules_mod.assign_rules(db)
+        rematch()
+        return {"updated_transactions": updated}
 
 
     # -- merchants -----------------------------------------------------------

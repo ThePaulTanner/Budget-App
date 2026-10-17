@@ -8,7 +8,9 @@ What counts (see CLAUDE.md for the rules the app shows):
 - Transfers between your own accounts are left out (transfers.py pairs them), and so are
   contributions to and withdrawals from investment accounts (Plaid labels those; the investment
   side has no bank transaction to pair with).
-- A refund is a negative expense, not income.
+- A refund (money back in a spending category) is a negative expense, not income. Money in with no
+  spending category counts as income: INCOME, OTHER (cash and cheque deposits land there) and an
+  unpaired TRANSFER_IN (an e-Transfer from someone else). Paired ones are your own transfers.
 - A choice made by hand (`cashflow_override`) beats all of the above.
 
 Numbers come back with income and expenses both positive; charts flip expenses below zero. Plaid's

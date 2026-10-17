@@ -129,7 +129,8 @@ Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and 
   - Transfers between your own accounts are matched and left out. A match is the same amount arriving in another linked account within 3 days, labelled as a transfer or paying a card, for example savings moves and card payments.
   - Contributions to investment accounts are left out too.
   - e-Transfers to or from other people still count, so daycare paid by e-Transfer is spending.
-  - A refund lowers spending rather than counting as income.
+  - A refund lowers spending rather than counting as income. Money in with no spending category, such as a cash or cheque deposit, counts as income.
+  - Transfer pairs are refreshed after every sync and right after you change a category or a rule.
   - Click any transaction to count it or leave it out by hand, or to change its category.
 - **Saving a view.** The range and grouping are kept in the page address, so a bookmark reopens the same view. Filters reset when you reload; nothing about your accounts is stored in the browser.
 - **The net-worth line.** It's the accounts in view only, worked out from today's balances and their transactions, so it reaches back as far as your transaction history does.

@@ -342,3 +342,63 @@ def test_two_years_by_week_is_quick(household):
     body = get(c, auth, "range=all&group=week")
     assert len(body["buckets"]) > 100
     assert time.perf_counter() - started < 1.5
+
+
+def _insert(db, tx_id, acct, day, amount, category, detailed=None):
+    db.run(
+        "INSERT INTO transactions(id, account_id, date, name, merchant_name, amount, currency, pending, "
+        "plaid_category, category_detailed, updated_at) VALUES (?,?,?,?,?,?,?,0,?,?,?)",
+        (tx_id, acct, day, tx_id, tx_id, amount, "CAD", category, detailed, "2026-10-02T00:00:00Z"),
+    )
+
+
+def test_money_in_without_a_spending_category_is_income(household):
+    """Uncategorised money in (a cash or cheque deposit is OTHER) and an unpaired TRANSFER_IN (an
+    e-Transfer from someone else) are income. Money back in a spending category is a refund."""
+    c, auth, db = household
+    _insert(db, "cash_deposit", "chq", "2026-09-24", "-40.00", "OTHER")
+    _insert(db, "store_refund", "visa", "2026-09-24", "-25.00", "GENERAL_MERCHANDISE")
+    listed = c.get("/api/cashflow/transactions?period_start=2026-09-24&period_end=2026-09-24", headers=auth).json()
+    by_id = {t["id"]: t for t in listed["transactions"]}
+    assert (by_id["cash_deposit"]["side"], by_id["cash_deposit"]["value"]) == ("income", 40.0)
+    assert (by_id["store_refund"]["side"], by_id["store_refund"]["value"]) == ("expense", -25.0)
+    partner = next(t for t in c.get(f"/api/cashflow/transactions?period_start=2026-09-01&period_end=2026-09-30", headers=auth).json()["transactions"]
+                   if t["name"] == "e-Transfer from partner")
+    assert partner["side"] == "income" and not partner["transfer_matched"]
+
+
+def test_a_category_change_re_pairs_transfers_straight_away(household):
+    c, auth, db = household
+    _insert(db, "moved_out", "chq", "2026-09-23", "275.00", "GENERAL_MERCHANDISE")  # looks like a purchase
+    _insert(db, "moved_in", "sav", "2026-09-23", "-275.00", "TRANSFER_IN")
+    match_transfers(db)
+    assert db.one("SELECT transfer_pair_id FROM transactions WHERE id='moved_out'")["transfer_pair_id"] is None
+    c.patch("/api/transactions/moved_out", json={"category": "TRANSFER_OUT"}, headers=auth)  # it was a transfer
+    assert db.one("SELECT transfer_pair_id FROM transactions WHERE id='moved_out'")["transfer_pair_id"] == "moved_in"
+    left = c.get("/api/cashflow/transactions?period_start=2026-09-23&period_end=2026-09-23", headers=auth).json()["left_out"]
+    assert {t["id"] for t in left} == {"moved_out", "moved_in"}
+    c.patch("/api/transactions/moved_out", json={"category": None}, headers=auth)  # back to Plaid's: no longer a pair
+    assert db.one("SELECT transfer_pair_id FROM transactions WHERE id='moved_out'")["transfer_pair_id"] is None
+
+
+def test_a_rule_re_pairs_transfers_straight_away(household):
+    c, auth, db = household
+    _insert(db, "rule_out", "chq", "2026-09-22", "180.00", "GENERAL_MERCHANDISE")
+    _insert(db, "rule_in", "sav", "2026-09-22", "-180.00", "TRANSFER_IN")
+    match_transfers(db)
+    rule = {"match_field": "name", "match_type": "equals", "pattern": "rule_out", "category": "TRANSFER_OUT", "apply_to_past": True}
+    created = c.post("/api/rules", json=rule, headers=auth)
+    assert created.status_code == 201, created.text
+    assert db.one("SELECT transfer_pair_id FROM transactions WHERE id='rule_out'")["transfer_pair_id"] == "rule_in"
+    assert c.delete(f"/api/rules/{created.json()['id']}", headers=auth).status_code == 200
+    assert db.one("SELECT transfer_pair_id FROM transactions WHERE id='rule_out'")["transfer_pair_id"] is None
+
+
+def test_the_server_still_starts_if_matching_fails(services, monkeypatch):
+    from app import api as api_module
+
+    def broken(db):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(api_module, "match_transfers", broken)
+    api_module.create_api_app(services)  # logs the failure instead of raising
