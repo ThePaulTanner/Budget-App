@@ -1457,7 +1457,14 @@
     return card;
   }
 
-  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["categories", "Categories"], ["appearance", "Appearance"], ["devices", "Devices"], ["backups", "Backups"], ["log", "Sign-in log"]];
+  // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
+  const SETTINGS_GROUPS = [
+    ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
+    ["security", "Security", [["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
+    ["look", "Appearance", [["appearance", "Appearance"]]],
+  ];
+  const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, , tabs]) => tabs);
+  const groupOf = (tab) => SETTINGS_GROUPS.find(([, , tabs]) => tabs.some(([key]) => key === tab)) || SETTINGS_GROUPS[0];
   let settingsTab = "banks";
 
   async function viewSettings(id, params = new URLSearchParams()) {
@@ -1724,12 +1731,18 @@
       }));
 
     const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], backups: [backupsCard], log: [activity] };
-    const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
-      SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
-        onclick: () => { settingsTab = key; show(); } })));
+    const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
+    const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
+    const tabBar = el("div", { class: "tabs-sub", role: "group", "aria-label": "Settings pages" });
+    const choose = (tab) => { settingsTab = tab; show(); };
     function show() {
-      for (const [i, [key]] of SETTINGS_TABS.entries()) tabs.children[i].setAttribute("aria-pressed", String(key === settingsTab));
-      view().replaceChildren(el("div", { class: "toolbar" }, tabs), ...sections[settingsTab]);
+      const [groupKey, , groupTabs] = groupOf(settingsTab);
+      lastTab[groupKey] = settingsTab;
+      groupBar.replaceChildren(...SETTINGS_GROUPS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === groupKey), text: label,
+        onclick: () => choose(lastTab[key]) })));
+      tabBar.replaceChildren(...groupTabs.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label, onclick: () => choose(key) })));
+      tabBar.hidden = groupTabs.length < 2;
+      view().replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar, ...sections[settingsTab]);
     }
     show();
   }
@@ -1766,7 +1779,7 @@
     spending: ["Spending", "Transactions, merchants and budgets"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
-    settings: ["Settings", "Banks, accounts, rules, appearance and sign-in"],
+    settings: ["Settings", "App data, security and appearance"],
   };
   const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
