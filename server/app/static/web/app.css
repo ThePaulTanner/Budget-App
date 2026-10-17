@@ -201,7 +201,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 svg.chart { width: 100%; height: auto; display: block; }
 svg.chart text { fill: var(--muted-2); font-size: 11px; }
 svg.chart .line { fill: none; stroke: var(--chart); stroke-width: 2.2; stroke-linejoin: round; }
-svg.chart .area { fill: var(--chart); opacity: .12; }
+svg.chart .area { fill: var(--chart); opacity: .12; stroke: none; }
 svg.chart .bar { fill: var(--chart); }
 svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 
@@ -329,3 +329,35 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .stack { display: grid; gap: 16px; align-content: start; }
 .stack > .card { margin-bottom: 0; }
 .row.picked { background: rgba(127, 127, 127, .12); border-radius: 8px; }
+
+/* header: the household picker lines up with the icon buttons */
+.top-actions { align-items: center; }
+.viewer { display: flex; align-items: center; margin: 0; }
+.viewer select { margin-top: 0; }
+
+/* net worth chart: one line for each figure, told apart by colour and by dash */
+:root { --c-assets: #0f766e; --c-liab: #c2410c; --c-inv: #7c3aed; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-assets: #2dd4bf; --c-liab: #fb923c; --c-inv: #a78bfa; } }
+:root[data-theme="dark"] { --c-assets: #2dd4bf; --c-liab: #fb923c; --c-inv: #a78bfa; }
+.s-net { --line: var(--chart); }
+.s-assets { --line: var(--c-assets); }
+.s-liab { --line: var(--c-liab); }
+.s-inv { --line: var(--c-inv); }
+svg.chart .line.s-net, svg .line.s-net { stroke: var(--line); stroke-width: 2.8; }
+svg.chart .line.s-assets, svg .line.s-assets { stroke: var(--line); stroke-width: 1.8; }
+svg.chart .line.s-liab, svg .line.s-liab { stroke: var(--line); stroke-width: 1.8; stroke-dasharray: 6 4; }
+svg.chart .line.s-inv, svg .line.s-inv { stroke: var(--line); stroke-width: 1.8; stroke-dasharray: 2 3; }
+svg .line { fill: none; stroke-linejoin: round; }
+svg.chart .area.s-net { fill: var(--line); }
+svg.chart .dot { stroke: var(--surface); stroke-width: 1.5; }
+svg.chart .dot.s-net { fill: var(--c-net, var(--chart)); }
+svg.chart .dot.s-assets { fill: var(--c-assets); }
+svg.chart .dot.s-liab { fill: var(--c-liab); }
+svg.chart .dot.s-inv { fill: var(--c-inv); }
+svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
+.nw-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.nw-chip { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.nw-chip[aria-pressed="false"] { opacity: .45; }
+.nw-chip .nw-label { font-size: .8rem; color: var(--muted); }
+.nw-chip .nw-value { grid-column: 1 / -1; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.nw-swatch .line { stroke: var(--line); }

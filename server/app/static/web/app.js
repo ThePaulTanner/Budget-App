@@ -182,49 +182,86 @@
 
   // ---------------------------------------------------------------- charts
 
-  function lineChart(points, currency) {
+  // Net worth over time with a line each for assets, liabilities and investments. The key above the
+  // chart doubles as switches (at least one line stays on) and shows each figure for the day you point at.
+  const NW_SERIES = [["net_worth", "Net worth", "s-net"], ["assets", "Assets", "s-assets"], ["liabilities", "Liabilities", "s-liab"], ["investments", "Investments", "s-inv"]];
+  const nwHidden = new Set();
+  function netWorthChart(rows, currency) {
     const wrap = el("div");
-    if (points.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
-    const W = 640, H = 230, L = 62, R = 12, T = 12, B = 26;
-    const values = points.map((p) => p.value);
-    let lo = Math.min(...values), hi = Math.max(...values);
-    if (lo === hi) { lo -= 1; hi += 1; }
-    const pad = (hi - lo) * 0.08;
-    lo -= pad; hi += pad;
-    const x = (i) => L + (i / (points.length - 1)) * (W - L - R);
-    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-    const chart = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Net worth over time" });
-    for (let i = 0; i <= 3; i++) {
-      const v = lo + ((hi - lo) * i) / 3;
-      chart.append(svg("line", { class: "gl", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
-      const label = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
-      label.textContent = money(v, currency, { notation: "compact", maximumFractionDigits: 1 });
-      chart.append(label);
-    }
-    const path = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-    chart.append(svg("path", { class: "area", d: `${path} L${x(points.length - 1)},${H - B} L${L},${H - B} Z` }));
-    chart.append(svg("path", { class: "line", d: path }));
-    for (const i of [0, Math.floor((points.length - 1) / 2), points.length - 1]) {
-      const label = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === points.length - 1 ? "end" : "middle" });
-      label.textContent = parseDay(points[i].date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
-      chart.append(label);
-    }
-    const marker = svg("circle", { r: 4, class: "bar", cx: x(points.length - 1), cy: y(points[points.length - 1].value) });
-    chart.append(marker);
+    if (rows.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
+    const W = 640, H = 240, L = 62, R = 12, T = 12, B = 26;
+    const x = (i) => L + (i / (rows.length - 1)) * (W - L - R);
+    const keyButtons = new Map();
     const caption = el("p", { class: "muted" });
-    const show = (i) => {
-      marker.setAttribute("cx", x(i));
-      marker.setAttribute("cy", y(points[i].value));
-      caption.textContent = `${dayLabel(points[i].date)}: ${money(points[i].value, currency)}`;
-    };
-    show(points.length - 1);
-    chart.addEventListener("pointermove", (event) => {
-      const box = chart.getBoundingClientRect();
-      const px = ((event.clientX - box.left) / box.width) * W;
-      show(Math.max(0, Math.min(points.length - 1, Math.round(((px - L) / (W - L - R)) * (points.length - 1)))));
-    });
-    chart.addEventListener("pointerleave", () => show(points.length - 1));
-    wrap.append(chart, caption);
+    const key = el("div", { class: "nw-key", role: "group", "aria-label": "Lines on the chart" });
+    for (const [field, label, cls] of NW_SERIES) {
+      const value = el("span", { class: "nw-value" });
+      const button = el("button", { type: "button", class: `nw-chip ${cls}`, "aria-pressed": String(!nwHidden.has(field)), title: `Show or hide ${label.toLowerCase()}`,
+        onclick: () => {
+          if (nwHidden.has(field)) nwHidden.delete(field);
+          else if (NW_SERIES.length - nwHidden.size > 1) nwHidden.add(field);
+          draw();
+        } },
+        svg("svg", { class: "nw-swatch", width: 22, height: 10, "aria-hidden": "true" }, svg("line", { x1: 1, x2: 21, y1: 5, y2: 5, class: `line ${cls}` })),
+        el("span", { class: "nw-label", text: label }), value);
+      keyButtons.set(field, { button, value });
+      key.append(button);
+    }
+    let chart = null;
+    let current = rows.length - 1;
+    function show(i) {
+      current = i;
+      for (const [field] of NW_SERIES) keyButtons.get(field).value.textContent = money(rows[i][field], currency);
+      caption.textContent = dayLabel(rows[i].date);
+      if (!chart) return;
+      for (const dot of chart.querySelectorAll("circle.dot")) {
+        dot.setAttribute("cx", x(i));
+        dot.setAttribute("cy", dot.dataset.field && chart._y(rows[i][dot.dataset.field]));
+      }
+    }
+    function draw() {
+      for (const [field] of NW_SERIES) keyButtons.get(field).button.setAttribute("aria-pressed", String(!nwHidden.has(field)));
+      const shown = NW_SERIES.filter(([field]) => !nwHidden.has(field));
+      const values = shown.flatMap(([field]) => rows.map((r) => r[field]));
+      let lo = Math.min(...values), hi = Math.max(...values);
+      if (lo === hi) { lo -= 1; hi += 1; }
+      const pad = (hi - lo) * 0.08;
+      lo -= pad; hi += pad;
+      const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+      const next = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Net worth, assets, liabilities and investments over time" });
+      next._y = y;
+      for (let i = 0; i <= 3; i++) {
+        const v = lo + ((hi - lo) * i) / 3;
+        next.append(svg("line", { class: "gl", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+        const label = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+        label.textContent = money(v, currency, { notation: "compact", maximumFractionDigits: 1 });
+        next.append(label);
+      }
+      if (lo < 0 && hi > 0) next.append(svg("line", { class: "gl zero", x1: L, x2: W - R, y1: y(0), y2: y(0) }));
+      for (const [field, , cls] of shown) {
+        const path = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[field]).toFixed(1)}`).join(" ");
+        if (field === "net_worth") next.append(svg("path", { class: `area ${cls}`, d: `${path} L${x(rows.length - 1)},${y(Math.max(lo, Math.min(0, hi)))} L${L},${y(Math.max(lo, Math.min(0, hi)))} Z` }));
+        next.append(svg("path", { class: `line ${cls}`, d: path }));
+      }
+      for (const i of [0, Math.floor((rows.length - 1) / 2), rows.length - 1]) {
+        const label = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === rows.length - 1 ? "end" : "middle" });
+        label.textContent = parseDay(rows[i].date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
+        next.append(label);
+      }
+      for (const [field, , cls] of shown) next.append(svg("circle", { r: 3.5, class: `dot ${cls}`, "data-field": field }));
+      next.addEventListener("pointermove", (event) => {
+        const box = next.getBoundingClientRect();
+        const px = ((event.clientX - box.left) / box.width) * W;
+        show(Math.max(0, Math.min(rows.length - 1, Math.round(((px - L) / (W - L - R)) * (rows.length - 1)))));
+      });
+      next.addEventListener("pointerleave", () => show(rows.length - 1));
+      if (chart) chart.replaceWith(next); else wrap.append(next);
+      chart = next;
+      show(current);
+    }
+    wrap.append(key);
+    draw();
+    wrap.append(caption);
     return wrap;
   }
 
@@ -518,7 +555,9 @@
     const drawChart = async () => {
       try {
         const rows = await api(scoped(`/api/networth?days=${nwDays}&currency=${encodeURIComponent(cur)}`));
-        if (id === navId) chartBox.replaceChildren(lineChart(rows.map((r) => ({ date: r.date, value: r.net_worth })), cur));
+        if (id === navId) // The last point is today's figures, the same ones shown above, so the two never disagree.
+        if (worth && rows.length) rows[rows.length - 1] = { ...rows[rows.length - 1], net_worth: worth.net_worth, assets: worth.assets, liabilities: worth.liabilities, investments: worth.investments };
+        chartBox.replaceChildren(netWorthChart(rows, cur));
       } catch (err) { if (err instanceof SignedOut) showLogin(); else chartBox.replaceChildren(el("p", { class: "error", text: err.message })); }
     };
     const ranges = [["1M", 30], ["3M", 90], ["1Y", 365], ["All", 3650]];
@@ -530,7 +569,6 @@
     const netCard = el("section", { class: "card" },
       el("h3", { text: "Net worth" }),
       el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) }),
-      worth && el("p", { class: "muted", text: `Assets ${money(worth.assets, cur)} · Liabilities ${money(worth.liabilities, cur)} · Investments ${money(worth.investments, cur)}` }),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       el("div", { class: "toolbar" }, seg),
       chartBox,
