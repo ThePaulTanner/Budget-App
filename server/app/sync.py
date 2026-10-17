@@ -288,6 +288,7 @@ def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, i
     start = today - timedelta(days=RECENT_INVESTMENT_DAYS if have else FIRST_INVESTMENT_DAYS)
     stored = 0
     offset = 0
+    seen: set[str] = set()
     try:
         while True:
             data = plaid.investments_transactions_get(token, start.isoformat(), today.isoformat(), offset, INVESTMENT_PAGE)
@@ -320,10 +321,20 @@ def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, i
                             now,
                         ),
                     )
+                    seen.add(t["investment_transaction_id"])
                     stored += 1
             offset += len(rows)
             if not rows or offset >= int(data.get("total_investment_transactions") or 0):
                 break
+        # Everything Plaid still reports in the window has been stored. Anything else it held there
+        # was removed or re-issued under a new id, so drop it rather than show a duplicate.
+        with db.transaction():
+            for row in db.query(
+                f"SELECT id FROM investment_transactions WHERE account_id IN ({marks}) AND date >= ?",
+                [*account_ids, start.isoformat()],
+            ):
+                if row["id"] not in seen:
+                    db.run("DELETE FROM investment_transactions WHERE id=?", (row["id"],))
     except PlaidError as exc:
         log.info("No investment transactions for item %s: %s", item_id, exc.error_code)
     except Exception:

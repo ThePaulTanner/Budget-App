@@ -131,3 +131,22 @@ def test_decimal_amounts_stay_exact(services, plaid):
     run(services, item)
     row = services.db.one("SELECT * FROM investment_transactions")
     assert (row["price"], row["amount"]) == ("10.10", "1010.10")
+
+
+def test_a_removed_or_reissued_transaction_does_not_linger(services, plaid):
+    from datetime import date, timedelta
+
+    from app.sync import today_str
+
+    recent = (date.fromisoformat(today_str()) - timedelta(days=5)).isoformat()
+    item = setup(services, plaid, [plaid_tx(1, date=recent), plaid_tx(2, date="2020-01-01")])
+    run(services, item)
+    assert services.db.one("SELECT count(*) AS n FROM investment_transactions")["n"] == 2
+    # Plaid now reports pit_1 under a new id. The old row (inside the window) goes; the old one
+    # outside the window is history this sync never re-read, so it stays.
+    plaid.investment_txns["investment_transactions"] = [plaid_tx(3, date=recent)]
+    plaid.investment_txns["total_investment_transactions"] = 1
+    plaid.pages = [page(cursor="c2")]
+    run(services, services.db.one("SELECT * FROM items"))
+    ids = sorted(r["id"] for r in services.db.query("SELECT id FROM investment_transactions"))
+    assert ids == ["pit_2", "pit_3"]
