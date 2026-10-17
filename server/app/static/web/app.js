@@ -891,6 +891,594 @@
     view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
   }
 
+  // ---------------------------------------------------------------- Cash flow
+
+  // Income up and expenses down for each day, week or month, and underneath, on one shared scale, the
+  // running totals and the net worth of the accounts in view (never a second y-axis). Hovering a bar
+  // shows its biggest items; clicking one lists all of them, where each can be re-categorized or
+  // counted / left out by hand. Choices last while the page is open; nothing is written to the browser's
+  // storage (only theme.js keeps appearance there). The range and grouping are in the address, so a
+  // bookmark reopens the same view.
+  const CF_RANGES = [["mtd", "Month to date"], ["6m", "6 months"], ["12m", "12 months"], ["ytd", "Year to date"], ["all", "All time"], ["custom", "Custom…"]];
+  const CF_GROUPS = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
+  const CF_BAR_KEYS = [["income", "Income", "cf-inc", "rect"], ["expenses", "Expenses", "cf-exp", "rect"], ["net", "Net", "cf-net", "dot"]];
+  const CF_LINE_KEYS = [["cum_income", "Income so far", "cf-inc"], ["cum_expenses", "Expenses so far", "cf-exp"],
+    ["cum_net", "Saved (income − expenses)", "cf-saved"], ["nw", "Net worth change, accounts shown", "cf-nw"]];
+  const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, view: "chart", hidden: [] };
+  const cf = { ...CF_DEFAULTS };
+  let cfZoom = [];
+  const coarsePointer = () => matchMedia("(pointer: coarse)").matches;
+
+  function cfQuery(extra = {}) {
+    const q = new URLSearchParams({ range: cf.range, week_start: cf.week_start, include_pending: String(cf.pending), include_transfers: String(cf.transfers) });
+    if (cf.group) q.set("group", cf.group);
+    if (cf.range === "custom") { q.set("start", cf.start); q.set("end", cf.end); }
+    if (cf.accounts) q.set("accounts", cf.accounts.join(","));
+    if (cf.exclude.length) q.set("exclude_categories", cf.exclude.join(","));
+    if (viewer != null) q.set("person_id", String(viewer));
+    for (const [k, v] of Object.entries(extra)) q.set(k, v);
+    return q;
+  }
+
+  // Round tick marks covering lo..hi (always including zero).
+  function niceTicks(lo, hi, count = 4) {
+    lo = Math.min(lo, 0); hi = Math.max(hi, 0);
+    if (hi - lo < 1) hi = lo + 1;
+    const raw = (hi - lo) / count, mag = 10 ** Math.floor(Math.log10(raw)), norm = raw / mag;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+    const start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step;
+    const ticks = [];
+    for (let v = start; v <= end + step / 2; v += step) ticks.push(Math.abs(v) < step / 1e6 ? 0 : v);
+    return { lo: start, hi: end, ticks };
+  }
+
+  // A bar from the baseline side `base` to the outer end `outer`, rounded only at the outer end.
+  function cfBar(x, w, base, outer, rounded, cls) {
+    const h = Math.abs(outer - base);
+    if (h < 0.5) return null;
+    if (!rounded) return svg("rect", { class: cls, x, y: Math.min(base, outer), width: w, height: h });
+    const r = Math.min(4, w / 2, h);
+    const up = outer < base;
+    const d = up
+      ? `M${x},${base} V${outer + r} Q${x},${outer} ${x + r},${outer} H${x + w - r} Q${x + w},${outer} ${x + w},${outer + r} V${base} Z`
+      : `M${x},${base} V${outer - r} Q${x},${outer} ${x + r},${outer} H${x + w - r} Q${x + w},${outer} ${x + w},${outer - r} V${base} Z`;
+    return svg("path", { class: cls, d });
+  }
+
+  async function viewCashflow(id, params) {
+    // An address like #/spending?tab=cashflow&range=6m&group=week opens that view.
+    if (params.get("range")) {
+      cf.range = params.get("range"); cf.group = params.get("group");
+      cf.start = params.get("start"); cf.end = params.get("end");
+    }
+    let data = null, listData = null, pinned = null, hover = null, listSide = "all", drag = null, suppressClick = false, seq = 0;
+    const cur = () => (data ? data.currency : baseCurrency || "CAD");
+    const m0 = (v) => money(v, cur(), { maximumFractionDigits: 0 });
+    const m2 = (v) => money(v, cur());
+    const sgn = (v, digits = 2) => (v > 0 ? "+" : v < 0 ? MINUS : "") + money(Math.abs(v), cur(), digits === 0 ? { maximumFractionDigits: 0 } : undefined);
+    const compact = (v) => (v < 0 ? MINUS : "") + money(Math.abs(v), cur(), { notation: "compact", maximumFractionDigits: 1 });
+    const hidden = () => new Set(cf.hidden);
+    const dShort = (text) => parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+
+    // ---- page skeleton
+    const rangeSeg = el("div", { class: "seg wide", role: "group", "aria-label": "Look-back period" });
+    const groupSeg = el("div", { class: "seg", role: "group", "aria-label": "Group by" });
+    const filtersBtn = el("button", { type: "button", class: "secondary", onclick: () => openFilters() });
+    const cStart = el("input", { type: "date", "aria-label": "From" });
+    const cEnd = el("input", { type: "date", "aria-label": "To" });
+    const customRow = el("div", { class: "toolbar cf-custom", hidden: true }, el("label", {}, "From ", cStart), el("label", {}, "To ", cEnd),
+      el("button", { type: "button", class: "primary", text: "Apply", onclick: () => {
+        if (!cStart.value || !cEnd.value) { toast("Pick both dates.", true); return; }
+        Object.assign(cf, { range: "custom", start: cStart.value, end: cEnd.value, group: null }); cfZoom = []; load();
+      } }));
+    const tiles = el("div", { class: "cf-tiles" });
+    const legend1 = el("div", { class: "cf-legend", role: "group", "aria-label": "Bars on the chart" });
+    const legend2 = el("div", { class: "cf-legend", role: "group", "aria-label": "Lines on the chart" });
+    const title1 = el("h2", { text: "Income and expenses" });
+    const title2 = el("h3", { text: "Running totals" });
+    const viewSeg = el("div", { class: "seg compact", role: "group", "aria-label": "View" });
+    const plot1 = el("div", { class: "cf-plot" });
+    const plot2 = el("div", { class: "cf-plot" });
+    const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
+    const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty), el("div", { class: "cf-panel2" }, title2, legend2, plot2));
+    const tableView = el("div", { class: "cf-tablewrap", hidden: true });
+    const notes = el("p", { class: "muted cf-notes" });
+    const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
+      onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
+    const chartCard = el("section", { class: "card cf-card" },
+      el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn, viewSeg)),
+      chartView, tableView, notes);
+    const listTitle = el("h2", { text: "" });
+    const listSummary = el("p", { class: "muted" });
+    const sideSeg = el("div", { class: "seg compact", role: "group", "aria-label": "Show" });
+    const search = el("input", { type: "search", placeholder: "Search", "aria-label": "Search these transactions", maxlength: 100 });
+    const sort = el("select", { "aria-label": "Sort" }, el("option", { value: "date", text: "Newest first" }), el("option", { value: "amount", text: "Largest first" }));
+    const listRows = el("div");
+    const leftOut = el("details", { class: "cf-left" });
+    const prevBtn = el("button", { type: "button", class: "secondary", text: "‹", "aria-label": "Previous period", onclick: () => pinned && pinned.i > 0 && pin(pinned.i - 1, listSide) });
+    const nextBtn = el("button", { type: "button", class: "secondary", text: "›", "aria-label": "Next period", onclick: () => pinned && pinned.i < data.buckets.length - 1 && pin(pinned.i + 1, listSide) });
+    const listCard = el("section", { class: "card cf-list", hidden: true },
+      el("div", { class: "card-head" }, listTitle, el("div", { class: "actions" }, prevBtn, nextBtn,
+        el("button", { type: "button", class: "secondary", text: "Close", onclick: () => unpin() }))),
+      listSummary, el("div", { class: "toolbar" }, sideSeg, search, sort), listRows, leftOut);
+    const tip = el("div", { class: "cf-tip", role: "tooltip", hidden: true });
+    document.body.append(tip);
+    cleanups.push(() => tip.remove());
+
+    view().replaceChildren(viewerNote(), el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard);
+
+    // ---- controls
+    function allowedGroups() {
+      const days = (a, b) => (parseDay(b) - parseDay(a)) / 864e5 + 1;
+      const span = cf.range === "custom" && cf.start && cf.end ? days(cf.start, cf.end)
+        : cf.range === "mtd" ? 31 : cf.range === "6m" ? 184 : cf.range === "all" ? (data && data.range.key === "all" ? days(data.range.start, data.range.end) : 731) : 366;
+      return { day: span <= 366, week: span > 7 || cf.range === "mtd", month: cf.range !== "mtd" && span >= 28 };
+    }
+    function paintControls() {
+      rangeSeg.replaceChildren(...CF_RANGES.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(cf.range === key), text: label,
+        onclick: () => {
+          cfZoom = [];
+          if (key === "custom") {
+            cf.range = "custom"; cf.group = null;
+            cStart.value = cf.start || (data ? data.range.start : ""); cEnd.value = cf.end || (data ? data.range.end : "");
+            paintControls(); cStart.focus(); return;
+          }
+          Object.assign(cf, { range: key, group: null }); load();
+        } })));
+      customRow.hidden = cf.range !== "custom";
+      const allowed = allowedGroups(), shown = data ? data.group : cf.group;
+      groupSeg.replaceChildren(...CF_GROUPS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(shown === key), text: label,
+        disabled: !allowed[key], title: allowed[key] ? null : key === "day" ? "Grouping by day is limited to one year" : "This range is shorter than a month",
+        onclick: () => { cf.group = key; load(); } })));
+      const n = (cf.accounts ? 1 : 0) + cf.exclude.length + (cf.pending ? 0 : 1) + (cf.transfers ? 1 : 0) + (cf.week_start !== "mon" ? 1 : 0);
+      filtersBtn.textContent = n ? `Filters (${n})` : "Filters";
+      viewSeg.replaceChildren(...[["chart", "Chart"], ["table", "Table"]].map(([key, label]) => el("button", { type: "button", "aria-pressed": String(cf.view === key), text: label,
+        onclick: () => { cf.view = key; paintControls(); chartView.hidden = cf.view !== "chart"; tableView.hidden = cf.view !== "table"; } })));
+      chartView.hidden = cf.view !== "chart"; tableView.hidden = cf.view !== "table";
+      zoomBtn.hidden = cfZoom.length === 0;
+    }
+
+    function rememberAddress() {
+      const q = new URLSearchParams({ tab: "cashflow", range: cf.range });
+      if (cf.group) q.set("group", cf.group);
+      if (cf.range === "custom" && cf.start && cf.end) { q.set("start", cf.start); q.set("end", cf.end); }
+      history.replaceState(null, "", `#/spending?${q}`);  // no hashchange, so no reload
+    }
+
+    // ---- data
+    async function load(keepPin = false) {
+      rememberAddress(); paintControls();
+      const mine = ++seq;
+      chartCard.classList.add("cf-loading");  // keep the last chart, dimmed, while the new one loads
+      try {
+        const next = await api(`/api/cashflow?${cfQuery()}`);
+        if (mine !== seq || id !== navId) return;
+        data = next;
+        const keep = keepPin && pinned ? data.buckets.findIndex((b) => b.start === pinned.start) : -1;
+        if (keep < 0) unpin(); else pinned = { i: keep, start: data.buckets[keep].start };
+        render();
+        if (keep >= 0) await loadList();
+      } catch (err) {
+        if (err instanceof SignedOut) { showLogin(); return; }
+        if (mine !== seq) return;
+        if (err.status === 400 && cf.group) { cf.group = null; return load(keepPin); }  // that grouping no longer fits
+        toast(err.message, true);
+      } finally { if (mine === seq) chartCard.classList.remove("cf-loading"); }
+    }
+
+    // ---- tiles
+    function tile(label, value, sub, extra) {
+      return el("div", { class: "cf-tile" }, el("div", { class: "muted", text: label }), el("strong", { text: value }), sub, extra);
+    }
+    function delta(curValue, prevValue, upIsGood) {
+      const p = data.previous;
+      if (!p) return el("div", { class: "muted cf-small", text: "All of your history" });
+      if (!prevValue) return el("div", { class: "muted cf-small", text: "Nothing to compare with" });
+      const change = (curValue - prevValue) / Math.abs(prevValue), up = change >= 0;
+      const tone = Math.abs(change) < 0.005 ? "" : up === upIsGood ? "income" : "cf-bad";
+      return el("div", { class: "muted cf-small", title: `${m0(prevValue)} from ${dayLabel(p.start)} to ${dayLabel(p.end)}` },
+        el("span", { class: tone, text: `${up ? "▲" : "▼"} ${Math.abs(change * 100).toFixed(Math.abs(change) < 0.1 ? 1 : 0)}%` }),
+        ` vs ${shortDate(p.start)} – ${shortDate(p.end)}`);
+    }
+    function renderTiles() {
+      const t = data.totals, p = data.previous || {};
+      tiles.replaceChildren(
+        tile("Income", m0(t.income), delta(t.income, p.income, true)),
+        tile("Expenses", m0(t.expenses), delta(t.expenses, p.expenses, false)),
+        tile("Net", sgn(t.net, 0), el("div", { class: "muted cf-small", text: `Average ${sgn(t.avg_income - t.avg_expenses, 0)} per ${data.group}` })),
+        tile("Savings rate", t.savings_rate == null ? "—" : `${Math.round(t.savings_rate * 100)}%`, el("div", { class: "muted cf-small", text: "Net ÷ income" })),
+        tile("Net worth change", sgn(t.net_worth_change, 0), el("div", { class: "muted cf-small", text: `${m0(t.net_worth_start)} → ${m0(t.net_worth_end)}` })));
+    }
+
+    // ---- legends (they double as switches)
+    function legendChip(key, label, cls, shape) {
+      const on = !hidden().has(key);
+      const swatch = shape === "rect" ? svg("rect", { x: 3, y: 0, width: 10, height: 10, rx: 2, class: `fill ${cls}` })
+        : shape === "dot" ? svg("circle", { cx: 8, cy: 5, r: 4, class: `fill ${cls}` })
+        : svg("line", { x1: 0, x2: 16, y1: 5, y2: 5, class: `stroke ${cls}` });
+      return el("button", { type: "button", class: "cf-chip", "aria-pressed": String(on), title: `Show or hide ${label.toLowerCase()}`,
+        onclick: () => { const h = hidden(); if (h.has(key)) h.delete(key); else h.add(key); cf.hidden = [...h]; renderLegends(); draw(); } },
+      svg("svg", { width: 16, height: 10, "aria-hidden": "true" }, swatch), label);
+    }
+    function renderLegends() {
+      legend1.replaceChildren(...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)));
+      legend2.replaceChildren(...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
+    }
+
+    // ---- charts
+    let geo = null;  // the last drawing's geometry, for pointer maths
+    function draw() {
+      if (!data) return;
+      const width = Math.max(300, Math.round(plot1.clientWidth || 640));
+      const narrow = width < 560;
+      const L = narrow ? 48 : 60, R = 10, T = 10, B = 24;
+      const H1 = narrow ? 230 : 300, H2 = narrow ? 160 : 200;
+      const bks = data.buckets, n = bks.length, slot = (width - L - R) / n;
+      const cx = (i) => L + slot * (i + 0.5);
+      const off = hidden();
+      const barW = Math.max(2, Math.min(24, slot * 0.62));
+
+      // top: bars
+      const top = niceTicks(-Math.max(0, ...bks.map((b) => (off.has("expenses") ? 0 : b.expenses))),
+        Math.max(0, ...bks.map((b) => (off.has("income") ? 0 : b.income)), ...bks.map((b) => (off.has("net") ? 0 : b.net))),
+        narrow ? 4 : 5);
+      top.lo = Math.min(top.lo, ...bks.map((b) => (off.has("net") ? 0 : b.net)), ...bks.map((b) => (off.has("income") ? 0 : b.income)));
+      top.hi = Math.max(top.hi, ...bks.map((b) => (off.has("expenses") ? 0 : -b.expenses)));
+      const y1 = (v) => T + (1 - (v - top.lo) / (top.hi - top.lo || 1)) * (H1 - T - B);
+      const s1 = svg("svg", { class: "chart cf-chart", width, height: H1, viewBox: `0 0 ${width} ${H1}`, tabindex: 0, role: "img",
+        "aria-label": `Income ${m0(data.totals.income)}, expenses ${m0(data.totals.expenses)} from ${dayLabel(data.range.start)} to ${dayLabel(data.range.end)}. Use the arrow keys to move between periods and Enter to list one.` });
+      const band1 = svg("rect", { class: "cf-band", y: T, height: H1 - T - B, width: 0 });
+      const pinBand1 = svg("rect", { class: "cf-pin", y: T, height: H1 - T - B, width: 0 });
+      s1.append(pinBand1, band1);
+      for (const v of top.ticks) {
+        s1.append(svg("line", { class: v === 0 ? "gl cf-zero" : "gl", x1: L, x2: width - R, y1: y1(v), y2: y1(v) }));
+        const label = svg("text", { x: L - 6, y: y1(v) + 4, "text-anchor": "end" });
+        label.textContent = compact(v);
+        s1.append(label);
+      }
+      const zero = y1(0);
+      bks.forEach((b, i) => {
+        const x = cx(i) - barW / 2, part = b.partial ? " cf-partial" : "";
+        if (!off.has("income")) {
+          const posted = b.income - b.pending_income;
+          s1.append(cfBar(x, barW, zero, y1(posted), !b.pending_income, `fill cf-inc${part}`));
+          if (b.pending_income) s1.append(cfBar(x, barW, y1(posted), y1(b.income), true, `fill cf-inc cf-pending${part}`));
+        }
+        if (!off.has("expenses")) {
+          const posted = b.expenses - b.pending_expenses;
+          s1.append(cfBar(x, barW, zero, y1(-posted), !b.pending_expenses, `fill cf-exp${part}`));
+          if (b.pending_expenses) s1.append(cfBar(x, barW, y1(-posted), y1(-b.expenses), true, `fill cf-exp cf-pending${part}`));
+        }
+      });
+      if (!off.has("net") && n <= 62) bks.forEach((b, i) => s1.append(svg("circle", { class: "cf-dot", cx: cx(i), cy: y1(b.net), r: 4 })));
+      const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 54 : 66)))));
+      bks.forEach((b, i) => {
+        if (i % every) return;
+        const label = svg("text", { x: cx(i), y: H1 - 6, "text-anchor": "middle" });
+        label.textContent = b.short_label;
+        s1.append(label);
+      });
+      const drag1 = svg("rect", { class: "cf-drag", y: T, height: H1 - T - B, width: 0 });
+      s1.append(drag1);
+
+      // bottom: running totals and net worth change, one scale
+      const lineVals = {
+        cum_income: bks.map((b) => b.cum_income), cum_expenses: bks.map((b) => -b.cum_expenses),
+        cum_net: bks.map((b) => b.cum_net), nw: bks.map((b) => b.net_worth - data.totals.net_worth_start),
+      };
+      const visible = CF_LINE_KEYS.filter(([k]) => !off.has(k));
+      const all = visible.flatMap(([k]) => lineVals[k]);
+      const bot = niceTicks(Math.min(0, ...all), Math.max(0, ...all), narrow ? 3 : 4);
+      const y2 = (v) => T + (1 - (v - bot.lo) / (bot.hi - bot.lo || 1)) * (H2 - T - B);
+      const s2 = svg("svg", { class: "chart cf-chart", width, height: H2, viewBox: `0 0 ${width} ${H2}`, role: "img",
+        "aria-label": `Running totals since ${dayLabel(data.range.start)}: saved ${sgn(data.totals.net, 0)}, net worth change ${sgn(data.totals.net_worth_change, 0)}.` });
+      const band2 = svg("rect", { class: "cf-band", y: T, height: H2 - T - B, width: 0 });
+      const pinBand2 = svg("rect", { class: "cf-pin", y: T, height: H2 - T - B, width: 0 });
+      const cross = svg("line", { class: "cf-cross", y1: T, y2: H2 - B, x1: -10, x2: -10 });
+      s2.append(pinBand2, band2);
+      for (const v of bot.ticks) {
+        s2.append(svg("line", { class: v === 0 ? "gl cf-zero" : "gl", x1: L, x2: width - R, y1: y2(v), y2: y2(v) }));
+        const label = svg("text", { x: L - 6, y: y2(v) + 4, "text-anchor": "end" });
+        label.textContent = compact(v);
+        s2.append(label);
+      }
+      for (const [key, , cls] of visible) {
+        const pts = lineVals[key];
+        if (n === 1) { s2.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(0), cy: y2(pts[0]), r: 4 })); continue; }
+        s2.append(svg("path", { class: `cf-line ${cls}`, d: pts.map((v, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${y2(v).toFixed(1)}`).join(" ") }));
+        s2.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(n - 1), cy: y2(pts[n - 1]), r: 4 }));
+      }
+      bks.forEach((b, i) => {
+        if (i % every) return;
+        const label = svg("text", { x: cx(i), y: H2 - 6, "text-anchor": "middle" });
+        label.textContent = b.short_label;
+        s2.append(label);
+      });
+      s2.append(cross);
+
+      plot1.replaceChildren(s1);
+      plot2.replaceChildren(s2);
+      empty.hidden = bks.some((b) => b.income_count || b.expense_count);
+      geo = { L, R, T, width, slot, cx, zero, s1, s2, band1, band2, pinBand1, pinBand2, cross, drag1, n };
+      wire(s1, true); wire(s2, false);
+      paintBands();
+    }
+
+    function paintBands() {
+      if (!geo) return;
+      const place = (rect, i, j = i) => {
+        if (i == null) { rect.setAttribute("width", 0); return; }
+        const a = Math.min(i, j), b = Math.max(i, j);
+        rect.setAttribute("x", geo.L + geo.slot * a); rect.setAttribute("width", geo.slot * (b - a + 1));
+      };
+      place(geo.band1, hover); place(geo.band2, hover);
+      place(geo.pinBand1, pinned ? pinned.i : null); place(geo.pinBand2, pinned ? pinned.i : null);
+      place(geo.drag1, drag && drag.moved ? drag.i : null, drag ? drag.j : null);
+      const x = hover == null ? -10 : geo.cx(hover);
+      geo.cross.setAttribute("x1", x); geo.cross.setAttribute("x2", x);
+    }
+
+    function indexAt(svgEl, clientX) {
+      const box = svgEl.getBoundingClientRect(), px = clientX - box.left;
+      if (px < geo.L - 4 || px > geo.width - geo.R + 4) return null;
+      return Math.max(0, Math.min(geo.n - 1, Math.floor((px - geo.L) / geo.slot)));
+    }
+    const sideAt = (clientY) => (clientY - geo.s1.getBoundingClientRect().top < geo.zero ? "income" : "expense");
+
+    function wire(svgEl, isBars) {
+      svgEl.addEventListener("pointermove", (e) => {
+        if (e.pointerType === "touch") return;
+        const i = indexAt(svgEl, e.clientX);
+        if (drag && isBars) {
+          if (i != null && i !== drag.j) { drag.j = i; drag.moved = drag.moved || i !== drag.i; paintBands(); }
+          return;
+        }
+        hover = i; paintBands();
+        if (i == null) { tip.hidden = true; return; }
+        showTip(i, isBars ? sideAt(e.clientY) : null, svgEl, e.clientY);
+      });
+      svgEl.addEventListener("pointerleave", () => { if (!drag) { hover = null; paintBands(); tip.hidden = true; } });
+      svgEl.addEventListener("click", (e) => {
+        if (suppressClick) { suppressClick = false; return; }
+        const i = indexAt(svgEl, e.clientX);
+        if (i != null) pin(i, isBars && !coarsePointer() ? sideAt(e.clientY) : "all");
+      });
+      if (!isBars) return;
+      svgEl.addEventListener("pointerdown", (e) => {
+        if (e.pointerType !== "mouse" || e.button !== 0) return;
+        const i = indexAt(svgEl, e.clientX);
+        if (i != null) drag = { i, j: i, moved: false };
+      });
+      svgEl.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+          e.preventDefault();
+          const from = hover ?? (pinned ? pinned.i : e.key === "ArrowRight" ? -1 : geo.n);
+          hover = Math.max(0, Math.min(geo.n - 1, from + (e.key === "ArrowRight" ? 1 : -1)));
+          paintBands();
+          const box = svgEl.getBoundingClientRect();
+          showTip(hover, "expense", svgEl, box.top + geo.zero + 20);
+        } else if ((e.key === "Enter" || e.key === " ") && hover != null) {
+          e.preventDefault(); pin(hover, "all");
+        } else if (e.key === "Escape") { tip.hidden = true; unpin(); }
+      });
+      svgEl.addEventListener("blur", () => { hover = null; paintBands(); tip.hidden = true; });
+    }
+    function endDrag() {
+      if (!drag) return;
+      const d = drag; drag = null;
+      if (d.moved && d.i !== d.j && data) {
+        suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
+        const a = data.buckets[Math.min(d.i, d.j)], b = data.buckets[Math.max(d.i, d.j)];
+        cfZoom.push({ range: cf.range, group: cf.group, start: cf.start, end: cf.end });
+        Object.assign(cf, { range: "custom", start: a.start, end: b.end, group: null });
+        tip.hidden = true; load();
+      } else paintBands();
+    }
+    window.addEventListener("pointerup", endDrag);
+    cleanups.push(() => window.removeEventListener("pointerup", endDrag));
+
+    // ---- hover box
+    function tipRow(value, cls, shape, label) {
+      const sw = shape === "line" ? svg("line", { x1: 0, x2: 14, y1: 5, y2: 5, class: `stroke ${cls}` })
+        : shape === "dot" ? svg("circle", { cx: 7, cy: 5, r: 4, class: `fill ${cls}` })
+        : svg("rect", { x: 2, y: 0, width: 10, height: 10, rx: 2, class: `fill ${cls}` });
+      return el("div", { class: "cf-tiprow" }, el("strong", { text: value }), svg("svg", { width: 14, height: 10, "aria-hidden": "true" }, sw), el("span", { class: "muted", text: label }));
+    }
+    function showTip(i, side, svgEl, clientY) {
+      if (coarsePointer()) return;
+      const b = data.buckets[i];
+      const parts = [el("div", { class: "cf-tiphead", text: b.label + (b.partial ? " (partial)" : "") })];
+      if (side == null) {
+        parts.push(tipRow(sgn(b.cum_income, 0), "cf-inc", "line", "Income so far"), tipRow(sgn(-b.cum_expenses, 0), "cf-exp", "line", "Expenses so far"),
+          tipRow(sgn(b.cum_net, 0), "cf-saved", "line", "Saved"),
+          tipRow(sgn(b.net_worth - data.totals.net_worth_start, 0), "cf-nw", "line", "Net worth change"),
+          el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: `Net worth of these accounts on ${shortDate(b.end)}` }), el("strong", { text: m0(b.net_worth) })));
+      } else {
+        parts.push(tipRow(sgn(b.income), "cf-inc", "rect", `Income · ${b.income_count}`), tipRow(sgn(-b.expenses), "cf-exp", "rect", `Expenses · ${b.expense_count}`),
+          tipRow(sgn(b.net), "cf-net", "dot", "Net"));
+        if (b.pending_income || b.pending_expenses) parts.push(el("div", { class: "muted cf-small", text: `Includes ${m2(b.pending_income + b.pending_expenses)} pending` }));
+        if (side === "expense" && b.top_categories.length) {
+          const cats = b.top_categories.slice(0, 3), other = b.expenses - cats.reduce((s, c) => s + c.amount, 0);
+          parts.push(el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: "By category" }),
+            cats.map((c) => el("div", { class: "cf-tipline" }, el("span", { text: categoryLabel(c.category) }), el("span", { class: "amount", text: m0(c.amount) }))),
+            Math.abs(other) >= 0.5 && el("div", { class: "cf-tipline muted" }, el("span", { text: "Everything else" }), el("span", { class: "amount", text: m0(other) }))));
+        }
+        const list = side === "income" ? b.top_income : b.top_expenses, count = side === "income" ? b.income_count : b.expense_count;
+        if (list.length) {
+          parts.push(el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: side === "income" ? "Largest income" : "Largest expenses" }),
+            list.map((t) => el("div", { class: "cf-tiptx" }, el("span", { class: "muted", text: dShort(t.date) }),
+              el("span", { class: "cf-ell", text: t.display_name + (t.pending ? " · pending" : "") }),
+              el("span", { class: "amount", text: sgn(side === "income" ? t.value : -t.value) }))),
+            el("div", { class: "muted cf-small", text: count > list.length ? `+ ${count - list.length} more · click to see all` : "Click to see and edit them" })));
+        }
+      }
+      tip.replaceChildren(...parts);
+      tip.hidden = false;
+      const box = svgEl.getBoundingClientRect(), x = box.left + geo.cx(i), w = tip.offsetWidth, h = tip.offsetHeight, gap = 16;
+      let left = x + gap;
+      if (left + w > innerWidth - 8) left = x - gap - w;
+      tip.style.left = `${Math.max(8, left)}px`;
+      tip.style.top = `${Math.max(8, Math.min(innerHeight - h - 8, clientY - h / 2))}px`;
+    }
+
+    // ---- the transactions behind one bar
+    async function pin(i, side) {
+      if (!data || !data.buckets[i]) return;
+      pinned = { i, start: data.buckets[i].start };
+      listSide = side || "all";
+      tip.hidden = true; paintBands();
+      await loadList();
+      if (id === navId) listCard.scrollIntoView({ behavior: "smooth", block: coarsePointer() ? "start" : "nearest" });
+    }
+    function unpin() { pinned = null; listCard.hidden = true; paintBands(); }
+    async function loadList() {
+      const b = data.buckets[pinned.i];
+      listTitle.textContent = b.label + (b.partial ? " (partial)" : "");
+      listSummary.textContent = "Loading…";
+      listCard.hidden = false;
+      try {
+        listData = await api(`/api/cashflow/transactions?${cfQuery({ period_start: b.start, period_end: b.end })}`);
+        if (id === navId) renderList();
+      } catch (err) { if (err instanceof SignedOut) showLogin(); else listSummary.textContent = err.message; }
+    }
+    function cfTxRow(t) {
+      const shown = t.side === "income" ? t.value : -t.value;
+      const why = t.reason ? ` · ${t.reason}` : "";
+      const row = el("div", { class: "row click", role: "button", tabindex: 0 },
+        el("div", { class: "icon", text: icon(t.category), "aria-hidden": "true" }),
+        el("div", { class: "grow" },
+          el("div", {}, el("strong", { text: t.display_name }), t.pending && el("span", { class: "badge", text: "Pending" }),
+            t.cashflow_override && el("span", { class: "badge", text: t.cashflow_override === "include" ? "Counted by you" : "Left out by you" })),
+          el("div", { class: "muted", text: `${dShort(t.date)} · ${categoryLabel(t.category)} · ${t.account_name}${why}` })),
+        el("div", { class: `amount ${shown > 0 ? "income" : ""}`, text: sgn(shown) }));
+      const open = () => openCashflowTx(t);
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+      return row;
+    }
+    function renderList() {
+      sideSeg.replaceChildren(...[["all", "All"], ["income", "Income"], ["expense", "Expenses"]].map(([key, label]) =>
+        el("button", { type: "button", "aria-pressed": String(listSide === key), text: label, onclick: () => { listSide = key; renderList(); } })));
+      listSummary.textContent = `Income ${sgn(listData.income)} · Expenses ${sgn(-listData.expenses)} · Net ${sgn(listData.net)}`;
+      const term = search.value.trim().toLowerCase();
+      const keep = (t) => (listSide === "all" || t.side === listSide)
+        && (!term || `${t.display_name} ${t.name} ${t.account_name} ${categoryLabel(t.category)}`.toLowerCase().includes(term));
+      const order = sort.value === "amount" ? (a, b) => Math.abs(b.value) - Math.abs(a.value) : (a, b) => b.date.localeCompare(a.date);
+      const rows = listData.transactions.filter(keep).sort(order);
+      listRows.replaceChildren(...(rows.length ? rows.map(cfTxRow) : [el("p", { class: "empty", text: "Nothing here." })]));
+      const left = listData.left_out.filter(keep);
+      leftOut.hidden = left.length === 0;
+      leftOut.replaceChildren(el("summary", { text: `Left out of cash flow (${left.length})` }), ...left.map(cfTxRow));
+      prevBtn.disabled = pinned.i === 0; nextBtn.disabled = pinned.i === data.buckets.length - 1;
+    }
+    search.addEventListener("input", () => listData && renderList());
+    sort.addEventListener("change", () => listData && renderList());
+
+    async function openCashflowTx(t) {
+      const choices = await categoryChoices([t.category]);
+      const picker = categoryPicker(choices, t.category);
+      const shown = t.side === "income" ? t.value : -t.value;
+      const status = t.counted ? `Counted as ${t.side === "income" ? "income" : "an expense"}.` : `Left out: ${t.reason}.`;
+      const done = async (body, message) => {
+        try {
+          await api(`/api/transactions/${encodeURIComponent(t.id)}`, { method: "PATCH", body });
+          closeSheet(); toast(message); await load(true);
+        } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+      };
+      openSheet(
+        el("h2", { text: t.display_name }),
+        el("p", { class: "muted", text: `${dayLabel(t.date)} · ${t.account_name}` }),
+        el("div", { class: `big small ${shown > 0 ? "income" : ""}`, text: sgn(shown) }),
+        el("p", { text: status }),
+        el("div", { class: "actions" },
+          t.counted
+            ? el("button", { type: "button", class: "secondary", text: "Leave out of cash flow", onclick: () => done({ cashflow: "exclude" }, "Left out of cash flow") })
+            : el("button", { type: "button", class: "secondary", text: "Count in cash flow", onclick: () => done({ cashflow: "include" }, "Counted in cash flow") }),
+          t.cashflow_override && el("button", { type: "button", class: "secondary", text: "Back to automatic", onclick: () => done({ cashflow: null }, "Back to automatic") })),
+        el("h3", { text: "Category" }), picker.node,
+        el("div", { class: "actions" },
+          el("button", { type: "button", class: "primary", text: "Save category", onclick: () => { const v = picker.value(); if (v) done({ category: v }, "Category changed"); } }),
+          t.category_source === "manual" && el("button", { type: "button", class: "secondary", text: "Reset to automatic", onclick: () => done({ category: null }, "Category reset") }),
+          el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
+    }
+
+    // ---- filters
+    async function openFilters() {
+      let accounts, choices;
+      try { [accounts, choices] = await Promise.all([api(scoped("/api/accounts")), categoryChoices()]); }
+      catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
+      const defaults = accounts.filter((a) => !a.hidden && a.type !== "investment").map((a) => a.id);
+      const chosen = new Set(cf.accounts || defaults);
+      const acctBoxes = accounts.map((a) => {
+        const box = el("input", { type: "checkbox", value: a.id, checked: chosen.has(a.id) });
+        return el("label", { class: "row" }, box, el("span", { class: "grow", text: `${a.institution ? a.institution + " · " : ""}${a.name}${a.currency !== cur() ? ` (${a.currency})` : ""}${a.type === "investment" ? " · investments" : ""}` }));
+      });
+      const tops = choices.filter((c) => !parentOf(c));
+      const catBoxes = tops.map((c) => el("label", { class: "row" }, el("input", { type: "checkbox", value: c, checked: cf.exclude.includes(c) }), el("span", { class: "grow", text: categoryLabel(c) })));
+      const pending = el("input", { type: "checkbox", checked: cf.pending });
+      const transfers = el("input", { type: "checkbox", checked: cf.transfers });
+      const week = el("select", { "aria-label": "Weeks start on" }, el("option", { value: "mon", text: "Monday", selected: cf.week_start === "mon" }), el("option", { value: "sun", text: "Sunday", selected: cf.week_start === "sun" }));
+      openSheet(
+        el("h2", { text: "Cash flow filters" }),
+        el("h3", { text: "Accounts" }), el("p", { class: "muted", text: "Investment accounts are off by default: buying and selling isn't income or spending, and market moves would swamp the net-worth line." }),
+        el("div", { class: "cf-checks" }, acctBoxes),
+        el("h3", { text: "Leave out categories" }), el("div", { class: "cf-checks" }, catBoxes),
+        el("h3", { text: "Options" }),
+        el("label", { class: "row" }, pending, el("span", { class: "grow", text: "Include pending transactions" })),
+        el("label", { class: "row" }, transfers, el("span", { class: "grow", text: "Count transfers between my accounts and investment contributions" })),
+        el("label", { class: "row" }, el("span", { class: "grow", text: "Weeks start on" }), week),
+        el("div", { class: "actions" },
+          el("button", { type: "button", class: "primary", text: "Apply", onclick: () => {
+            const ids = acctBoxes.map((l) => l.querySelector("input")).filter((b) => b.checked).map((b) => b.value);
+            const same = ids.length === defaults.length && defaults.every((d) => ids.includes(d));
+            Object.assign(cf, { accounts: same ? null : ids, exclude: catBoxes.map((l) => l.querySelector("input")).filter((b) => b.checked).map((b) => b.value),
+              pending: pending.checked, transfers: transfers.checked, week_start: week.value });
+            closeSheet(); load();
+          } }),
+          el("button", { type: "button", class: "secondary", text: "Reset", onclick: () => {
+            for (const l of acctBoxes) { const b = l.querySelector("input"); b.checked = defaults.includes(b.value); }
+            for (const l of catBoxes) l.querySelector("input").checked = false;
+            pending.checked = true; transfers.checked = false; week.value = "mon";
+          } }),
+          el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
+    }
+
+    // ---- table view (the chart's numbers, readable without hovering)
+    function renderTable() {
+      const head = el("tr", {}, ["Period", "Income", "Expenses", "Net", "Saved so far", "Net worth"].map((h) => el("th", { text: h })));
+      const rows = data.buckets.map((b, i) => {
+        const r = el("tr", { tabindex: 0, class: "click" },
+          el("td", { text: b.label + (b.partial ? " (partial)" : "") }), el("td", { class: "amount", text: m2(b.income) }),
+          el("td", { class: "amount", text: m2(b.expenses) }), el("td", { class: "amount", text: sgn(b.net) }),
+          el("td", { class: "amount", text: sgn(b.cum_net) }), el("td", { class: "amount", text: m0(b.net_worth) }));
+        r.addEventListener("click", () => pin(i, "all"));
+        r.addEventListener("keydown", (e) => { if (e.key === "Enter") pin(i, "all"); });
+        return r;
+      });
+      const t = data.totals;
+      const total = el("tr", { class: "cf-total" }, el("td", { text: "Total" }), el("td", { class: "amount", text: m2(t.income) }),
+        el("td", { class: "amount", text: m2(t.expenses) }), el("td", { class: "amount", text: sgn(t.net) }), el("td"), el("td"));
+      tableView.replaceChildren(el("table", { class: "cf-table" }, el("thead", {}, head), el("tbody", {}, rows, total)));
+    }
+
+    function render() {
+      $("page-sub").textContent = `${shortDate(data.range.start)} – ${shortDate(data.range.end)} · by ${data.group}`;
+      title1.textContent = `Income and expenses per ${data.group}`;
+      title2.textContent = `Running totals since ${shortDate(data.range.start)}`;
+      paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
+      notes.textContent = data.notes.join(" ");
+    }
+
+    // Redraw at the new width when the window or sidebar changes size, so text stays crisp.
+    let frame = 0;
+    const resize = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { if (geo && Math.abs((plot1.clientWidth || 0) - geo.width) > 2) draw(); }); });
+    resize.observe(plot1);
+    cleanups.push(() => resize.disconnect());
+
+    paintControls();
+    await load();
+  }
+
   // ---------------------------------------------------------------- Investments
 
   const CHANGE_PERIODS = [["day", "Day"], ["open", "Since open"], ["1w", "1W"], ["1m", "1M"], ["3m", "3M"], ["ytd", "YTD"], ["1y", "1Y"]];
@@ -1750,11 +2338,12 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with three tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
+  // Spending is one page with four tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
   const SPENDING_TABS = [
     ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
     ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
+    ["cashflow", "Cash flow", viewCashflow, "Income and expenses over time"],
   ];
   let spendingTab = "transactions";
   const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
@@ -1776,7 +2365,7 @@
   const PAGES = {
     overview: ["Overview", "Net worth, spending and credit card payments"],
     accounts: ["Accounts", "Balances by bank and account"],
-    spending: ["Spending", "Transactions, merchants and budgets"],
+    spending: ["Spending", "Transactions, merchants, budgets and cash flow"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],

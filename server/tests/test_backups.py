@@ -97,8 +97,10 @@ def test_upgrading_the_database_keeps_a_copy_first(tmp_path):
     path = tmp_path / "old.db"
     old = Database(path, key)
     old.run("INSERT INTO budgets(category, monthly_limit) VALUES ('FOOD', '100')")
-    old.run("DROP TABLE custom_categories")  # the two tables the newer layouts add
+    old.run("DROP TABLE custom_categories")  # what the newer layouts add
     old.run("DROP TABLE investment_transactions")
+    old.run("ALTER TABLE transactions DROP COLUMN cashflow_override")
+    old.run("ALTER TABLE transactions DROP COLUMN transfer_pair_id")
     old.run("PRAGMA user_version = 7")  # looks like the previous release
     old.close()
     upgraded = Database(path, key)  # the migrations run on open
