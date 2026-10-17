@@ -117,8 +117,8 @@ Open `https://YOUR-NAS.YOUR-TAILNET.ts.net/app` on a device on your tailnet and 
 **Cash flow.** Spending, Cash flow is a Mint-style chart.
 
 - **The chart.**
-  - The top panel shows income going up and expenses going down for each day, week or month, with a dot for the net.
-  - The lower panel shows running totals since the start of the range: income, expenses, saved, and the net-worth change of the accounts shown. All four share one scale.
+  - Bars show income going up and expenses going down for each day, week or month, with a dot for the net. They read against the left scale.
+  - Lines on the same chart show running totals since the start of the range: income, expenses, saved, and the net-worth change of the accounts shown. They read against the right scale, which is the left scale times a round number (×10, say), so both share the zero line and gridlines.
   - Pick Month to date, 6 months, 12 months, Year to date, All time or Custom, and group by Day, Week or Month.
 - **Using it.**
   - Hover a bar to see its totals, top categories and largest transactions. The top half of a bar shows income; the bottom half shows expenses.

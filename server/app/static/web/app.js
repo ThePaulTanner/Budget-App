@@ -893,8 +893,10 @@
 
   // ---------------------------------------------------------------- Cash flow
 
-  // Income up and expenses down for each day, week or month, and underneath, on one shared scale, the
-  // running totals and the net worth of the accounts in view (never a second y-axis). Hovering a bar
+  // Income up and expenses down for each day, week or month, with the running totals and the net worth of
+  // the accounts in view drawn as lines on the same chart. Bars read against the left scale and lines
+  // against the right one, which is the left scale times a round factor, so both share zero, gridlines
+  // and round labels. Hovering a bar
   // shows its biggest items; clicking one lists all of them, where each can be re-categorized or
   // counted / left out by hand. Choices last while the page is open; nothing is written to the browser's
   // storage (only theme.js keeps appearance there). The range and grouping are in the address, so a
@@ -930,6 +932,14 @@
     const ticks = [];
     for (let v = start; v <= end + step / 2; v += step) ticks.push(Math.abs(v) < step / 1e6 ? 0 : v);
     return { lo: start, hi: end, ticks };
+  }
+
+  // The smallest of 1, 2 or 5 x 10^n that is at least x (never below 1). No 2.5: times a round tick it
+  // can give labels like $125K.
+  function niceUp(x) {
+    if (!(x > 1)) return 1;
+    const mag = 10 ** Math.floor(Math.log10(x)), norm = x / mag;
+    return (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
   }
 
   // A bar from the baseline side `base` to the outer end `outer`, rounded only at the outer end.
@@ -975,18 +985,16 @@
     const legend1 = el("div", { class: "cf-legend", role: "group", "aria-label": "Bars on the chart" });
     const legend2 = el("div", { class: "cf-legend", role: "group", "aria-label": "Lines on the chart" });
     const title1 = el("h2", { text: "Income and expenses" });
-    const title2 = el("h3", { text: "Running totals" });
     const viewSeg = el("div", { class: "seg compact", role: "group", "aria-label": "View" });
     const plot1 = el("div", { class: "cf-plot" });
-    const plot2 = el("div", { class: "cf-plot" });
     const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
-    const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty), el("div", { class: "cf-panel2" }, title2, legend2, plot2));
+    const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty));
     const tableView = el("div", { class: "cf-tablewrap", hidden: true });
     const notes = el("p", { class: "muted cf-notes" });
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
     const chartCard = el("section", { class: "card cf-card" },
-      el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn, viewSeg)),
+      el("div", { class: "card-head" }, el("div", {}, title1, legend1, legend2), el("div", { class: "actions" }, zoomBtn, viewSeg)),
       chartView, tableView, notes);
     const listTitle = el("h2", { text: "" });
     const listSummary = el("p", { class: "muted" });
@@ -1101,106 +1109,104 @@
       svg("svg", { width: 16, height: 10, "aria-hidden": "true" }, swatch), label);
     }
     function renderLegends() {
-      legend1.replaceChildren(...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)));
-      legend2.replaceChildren(...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
+      const per = data ? data.group : "period";
+      legend1.replaceChildren(el("span", { class: "cf-legend-label", text: `Bars, per ${per} (left scale)` }),
+        ...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)));
+      legend2.replaceChildren(el("span", { class: "cf-legend-label", text: "Lines, running total (right scale)" }),
+        ...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
     }
 
-    // ---- charts
+    // ---- chart
     let geo = null;  // the last drawing's geometry, for pointer maths
     function draw() {
       if (!data) return;
       const width = Math.max(300, Math.round(plot1.clientWidth || 640));
       const narrow = width < 560;
-      const L = narrow ? 48 : 60, R = 10, T = 10, B = 24;
-      const H1 = narrow ? 230 : 300, H2 = narrow ? 160 : 200;
+      const L = narrow ? 46 : 58, R = narrow ? 46 : 58, T = 12, B = 24;
+      const H = narrow ? 300 : 390;
       const bks = data.buckets, n = bks.length, slot = (width - L - R) / n;
       const cx = (i) => L + slot * (i + 0.5);
       const off = hidden();
       const barW = Math.max(2, Math.min(24, slot * 0.62));
 
-      // top: bars
-      const top = niceTicks(-Math.max(0, ...bks.map((b) => (off.has("expenses") ? 0 : b.expenses))),
-        Math.max(0, ...bks.map((b) => (off.has("income") ? 0 : b.income)), ...bks.map((b) => (off.has("net") ? 0 : b.net))),
-        narrow ? 4 : 5);
-      top.lo = Math.min(top.lo, ...bks.map((b) => (off.has("net") ? 0 : b.net)), ...bks.map((b) => (off.has("income") ? 0 : b.income)));
-      top.hi = Math.max(top.hi, ...bks.map((b) => (off.has("expenses") ? 0 : -b.expenses)));
-      const y1 = (v) => T + (1 - (v - top.lo) / (top.hi - top.lo || 1)) * (H1 - T - B);
-      const s1 = svg("svg", { class: "chart cf-chart", width, height: H1, viewBox: `0 0 ${width} ${H1}`, tabindex: 0, role: "img",
-        "aria-label": `Income ${m0(data.totals.income)}, expenses ${m0(data.totals.expenses)} from ${dayLabel(data.range.start)} to ${dayLabel(data.range.end)}. Use the arrow keys to move between periods and Enter to list one.` });
-      const band1 = svg("rect", { class: "cf-band", y: T, height: H1 - T - B, width: 0 });
-      const pinBand1 = svg("rect", { class: "cf-pin", y: T, height: H1 - T - B, width: 0 });
-      s1.append(pinBand1, band1);
-      for (const v of top.ticks) {
-        s1.append(svg("line", { class: v === 0 ? "gl cf-zero" : "gl", x1: L, x2: width - R, y1: y1(v), y2: y1(v) }));
-        const label = svg("text", { x: L - 6, y: y1(v) + 4, "text-anchor": "end" });
-        label.textContent = compact(v);
-        s1.append(label);
+      // What each scale has to hold.
+      const barVals = [0];
+      for (const b of bks) {
+        if (!off.has("income")) barVals.push(b.income);
+        if (!off.has("expenses")) barVals.push(-b.expenses);
+        if (!off.has("net")) barVals.push(b.net);
       }
-      const zero = y1(0);
-      bks.forEach((b, i) => {
-        const x = cx(i) - barW / 2, part = b.partial ? " cf-partial" : "";
-        if (!off.has("income")) {
-          const posted = b.income - b.pending_income;
-          s1.append(cfBar(x, barW, zero, y1(posted), !b.pending_income, `fill cf-inc${part}`));
-          if (b.pending_income) s1.append(cfBar(x, barW, y1(posted), y1(b.income), true, `fill cf-inc cf-pending${part}`));
-        }
-        if (!off.has("expenses")) {
-          const posted = b.expenses - b.pending_expenses;
-          s1.append(cfBar(x, barW, zero, y1(-posted), !b.pending_expenses, `fill cf-exp${part}`));
-          if (b.pending_expenses) s1.append(cfBar(x, barW, y1(-posted), y1(-b.expenses), true, `fill cf-exp cf-pending${part}`));
-        }
-      });
-      if (!off.has("net") && n <= 62) bks.forEach((b, i) => s1.append(svg("circle", { class: "cf-dot", cx: cx(i), cy: y1(b.net), r: 4 })));
-      const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 54 : 66)))));
-      bks.forEach((b, i) => {
-        if (i % every) return;
-        const label = svg("text", { x: cx(i), y: H1 - 6, "text-anchor": "middle" });
-        label.textContent = b.short_label;
-        s1.append(label);
-      });
-      const drag1 = svg("rect", { class: "cf-drag", y: T, height: H1 - T - B, width: 0 });
-      s1.append(drag1);
-
-      // bottom: running totals and net worth change, one scale
       const lineVals = {
         cum_income: bks.map((b) => b.cum_income), cum_expenses: bks.map((b) => -b.cum_expenses),
         cum_net: bks.map((b) => b.cum_net), nw: bks.map((b) => b.net_worth - data.totals.net_worth_start),
       };
-      const visible = CF_LINE_KEYS.filter(([k]) => !off.has(k));
-      const all = visible.flatMap(([k]) => lineVals[k]);
-      const bot = niceTicks(Math.min(0, ...all), Math.max(0, ...all), narrow ? 3 : 4);
-      const y2 = (v) => T + (1 - (v - bot.lo) / (bot.hi - bot.lo || 1)) * (H2 - T - B);
-      const s2 = svg("svg", { class: "chart cf-chart", width, height: H2, viewBox: `0 0 ${width} ${H2}`, role: "img",
-        "aria-label": `Running totals since ${dayLabel(data.range.start)}: saved ${sgn(data.totals.net, 0)}, net worth change ${sgn(data.totals.net_worth_change, 0)}.` });
-      const band2 = svg("rect", { class: "cf-band", y: T, height: H2 - T - B, width: 0 });
-      const pinBand2 = svg("rect", { class: "cf-pin", y: T, height: H2 - T - B, width: 0 });
-      const cross = svg("line", { class: "cf-cross", y1: T, y2: H2 - B, x1: -10, x2: -10 });
-      s2.append(pinBand2, band2);
-      for (const v of bot.ticks) {
-        s2.append(svg("line", { class: v === 0 ? "gl cf-zero" : "gl", x1: L, x2: width - R, y1: y2(v), y2: y2(v) }));
-        const label = svg("text", { x: L - 6, y: y2(v) + 4, "text-anchor": "end" });
-        label.textContent = compact(v);
-        s2.append(label);
+      const lines = CF_LINE_KEYS.filter(([key]) => !off.has(key));
+      const lineAll = [0, ...lines.flatMap(([key]) => lineVals[key])];
+      const bLo = Math.min(...barVals), bHi = Math.max(...barVals);
+      const lLo = Math.min(...lineAll), lHi = Math.max(...lineAll);
+      // Right scale = left scale x k, with k the smallest round factor that fits every line inside the bars' range.
+      let need = 1;
+      if (lHi > 0) need = Math.max(need, lHi / Math.max(bHi, 1));
+      if (lLo < 0) need = Math.max(need, lLo / Math.min(bLo, -1));
+      const k = niceUp(need);
+      const sc = niceTicks(Math.min(bLo, lLo / k), Math.max(bHi, lHi / k), narrow ? 4 : 5);
+      const y = (v) => T + (1 - (v - sc.lo) / (sc.hi - sc.lo || 1)) * (H - T - B);
+      const yL = (v) => y(v / k);
+
+      const s1 = svg("svg", { class: "chart cf-chart", width, height: H, viewBox: `0 0 ${width} ${H}`, tabindex: 0, role: "img",
+        "aria-label": `Income ${m0(data.totals.income)}, expenses ${m0(data.totals.expenses)}, saved ${sgn(data.totals.net, 0)} from ${dayLabel(data.range.start)} to ${dayLabel(data.range.end)}. Bars per ${data.group} on the left scale, running totals on the right scale. Use the arrow keys to move between periods and Enter to list one.` });
+      const band1 = svg("rect", { class: "cf-band", y: T, height: H - T - B, width: 0 });
+      const pinBand1 = svg("rect", { class: "cf-pin", y: T, height: H - T - B, width: 0 });
+      s1.append(pinBand1, band1);
+      for (const v of sc.ticks) {
+        s1.append(svg("line", { class: v === 0 ? "gl cf-zero" : "gl", x1: L, x2: width - R, y1: y(v), y2: y(v) }));
+        const left = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+        left.textContent = compact(v);
+        s1.append(left);
+        if (lines.length) {
+          const right = svg("text", { x: width - R + 6, y: y(v) + 4, "text-anchor": "start", class: "cf-right" });
+          right.textContent = compact(v * k);
+          s1.append(right);
+        }
       }
-      for (const [key, , cls] of visible) {
+      const zero = y(0);
+      bks.forEach((b, i) => {
+        const x = cx(i) - barW / 2, part = b.partial ? " cf-partial" : "";
+        if (!off.has("income")) {
+          const posted = b.income - b.pending_income;
+          s1.append(cfBar(x, barW, zero, y(posted), !b.pending_income, `fill cf-inc${part}`));
+          if (b.pending_income) s1.append(cfBar(x, barW, y(posted), y(b.income), true, `fill cf-inc cf-pending${part}`));
+        }
+        if (!off.has("expenses")) {
+          const posted = b.expenses - b.pending_expenses;
+          s1.append(cfBar(x, barW, zero, y(-posted), !b.pending_expenses, `fill cf-exp${part}`));
+          if (b.pending_expenses) s1.append(cfBar(x, barW, y(-posted), y(-b.expenses), true, `fill cf-exp cf-pending${part}`));
+        }
+      });
+      if (!off.has("net") && n <= 62) bks.forEach((b, i) => s1.append(svg("circle", { class: "cf-dot", cx: cx(i), cy: y(b.net), r: 4 })));
+      // Lines on top of the bars, each with a thin halo in the card colour so it stays readable where it crosses one.
+      for (const [key, , cls] of lines) {
         const pts = lineVals[key];
-        if (n === 1) { s2.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(0), cy: y2(pts[0]), r: 4 })); continue; }
-        s2.append(svg("path", { class: `cf-line ${cls}`, d: pts.map((v, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${y2(v).toFixed(1)}`).join(" ") }));
-        s2.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(n - 1), cy: y2(pts[n - 1]), r: 4 }));
+        if (n > 1) {
+          const d = pts.map((v, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${yL(v).toFixed(1)}`).join(" ");
+          s1.append(svg("path", { class: "cf-casing", d }), svg("path", { class: `cf-line ${cls}`, d }));
+        }
+        s1.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(n - 1), cy: yL(pts[n - 1]), r: 4 }));
       }
+      const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 54 : 66)))));
       bks.forEach((b, i) => {
         if (i % every) return;
-        const label = svg("text", { x: cx(i), y: H2 - 6, "text-anchor": "middle" });
+        const label = svg("text", { x: cx(i), y: H - 6, "text-anchor": "middle" });
         label.textContent = b.short_label;
-        s2.append(label);
+        s1.append(label);
       });
-      s2.append(cross);
+      const drag1 = svg("rect", { class: "cf-drag", y: T, height: H - T - B, width: 0 });
+      s1.append(drag1);
 
       plot1.replaceChildren(s1);
-      plot2.replaceChildren(s2);
       empty.hidden = bks.some((b) => b.income_count || b.expense_count);
-      geo = { L, R, T, width, slot, cx, zero, s1, s2, band1, band2, pinBand1, pinBand2, cross, drag1, n };
-      wire(s1, true); wire(s2, false);
+      geo = { L, R, T, width, slot, cx, zero, s1, band1, pinBand1, drag1, n };
+      wire(s1);
       paintBands();
     }
 
@@ -1211,11 +1217,9 @@
         const a = Math.min(i, j), b = Math.max(i, j);
         rect.setAttribute("x", geo.L + geo.slot * a); rect.setAttribute("width", geo.slot * (b - a + 1));
       };
-      place(geo.band1, hover); place(geo.band2, hover);
-      place(geo.pinBand1, pinned ? pinned.i : null); place(geo.pinBand2, pinned ? pinned.i : null);
+      place(geo.band1, hover);
+      place(geo.pinBand1, pinned ? pinned.i : null);
       place(geo.drag1, drag && drag.moved ? drag.i : null, drag ? drag.j : null);
-      const x = hover == null ? -10 : geo.cx(hover);
-      geo.cross.setAttribute("x1", x); geo.cross.setAttribute("x2", x);
     }
 
     function indexAt(svgEl, clientX) {
@@ -1225,25 +1229,24 @@
     }
     const sideAt = (clientY) => (clientY - geo.s1.getBoundingClientRect().top < geo.zero ? "income" : "expense");
 
-    function wire(svgEl, isBars) {
+    function wire(svgEl) {
       svgEl.addEventListener("pointermove", (e) => {
         if (e.pointerType === "touch") return;
         const i = indexAt(svgEl, e.clientX);
-        if (drag && isBars) {
+        if (drag) {
           if (i != null && i !== drag.j) { drag.j = i; drag.moved = drag.moved || i !== drag.i; paintBands(); }
           return;
         }
         hover = i; paintBands();
         if (i == null) { tip.hidden = true; return; }
-        showTip(i, isBars ? sideAt(e.clientY) : null, svgEl, e.clientY);
+        showTip(i, sideAt(e.clientY), svgEl, e.clientY);
       });
       svgEl.addEventListener("pointerleave", () => { if (!drag) { hover = null; paintBands(); tip.hidden = true; } });
       svgEl.addEventListener("click", (e) => {
         if (suppressClick) { suppressClick = false; return; }
         const i = indexAt(svgEl, e.clientX);
-        if (i != null) pin(i, isBars && !coarsePointer() ? sideAt(e.clientY) : "all");
+        if (i != null) pin(i, !coarsePointer() ? sideAt(e.clientY) : "all");
       });
-      if (!isBars) return;
       svgEl.addEventListener("pointerdown", (e) => {
         if (e.pointerType !== "mouse" || e.button !== 0) return;
         const i = indexAt(svgEl, e.clientX);
@@ -1288,14 +1291,15 @@
       if (coarsePointer()) return;
       const b = data.buckets[i];
       const parts = [el("div", { class: "cf-tiphead", text: b.label + (b.partial ? " (partial)" : "") })];
-      if (side == null) {
-        parts.push(tipRow(sgn(b.cum_income, 0), "cf-inc", "line", "Income so far"), tipRow(sgn(-b.cum_expenses, 0), "cf-exp", "line", "Expenses so far"),
-          tipRow(sgn(b.cum_net, 0), "cf-saved", "line", "Saved"),
-          tipRow(sgn(b.net_worth - data.totals.net_worth_start, 0), "cf-nw", "line", "Net worth change"),
-          el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: `Net worth of these accounts on ${shortDate(b.end)}` }), el("strong", { text: m0(b.net_worth) })));
-      } else {
+      {
         parts.push(tipRow(sgn(b.income), "cf-inc", "rect", `Income · ${b.income_count}`), tipRow(sgn(-b.expenses), "cf-exp", "rect", `Expenses · ${b.expense_count}`),
           tipRow(sgn(b.net), "cf-net", "dot", "Net"));
+        const off = hidden(), totals = [
+          ["cum_income", sgn(b.cum_income, 0), "cf-inc", "Income so far"], ["cum_expenses", sgn(-b.cum_expenses, 0), "cf-exp", "Expenses so far"],
+          ["cum_net", sgn(b.cum_net, 0), "cf-saved", "Saved"], ["nw", sgn(b.net_worth - data.totals.net_worth_start, 0), "cf-nw", `Net worth change (now ${m0(b.net_worth)})`],
+        ].filter(([key]) => !off.has(key));
+        if (totals.length) parts.push(el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: `Since ${shortDate(data.range.start)}` }),
+          totals.map(([, value, cls, label]) => tipRow(value, cls, "line", label))));
         if (b.pending_income || b.pending_expenses) parts.push(el("div", { class: "muted cf-small", text: `Includes ${m2(b.pending_income + b.pending_expenses)} pending` }));
         if (side === "expense" && b.top_categories.length) {
           const cats = b.top_categories.slice(0, 3), other = b.expenses - cats.reduce((s, c) => s + c.amount, 0);
@@ -1464,7 +1468,6 @@
     function render() {
       $("page-sub").textContent = `${shortDate(data.range.start)} – ${shortDate(data.range.end)} · by ${data.group}`;
       title1.textContent = `Income and expenses per ${data.group}`;
-      title2.textContent = `Running totals since ${shortDate(data.range.start)}`;
       paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
       notes.textContent = data.notes.join(" ");
     }
