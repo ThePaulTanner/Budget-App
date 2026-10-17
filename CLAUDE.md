@@ -82,8 +82,9 @@ Use a tab bar with five tabs.
 **Whose money (optional).** If `/api/people` returns anyone, show a "Household / each person" picker and pass `person_id` to `summary`, `accounts`, `transactions`, `spending`, `spending/monthly`, `holdings`, `holdings/live`, `networth` and `payments-due`. **Household (no `person_id`) counts every account once, however many owners it has.** A person's view shows the accounts they own in full, so a shared account appears in each owner's view and the people's totals do not add up to the household's; say so near the picker. Budgets and merchants are household-wide: in a person's view `budgeted_this_month` is null and `over_budget` is empty. A person's net-worth history only starts when they were added, and changing an account's owners later does not rewrite earlier points.
 
 **1. Overview**
-- A large net-worth figure, with assets, liabilities and investments beneath it.
-- A Swift Charts line chart of net worth with a 1M / 3M / 1Y / All picker (`days` = 30 / 90 / 365 / 3650).
+- **The cash-flow chart is the main chart, at the top** (see "Cash flow" below): its range and grouping pickers, the tiles, and the combined bars-and-lines chart. Tapping a bar opens its transactions.
+- Below it, a large net-worth figure, with assets, liabilities and investments beneath it.
+- A smaller Swift Charts line chart of net worth with a 1M / 3M / 1Y / All picker (`days` = 30 / 90 / 365 / 3650).
 - "Spent this month" against total budgeted.
 - Over-budget chips.
 - A reconnect banner, shown when needed.
@@ -103,13 +104,13 @@ Use a tab bar with five tabs.
 - Adding, editing and deleting budgets (swipe to delete) is supported.
 - Below the budgets: a "Spending by category" chart for the month, plus a 12-month spending bar chart.
 
-**Cash flow (inside Budgets, or its own screen from Overview's "This month" figure)**
+**Cash flow (the Overview's main chart)**
 - Range menu (Month to date, 6 months, 12 months, Year to date, All time, Custom) and a Day / Week / Month picker. Disable Month for Month to date and Day for spans over a year.
 - Tiles: income and expenses with the change against `previous` (income up is good, expenses up is bad, with an arrow as well as colour), net, savings rate, and net-worth change for the accounts in view.
 - **One** Swift Chart with bars and lines together (Paul wants them on the same chart, Mint-style).
   - Bars, on the left scale: a `BarMark` pair per period, income up and expenses down (pending as a lighter outer part, partial periods faded), with a dot for `net`.
   - Lines, on the right scale: `LineMark`s for the running totals `cum_income`, `-cum_expenses`, `cum_net` ("Saved") and `net_worth - totals.net_worth_start` ("Net worth change, accounts shown"), drawn over the bars.
-  - The right scale is the left scale times a round factor `k`: the smallest of 1, 2 or 5 × 10ⁿ that fits every line inside the bars' range (`k = max(1, maxLine / maxBar, minLine / minBar)`, rounded up that way). Swift Charts has one y-scale, so plot each line value divided by `k` and add trailing `AxisMarks` at the same positions whose labels show the value times `k`. Both scales then share zero, gridlines and round labels.
+  - The right scale is the left scale times a round factor `k`: the smallest of 1, 2 or 5 × 10ⁿ that fits every line inside the bars' range (`k = max(1, maxLine / maxBar, minLine / minBar)`, rounded up that way). Swift Charts has one y-scale, so plot each line value divided by `k` and add trailing `AxisMarks` at the same positions whose labels show the value times `k`. Both scales then share zero, gridlines and round labels. Pick the left tick step so that, times `k`, it is still 1, 2 or 5 × 10ⁿ: when `k` starts with 5 use left steps of 1 or 2 × 10ⁿ, when it starts with 2 use 1, 2.5 or 5, when it starts with 1 use 1, 2 or 5. If every bar series is hidden, use `k = 1` and one axis.
   - Label which is which in the legend: "Bars, per week (left scale)" and "Lines, running total (right scale)".
   - Colours: income `#1baf7a` (dark `#199e70`), expenses `#eb6834` (dark `#d95926`), saved `#2a78d6` (dark `#3987e5`), net worth change the secondary label colour.
 - Tap a bar for a sheet of `/api/cashflow/transactions` for that period (All / Income / Expenses, search), a "Left out" section showing each `reason`, ‹ › to move between periods, and per row: change category, leave out of / count in cash flow, back to automatic. Long-press and drag to scrub.

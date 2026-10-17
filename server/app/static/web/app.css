@@ -454,6 +454,7 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 .cf-card { transition: opacity .15s; }
 .cf-card.cf-loading { opacity: .55; }
 .cf-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin: 2px 0 4px; }
+.cf-range { margin: 0 0 6px; font-size: .88rem; }
 .cf-legend-label { font-size: .74rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: .04em; margin-right: 2px; }
 .cf-chip { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 2px 0; font-size: .82rem; color: var(--muted); }
 .cf-chip[aria-pressed="false"] { opacity: .4; text-decoration: line-through; }
@@ -504,11 +505,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .cf-controls .seg.wide { flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; }
   .cf-controls .seg.wide::-webkit-scrollbar { display: none; }
   .cf-controls .seg.wide button { flex: none; }
-  /* four Spending tabs don't fit across a phone: show them as a 2 x 2 grid, all visible */
-  .subtabs .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
-  .subtabs .seg button { white-space: nowrap; }
-  .subtabs .seg button:nth-child(n + 3) { border-top: 1px solid var(--border); }
-  .subtabs .seg button:nth-child(odd) { border-left: 0; }
   .cf-tiles { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 8px; margin-left: -4px; padding: 0 4px 4px; }
   .cf-tile { flex: 0 0 46%; scroll-snap-align: start; padding: 10px 12px; }
   .cf-tile strong { font-size: 1.15rem; }

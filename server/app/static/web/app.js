@@ -557,7 +557,7 @@
     view().replaceChildren(viewerNote(), ...sections);
   }
 
-  async function viewOverview(id) {
+  async function viewOverview(id, params) {
     const [summary, dues, log, spending] = await Promise.all([
       api(scoped("/api/summary")), api(scoped("/api/payments-due")).catch(() => null), api("/auth/login-log?limit=100").catch(() => null),
       api(scoped("/api/spending")).catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
@@ -606,8 +606,10 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/spending?tab=budgets", text: "See budgets and trends" }))]);
 
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), paymentsSummary(dues));
+    const cashflowHost = el("div", { class: "cf-host" });
+    view().replaceChildren(viewerNote(), cashflowHost, el("div", { class: "grid" }, netCard, spendCard), paymentsSummary(dues));
     drawChart();
+    await cashflowPanel(id, params, cashflowHost);
   }
 
   // ---------------------------------------------------------------- Transactions
@@ -922,20 +924,19 @@
     return q;
   }
 
-  // Round tick marks covering lo..hi (always including zero).
-  function niceTicks(lo, hi, count = 4) {
+  // Round tick marks covering lo..hi (always including zero). `steps` are the allowed step sizes per power of ten.
+  function niceTicks(lo, hi, count = 4, steps = [1, 2, 2.5, 5]) {
     lo = Math.min(lo, 0); hi = Math.max(hi, 0);
     if (hi - lo < 1) hi = lo + 1;
     const raw = (hi - lo) / count, mag = 10 ** Math.floor(Math.log10(raw)), norm = raw / mag;
-    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+    const step = (steps.find((m) => norm <= m) || 10) * mag;
     const start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step;
     const ticks = [];
     for (let v = start; v <= end + step / 2; v += step) ticks.push(Math.abs(v) < step / 1e6 ? 0 : v);
     return { lo: start, hi: end, ticks };
   }
 
-  // The smallest of 1, 2 or 5 x 10^n that is at least x (never below 1). No 2.5: times a round tick it
-  // can give labels like $125K.
+  // The smallest of 1, 2 or 5 x 10^n that is at least x (never below 1).
   function niceUp(x) {
     if (!(x > 1)) return 1;
     const mag = 10 ** Math.floor(Math.log10(x)), norm = x / mag;
@@ -955,8 +956,10 @@
     return svg("path", { class: cls, d });
   }
 
-  async function viewCashflow(id, params) {
-    // An address like #/spending?tab=cashflow&range=6m&group=week opens that view.
+  // The cash-flow chart is the Overview's main chart. It draws itself into `host`, so it can reload
+  // without redrawing the rest of the page.
+  async function cashflowPanel(id, params, host) {
+    // An address like #/overview?range=6m&group=week opens that view.
     if (params.get("range")) {
       cf.range = params.get("range"); cf.group = params.get("group");
       cf.start = params.get("start"); cf.end = params.get("end");
@@ -985,6 +988,7 @@
     const legend1 = el("div", { class: "cf-legend", role: "group", "aria-label": "Bars on the chart" });
     const legend2 = el("div", { class: "cf-legend", role: "group", "aria-label": "Lines on the chart" });
     const title1 = el("h2", { text: "Income and expenses" });
+    const rangeLine = el("p", { class: "muted cf-range" });
     const viewSeg = el("div", { class: "seg compact", role: "group", "aria-label": "View" });
     const plot1 = el("div", { class: "cf-plot" });
     const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
@@ -994,7 +998,7 @@
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
     const chartCard = el("section", { class: "card cf-card" },
-      el("div", { class: "card-head" }, el("div", {}, title1, legend1, legend2), el("div", { class: "actions" }, zoomBtn, viewSeg)),
+      el("div", { class: "card-head" }, el("div", {}, title1, rangeLine, legend1, legend2), el("div", { class: "actions" }, zoomBtn, viewSeg)),
       chartView, tableView, notes);
     const listTitle = el("h2", { text: "" });
     const listSummary = el("p", { class: "muted" });
@@ -1013,7 +1017,7 @@
     document.body.append(tip);
     cleanups.push(() => tip.remove());
 
-    view().replaceChildren(viewerNote(), el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard);
+    host.replaceChildren(el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard);
 
     // ---- controls
     function allowedGroups() {
@@ -1047,10 +1051,10 @@
     }
 
     function rememberAddress() {
-      const q = new URLSearchParams({ tab: "cashflow", range: cf.range });
+      const q = new URLSearchParams({ range: cf.range });
       if (cf.group) q.set("group", cf.group);
       if (cf.range === "custom" && cf.start && cf.end) { q.set("start", cf.start); q.set("end", cf.end); }
-      history.replaceState(null, "", `#/spending?${q}`);  // no hashchange, so no reload
+      history.replaceState(null, "", `#/overview?${q}`);  // no hashchange, so no reload
     }
 
     // ---- data
@@ -1112,7 +1116,8 @@
       const per = data ? data.group : "period";
       legend1.replaceChildren(el("span", { class: "cf-legend-label", text: `Bars, per ${per} (left scale)` }),
         ...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)));
-      legend2.replaceChildren(el("span", { class: "cf-legend-label", text: "Lines, running total (right scale)" }),
+      const barsShown = CF_BAR_KEYS.some(([key]) => !hidden().has(key));
+      legend2.replaceChildren(el("span", { class: "cf-legend-label", text: barsShown ? "Lines, running total (right scale)" : "Lines, running total" }),
         ...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
     }
 
@@ -1144,12 +1149,18 @@
       const lineAll = [0, ...lines.flatMap(([key]) => lineVals[key])];
       const bLo = Math.min(...barVals), bHi = Math.max(...barVals);
       const lLo = Math.min(...lineAll), lHi = Math.max(...lineAll);
+      const barsShown = CF_BAR_KEYS.some(([key]) => !off.has(key));
       // Right scale = left scale x k, with k the smallest round factor that fits every line inside the bars' range.
+      // With every bar hidden there is only the lines' scale: k = 1, labelled once, on the left.
       let need = 1;
-      if (lHi > 0) need = Math.max(need, lHi / Math.max(bHi, 1));
-      if (lLo < 0) need = Math.max(need, lLo / Math.min(bLo, -1));
+      if (barsShown && lHi > 0) need = Math.max(need, lHi / Math.max(bHi, 1));
+      if (barsShown && lLo < 0) need = Math.max(need, lLo / Math.min(bLo, -1));
       const k = niceUp(need);
-      const sc = niceTicks(Math.min(bLo, lLo / k), Math.max(bHi, lHi / k), narrow ? 4 : 5);
+      const twoScales = barsShown && lines.length > 0;
+      // Left steps whose multiple by k is still a 1, 2 or 5 step on the right (a 5K step x 50 would read 250K, 750K).
+      const lead = Math.round(k / 10 ** Math.floor(Math.log10(k)));
+      const steps = twoScales && k > 1 ? { 1: [1, 2, 5], 2: [1, 2.5, 5], 5: [1, 2] }[lead] : undefined;
+      const sc = niceTicks(Math.min(bLo, lLo / k), Math.max(bHi, lHi / k), narrow ? 4 : 5, steps);
       const y = (v) => T + (1 - (v - sc.lo) / (sc.hi - sc.lo || 1)) * (H - T - B);
       const yL = (v) => y(v / k);
 
@@ -1163,7 +1174,7 @@
         const left = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
         left.textContent = compact(v);
         s1.append(left);
-        if (lines.length) {
+        if (twoScales) {
           const right = svg("text", { x: width - R + 6, y: y(v) + 4, "text-anchor": "start", class: "cf-right" });
           right.textContent = compact(v * k);
           s1.append(right);
@@ -1466,8 +1477,8 @@
     }
 
     function render() {
-      $("page-sub").textContent = `${shortDate(data.range.start)} – ${shortDate(data.range.end)} · by ${data.group}`;
       title1.textContent = `Income and expenses per ${data.group}`;
+      rangeLine.textContent = `${dayLabel(data.range.start)} – ${dayLabel(data.range.end)}`;
       paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
       notes.textContent = data.notes.join(" ");
     }
@@ -2341,12 +2352,11 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with four tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
+  // Spending is one page with three tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
   const SPENDING_TABS = [
     ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
     ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
-    ["cashflow", "Cash flow", viewCashflow, "Income and expenses over time"],
   ];
   let spendingTab = "transactions";
   const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
@@ -2366,9 +2376,9 @@
   }
 
   const PAGES = {
-    overview: ["Overview", "Net worth, spending and credit card payments"],
+    overview: ["Overview", "Cash flow, net worth, spending and credit card payments"],
     accounts: ["Accounts", "Balances by bank and account"],
-    spending: ["Spending", "Transactions, merchants, budgets and cash flow"],
+    spending: ["Spending", "Transactions, merchants and budgets"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],
@@ -2419,6 +2429,7 @@
     const params = new URLSearchParams(query || "");
     let name = asked in ROUTES || isSpendingTab(asked) ? asked : "overview";
     if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
+    if (name === "spending" && params.get("tab") === "cashflow") name = "overview";  // cash flow moved to the Overview
     if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
     renderSubtabs(name);
     for (const a of document.querySelectorAll("#tabs a, #menu-list a")) {
