@@ -108,7 +108,8 @@ label input, label select { margin-top: .25rem; color: var(--text); }
 label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor: pointer; }
 .checkline { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 6px 0; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
-.toolbar input, .toolbar select { width: auto; flex: 1 1 160px; }
+.toolbar input, .toolbar select { width: auto; flex: 1 1 160px; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+@media (max-width: 600px) { .toolbar input, .toolbar select { flex-basis: 100%; } }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
 .seg.wide { max-width: 100%; overflow-x: auto; }
