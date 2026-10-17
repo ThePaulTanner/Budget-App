@@ -122,6 +122,17 @@ def test_list_and_remove_logins(client, services, seeded, sam):
     assert services.db.one("SELECT count(*) AS n FROM recovery_codes WHERE user_id=?", (other["id"],))["n"] == 0
 
 
+def test_a_removed_login_stops_working_at_once(client, seeded, sam):
+    paul = seeded[1]
+    hers = sam.headers()
+    assert client.get("/api/summary", headers=hers).status_code == 200
+    sam_id = [u for u in client.get("/auth/users", headers=paul).json() if u["username"] == "sam"][0]["id"]
+    assert client.delete(f"/auth/users/{sam_id}", headers=paul).status_code == 204
+    assert client.get("/api/summary", headers=hers).status_code == 401  # her token, still unexpired, no longer works
+    removed = [e for e in client.get("/auth/login-log", headers=paul).json()["events"] if e["result"] == "login_removed"]
+    assert removed[0]["username"] == "paul" and removed[0]["origin"] == "removed sam"  # who did it, and to whom
+
+
 def test_login_endpoints_need_sign_in(client):
     assert client.get("/auth/users").status_code == 401
     assert client.delete("/auth/users/2").status_code == 401

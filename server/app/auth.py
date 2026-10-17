@@ -465,9 +465,11 @@ class AuthService:
         if user_id == ctx.user_id:
             return "self"
         with self._login_lock:
-            if self.db.run("DELETE FROM users WHERE id=?", (user_id,)) == 0:
+            row = self.db.one("SELECT username FROM users WHERE id=?", (user_id,))
+            if row is None:
                 return "missing"
-            self._log("login_removed", "-", known=True, user_id=ctx.user_id)
+            self.db.run("DELETE FROM users WHERE id=?", (user_id,))
+            self._log("login_removed", "-", origin=f"removed {row['username']}", known=True, user_id=ctx.user_id)
             return "removed"
 
     # -- devices -----------------------------------------------------------
