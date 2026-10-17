@@ -856,8 +856,70 @@
     return { text: `${sign}${money(Math.abs(change.amount), currency)}${percent}`, cls: change.amount > 0 ? "income" : change.amount < 0 ? "neg" : "muted" };
   }
 
+  // ---- Investment activity: buys, sells, dividends and fees with their dates ---------------------
+  const INV_LABELS = { buy: "Bought", sell: "Sold", fee: "Fee", transfer: "Transfer", cancel: "Cancelled" };
+  const invLabel = (t) => INV_LABELS[t.type] || (t.subtype && t.subtype !== "other" ? titleCase(t.subtype) : titleCase(t.type));
+  function investmentRow(t, showAccount) {
+    const amount = signed(t.amount, t.currency);
+    const detail = t.quantity && t.price ? `${Math.abs(t.quantity)} @ ${money(t.price, t.currency)}${t.fees ? ` \u00B7 fee ${money(t.fees, t.currency)}` : ""}` : null;
+    return el("div", { class: "row" },
+      el("div", { class: "grow" },
+        el("div", {}, el("strong", { text: invLabel(t) }), t.ticker && el("span", { class: "muted", text: `  ${t.ticker}` })),
+        el("div", { class: "muted", text: [shortDate(t.date), showAccount && `${t.account_name}${t.account_mask ? ` \u2022\u2022${t.account_mask}` : ""}`, detail].filter(Boolean).join(" \u00B7 ") })),
+      el("div", { class: `amount ${amount.cls}`, text: amount.text }));
+  }
+  // A list that loads 50 at a time with a "Show more" button. `query` is the extra URL parameters.
+  function investmentActivity(query, showAccount, id) {
+    const list = el("div");
+    const status = el("p", { class: "empty" });
+    const more = el("button", { type: "button", text: "Show more", hidden: true });
+    let offset = 0;
+    async function load(reset) {
+      if (reset) { offset = 0; list.replaceChildren(); }
+      status.textContent = "Loading\u2026"; more.hidden = true;
+      try {
+        const q = new URLSearchParams({ limit: "50", offset: String(offset), ...query() });
+        if (viewer != null) q.set("person_id", String(viewer));
+        const page = await api(`/api/investments/transactions?${q}`);
+        if (id !== navId) return;
+        offset += page.transactions.length;
+        list.append(...page.transactions.map((t) => investmentRow(t, showAccount)));
+        status.textContent = page.total === 0 ? "No activity yet. Your bank may not share it, or it arrives with the next sync." : "";
+        more.hidden = offset >= page.total;
+      } catch (err) { if (err instanceof SignedOut) showLogin(); else status.textContent = err.message; }
+    }
+    more.addEventListener("click", () => load(false));
+    return { node: el("div", {}, list, status, more), load };
+  }
+
   async function viewInvestments(id) {
     let timer = null;
+    let activityCard = null;  // built on the first paint and kept across the once-a-minute refresh
+    const bookOf = (list, cur) => {
+      const mine = list.filter((h) => h.currency === cur);
+      const known = mine.filter((h) => h.cost_basis != null);
+      const book = known.reduce((sum, h) => sum + h.cost_basis, 0);
+      const value = known.reduce((sum, h) => sum + (h.value || 0), 0);
+      return { book, gain: value - book, pct: book > 0 ? ((value - book) / book) * 100 : null, missing: mine.length - known.length, known: known.length };
+    };
+    const gainText = (gain, pct, cur) => `${gain > 0 ? "+" : gain < 0 ? MINUS : ""}${money(Math.abs(gain), cur)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}`;
+    function openPosition(h) {
+      const history = investmentActivity(() => ({ account_id: h.account_id, security_id: h.security_id }), false, id);
+      const avg = h.cost_basis != null && h.quantity > 0 ? h.cost_basis / h.quantity : null;
+      openSheet(
+        el("h2", { text: h.ticker || h.name }),
+        h.ticker && el("p", { class: "muted", text: h.name }),
+        el("div", { class: "row" }, el("div", { class: "grow", text: "Quantity" }), el("div", { class: "amount", text: String(h.quantity) })),
+        el("div", { class: "row" }, el("div", { class: "grow", text: "Book value" }), el("div", { class: "amount", text: h.cost_basis != null ? money(h.cost_basis, h.currency) : "Not reported by your bank" })),
+        avg != null && el("div", { class: "row" }, el("div", { class: "grow", text: "Average cost per unit" }), el("div", { class: "amount", text: money(avg, h.currency) })),
+        el("div", { class: "row" }, el("div", { class: "grow", text: "Value" }), el("div", { class: "amount", text: h.value != null ? money(h.value, h.currency) : "\u2014" })),
+        h.gain != null && el("div", { class: "row" }, el("div", { class: "grow", text: "Gain" }),
+          el("div", { class: `amount ${h.gain > 0 ? "income" : h.gain < 0 ? "neg" : ""}`, text: gainText(h.gain, h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null, h.currency) })),
+        el("h3", { text: "Buys, sells and dividends" }),
+        history.node,
+        el("div", { class: "actions" }, el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
+      history.load(true);
+    }
     const paint = (data) => {
       const totals = Object.entries(data.totals);
       const status = data.status;
@@ -878,7 +940,11 @@
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
           : totals.map(([cur, t]) => {
             const c = changeText(t.changes[invPeriod], cur);
+            const b = bookOf(data.holdings, cur);
             return el("div", {}, el("div", { class: "big" }, money(t.value, cur), el("span", { class: "muted", text: `  ${cur}` })),
+              b.known > 0 && el("div", { class: "muted" }, `Book value ${money(b.book, cur)} \u00B7 `,
+                el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: `All time ${gainText(b.gain, b.pct, cur)}` }),
+                b.missing > 0 && ` \u00B7 ${b.missing} position${b.missing === 1 ? " has" : "s have"} no book value from the bank`),
               c ? el("div", { class: c.cls }, el("strong", { text: c.text }), el("span", { class: "muted", text: `  ${PERIOD_HELP[invPeriod]}` }))
                 : el("div", { class: "muted", text: "No change available for this period yet." }));
           }),
@@ -893,20 +959,41 @@
         byAccount.get(key).push(h);
       }
       const cards = [...byAccount].map(([name, holdings]) => el("section", { class: "card" }, el("h2", { text: name }),
+        [...new Set(holdings.map((h) => h.currency))].map((cur) => {
+          const b = bookOf(holdings, cur);
+          const v = holdings.filter((h) => h.currency === cur).reduce((sum, h) => sum + (h.value || 0), 0);
+          return el("p", { class: "muted" }, `Value ${money(v, cur)}`, b.known > 0 && ` \u00B7 Book value ${money(b.book, cur)} \u00B7 `,
+            b.known > 0 && el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }));
+        }),
         holdings.map((h) => {
           const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
           const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
           const c = changeText(h.changes[invPeriod], h.currency);
           const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price");
-          return el("div", { class: "row" },
+          return el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => openPosition(h),
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },
               el("strong", { text: h.ticker || h.name }), h.live && h.market_open && el("span", { class: "badge", text: "Live" }),
               el("div", { class: "muted", text: `${h.ticker ? h.name + " \u00B7 " : ""}${h.quantity} @ ${h.price != null ? money(h.price, h.currency) : "\u2014"} (${priceNote})` })),
             el("div", { class: "amount" }, h.value != null ? money(h.value, h.currency) : "\u2014",
               c && el("div", { class: c.cls, text: c.text }),
+              h.cost_basis != null && el("div", { class: "muted", text: `Book value ${money(h.cost_basis, h.currency)}` }),
               h.gain != null && el("div", { class: `muted ${gainCls}`, text: `All time ${h.gain > 0 ? "+" : h.gain < 0 ? MINUS : ""}${money(Math.abs(h.gain), h.currency)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}` })));
         })));
-      view().replaceChildren(viewerNote(), head, ...cards);
+      if (!activityCard && data.holdings.length > 0) {
+        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`]))];
+        const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }), accounts.map(([v, t]) => el("option", { value: v, text: t })));
+        const typeSel = el("select", { "aria-label": "Type" }, el("option", { value: "", text: "Everything" }),
+          [["buy", "Buys"], ["sell", "Sells"], ["cash", "Dividends and cash"], ["fee", "Fees"], ["transfer", "Transfers"]].map(([v, t]) => el("option", { value: v, text: t })));
+        const activity = investmentActivity(() => Object.fromEntries([["account_id", accountSel.value], ["type", typeSel.value]].filter(([, v]) => v)), true, id);
+        accountSel.addEventListener("change", () => activity.load(true));
+        typeSel.addEventListener("change", () => activity.load(true));
+        activityCard = el("section", { class: "card" }, el("h2", { text: "Activity" }),
+          el("p", { class: "muted", text: "Buys, sells, dividends and fees with their dates, as your bank reports them (about the last two years). Click a position above to see just its history." }),
+          el("div", { class: "toolbar" }, accountSel, typeSel), activity.node);
+        activity.load(true);
+      }
+      view().replaceChildren(viewerNote(), head, ...cards, activityCard);
     };
 
     const load = async () => paint(await api(scoped("/api/holdings/live"), { timeout: 40000 }));

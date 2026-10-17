@@ -57,6 +57,7 @@ A personal, read-mostly iPhone app for one user (Paul). It shows bank balances, 
 | `DELETE /api/budgets/{CATEGORY}` | — | |
 | `GET /api/holdings` | `holdings.json` | `totals` is `{currency: value}`. The list is sorted by value. Group by `account_name`. `gain` = value − cost_basis and may be null. |
 | `GET /api/holdings/live` | `holdings_live.json` | Same positions at **live prices** (Yahoo Finance via the server; may lag up to ~15 min). Adds `live`, `price_time`, `market_open`, `open`, `previous_close` and `changes` per position (`day`, `open`, `1w`, `1m`, `3m`, `ytd`, `1y`: `{amount, percent}` or null) plus the same per-currency in `totals`, and a `status` object (`enabled`, `live_positions`, `stale`, `message`). Poll about once a minute while the screen is visible. If `status.message` is set, show it and the bank's prices. Changes assume today's quantity was held throughout. The server is the only thing that contacts Yahoo, so the app needs no ATS exception or API key. |
+| `GET /api/investments/transactions` | `investment_transactions.json` | Buys, sells, dividends and fees, newest first. Query parameters: `account_id`, `security_id`, `type` (`buy`, `sell`, `cash`, `fee`, `transfer`, `cancel`), `start`, `end` (YYYY-MM-DD), `limit` (≤1000, default 100), `offset`, `person_id`. Returns `{total, limit, offset, transactions}`; each has `date`, `name`, `ticker`, `type`, `subtype` (for example `dividend`), `quantity`, `price`, `amount`, `fees` (several can be null) and `currency`. **Same sign rule as bank transactions:** `amount` positive = cash left the account (a buy or a fee) and shows as `−$4,680.00`; negative = cash came in (a sale or a dividend) and shows as `+$900.00` in green. `quantity` is positive for a buy and negative for a sale. Holdings' `cost_basis` is the **book value** of the whole position (not per unit); show it, and the average cost per unit is `cost_basis / quantity`. |
 | `GET /api/merchants?period=month\|3m\|12m\|all&search=` | `merchants.json` | The merchant master list: Plaid's cleaned merchant names become merchants automatically, and the user can name unclear transactions. Per merchant for the period (base currency): `transactions`, `spent` (spending categories only, refunds reduce it), `outflow`, `inflow`, plus `first_date`, `last_date`, `top_category`, `auto` (false = named by the user), `aliases`, `other_currency_transactions`. Sorted by `spent`. Payments, transfers and income have `spent` 0; hide them by default. |
 | `GET /api/merchants/unassigned` | `merchants_unassigned.json` | Raw bank text with no clear merchant name yet, most frequent first: the "Needs a name" list. |
 | `GET /api/merchants/{id}?months=12` | `merchant_detail.json` | One merchant over time: totals, `monthly` (oldest first, zero months included, for a bar chart), `categories`, `alias_list` (the bank text that maps here), `lifetime`, `recent_transactions`. |
@@ -100,8 +101,9 @@ Use a tab bar with five tabs.
 - Below the budgets: a "Spending by category" chart for the month, plus a 12-month spending bar chart.
 
 **4. Investments**
-- Total value per currency.
-- Holdings grouped by account, each showing ticker or name, quantity, value, and gain in $ and %.
+- Total value per currency, with the book value and all-time gain beneath it.
+- Holdings grouped by account, each showing ticker or name, quantity, value, book value, and gain in $ and %. Tapping a position shows its book value, average cost per unit and its buys, sells and dividends with dates.
+- An Activity list of every buy, sell, dividend and fee (account and type filters, loaded 50 at a time).
 
 **5. Settings**
 - Server URL and a sign-in form (username, password, authenticator code), plus a "Test connection" button that calls `/health` and then `/api/summary`. A list of signed-in devices with Revoke, and Sign out.

@@ -1153,6 +1153,75 @@ def create_api_app(services: Services) -> FastAPI:
             "holdings": out,
         }
 
+    @app.get("/api/investments/transactions")
+    def investment_transactions(
+        ctx: Auth,
+        account_id: str | None = None,
+        security_id: str | None = None,
+        type: str | None = None,  # noqa: A002 - the query parameter is called `type`
+        start: str | None = None,
+        end: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        person_id: int | None = None,
+    ):
+        """Buys, sells, dividends and fees, newest first. `amount` follows Plaid: positive is cash
+        leaving the account (a buy or a fee), negative is cash coming in (a sale or a dividend).
+        `quantity` is positive for a buy and negative for a sale."""
+        where, params = ["a.hidden = 0"], []
+        condition, scope_params = scope_sql(person_id, "it.account_id")
+        if condition:
+            where.append(condition)
+            params += scope_params
+        if account_id:
+            where.append("it.account_id = ?")
+            params.append(account_id)
+        if security_id:
+            where.append("it.security_id = ?")
+            params.append(security_id)
+        if type:
+            where.append("it.type = ?")
+            params.append(type.strip().lower())
+        if (s_ := parse_day(start, "start")) is not None:
+            where.append("it.date >= ?")
+            params.append(s_)
+        if (e_ := parse_day(end, "end")) is not None:
+            where.append("it.date <= ?")
+            params.append(e_)
+        clause = " AND ".join(where)
+        join = "FROM investment_transactions it JOIN accounts a ON a.id = it.account_id"
+        total = db.one(f"SELECT count(*) AS n {join} WHERE {clause}", params)["n"]
+        rows = db.query(
+            f"SELECT it.*, a.name AS account_name, a.mask AS account_mask {join} WHERE {clause} "
+            "ORDER BY it.date DESC, it.id LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        )
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "transactions": [
+                {
+                    "id": r["id"],
+                    "account_id": r["account_id"],
+                    "account_name": r["account_name"],
+                    "account_mask": r["account_mask"],
+                    "security_id": r["security_id"],
+                    "date": r["date"],
+                    "name": r["name"],
+                    "ticker": r["ticker"],
+                    "type": r["type"],
+                    "subtype": r["subtype"],
+                    "quantity": num(r["quantity"]),
+                    "price": num(r["price"]),
+                    "amount": num(r["amount"]),
+                    "fees": num(r["fees"]),
+                    "currency": r["currency"],
+                }
+                for r in rows
+            ],
+        }
+
     @app.get("/api/networth")
     def networth(
         ctx: Auth,

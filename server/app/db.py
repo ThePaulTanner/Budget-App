@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA = """
 CREATE TABLE users (
@@ -180,6 +180,24 @@ CREATE TABLE custom_categories (
   parent TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE investment_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  security_id TEXT,
+  date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  ticker TEXT,
+  type TEXT NOT NULL,
+  subtype TEXT,
+  quantity TEXT,
+  price TEXT,
+  amount TEXT NOT NULL,
+  fees TEXT,
+  currency TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX investment_transactions_account ON investment_transactions(account_id, date DESC);
+CREATE INDEX investment_transactions_security ON investment_transactions(security_id);
 CREATE TABLE card_dues (
   account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   due_date TEXT,
@@ -290,6 +308,27 @@ CREATE TABLE custom_categories (
   parent TEXT,
   created_at TEXT NOT NULL
 );
+""",
+
+    8: """
+CREATE TABLE investment_transactions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  security_id TEXT,
+  date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  ticker TEXT,
+  type TEXT NOT NULL,
+  subtype TEXT,
+  quantity TEXT,
+  price TEXT,
+  amount TEXT NOT NULL,
+  fees TEXT,
+  currency TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX investment_transactions_account ON investment_transactions(account_id, date DESC);
+CREATE INDEX investment_transactions_security ON investment_transactions(security_id);
 """}
 
 
