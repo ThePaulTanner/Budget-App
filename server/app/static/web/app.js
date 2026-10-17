@@ -1074,30 +1074,31 @@
     // column holds a single kind of figure. The less important columns drop away on narrower screens.
     const dueRelative = (c) => (c.days_until_due === 0 ? "today" : c.days_until_due > 0 ? `in ${c.days_until_due} day${c.days_until_due === 1 ? "" : "s"}` : `${-c.days_until_due} day${c.days_until_due === -1 ? "" : "s"} ago`);
     const dash = () => el("span", { class: "muted", text: "\u2014" });
-    const headers = [["Card", "col-account"], ["Status", "col-bank"], ["Due date", "col-due"], ["Due in", "col-extra col-wide"],
+    const headers = [["Bank", "col-bankname"], ["Card", "col-account"], ["Status", "col-bank"], ["Due date", "col-due"], ["Due in", "col-extra col-wide"],
       ["Statement balance", "num col-balance"], ["Minimum", "num col-extra"], ["Balance now", "num col-extra"],
-      ["Available credit", "num col-extra col-wide"], ["Last payment", "num col-extra"], ["Paid on", "col-extra col-wide"]];
+      ["Available credit", "num col-extra col-wide"], ["Last payment", "num col-extra col-wide"], ["Paid on", "col-extra col-wide"],
+      ["Bank data updated", "col-extra col-wide"]];
     const bankKey = (c) => itemOfAccount.get(c.account_id) || c.institution || "";
     const banks = new Map();
     for (const c of data.cards) {
       if (!banks.has(bankKey(c))) banks.set(bankKey(c), []);
       banks.get(bankKey(c)).push(c);
     }
+    // The bank, and when its data was last refreshed, are shared by all its cards: each is one cell
+    // spanning the bank's rows, so it is shown once.
     const body = [];
     for (const [key, cards] of banks) {
       const item = itemsById.get(key);
       const name = cards[0].institution || (item && item.institution) || "Bank";
       const stamp = cards.filter((c) => c.dues_known && c.dues_updated_at).map((c) => c.dues_updated_at).sort().pop();
-      body.push(el("tr", { class: "bank-row" }, el("td", { colspan: headers.length },
-        el("div", { class: "bank-heading" }, bankLogo(item, name, 28), el("strong", { text: name }),
-          el("span", { class: "muted", text: `${cards.length} card${cards.length === 1 ? "" : "s"}` }),
-          stamp && el("span", { class: "muted bank-updated", text: `Updated ${ago(stamp)}` })))));
-      for (const c of cards) {
+      cards.forEach((c, index) => {
         const [label, tone] = DUE_PILLS[c.status];
         const cur = c.currency;
         const settled = c.status === "paid" || c.status === "nothing_owed";
         const bad = c.status === "overdue" ? "neg" : "";
-        body.push(el("tr", { class: c.status === "overdue" ? "overdue" : "" },
+        body.push(el("tr", { class: `${c.status === "overdue" ? "overdue" : ""}${index === 0 ? " bank-first" : ""}` },
+          index === 0 && el("td", { class: "col-bankname shared", rowspan: cards.length },
+            el("div", { class: "bank-cell" }, bankLogo(item, name, 28), el("strong", { text: name }))),
           el("td", { class: "col-account" }, el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
             el("div", { class: "narrow-only" }, el("span", { class: `pill nomargin ${tone}`, text: label }))),
           el("td", { class: "col-bank" }, el("span", { class: `pill nomargin ${tone}`, text: label })),
@@ -1107,9 +1108,10 @@
           el("td", { class: "num col-extra" }, c.minimum_payment == null ? dash() : money(c.minimum_payment, cur)),
           el("td", { class: "num col-extra" }, money(c.current_balance, cur)),
           el("td", { class: "num col-extra col-wide" }, c.available_credit == null ? dash() : money(c.available_credit, cur)),
-          el("td", { class: "num col-extra" }, c.last_payment_amount == null ? dash() : money(c.last_payment_amount, cur)),
-          el("td", { class: "col-extra col-wide" }, c.last_payment_date ? shortDate(c.last_payment_date) : dash())));
-      }
+          el("td", { class: "num col-extra col-wide" }, c.last_payment_amount == null ? dash() : money(c.last_payment_amount, cur)),
+          el("td", { class: "col-extra col-wide" }, c.last_payment_date ? shortDate(c.last_payment_date) : dash()),
+          index === 0 && el("td", { class: "col-extra col-wide shared muted", rowspan: cards.length, text: stamp ? ago(stamp) : "\u2014" })));
+      });
     }
     const rows = data.cards.length === 0 ? [] : [el("section", { class: "card acct-section" },
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table money-table" },

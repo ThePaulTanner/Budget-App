@@ -402,3 +402,26 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
   .money-table .col-account strong { white-space: normal; }
   .money-table .bank-updated { margin-left: 0; flex-basis: 100%; }
 }
+
+/* Money Management: the bank is its own column, one cell spanning that bank's cards */
+.money-table td.shared { vertical-align: middle; border-right: 1px solid var(--border); }
+.money-table td.shared.muted { border-right: 0; border-left: 1px solid var(--border); }
+.money-table tr.bank-first td { border-top: 1px solid var(--border-strong); }
+.money-table tbody tr.bank-first:first-child td { border-top: 0; }
+.money-table .bank-cell { display: flex; align-items: center; gap: 8px; }
+.money-table .bank-cell .bank-logo { flex: none; }
+.money-table .col-bankname { padding-left: 14px; }
+@media (max-width: 760px) {
+  .money-table .bank-cell { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .money-table .bank-cell strong { font-size: .8rem; }
+  .money-table .col-bankname { padding-left: 8px; }
+}
+@media (max-width: 760px) {
+  .money-table .bank-cell strong { font-size: .64rem; overflow-wrap: normal; }
+  .money-table .col-bankname { min-width: 52px; }
+  .money-table .bank-cell .bank-logo { width: 24px; height: 24px; }
+  .money-table .col-due { width: 4.3rem; max-width: 4.3rem; white-space: normal; }
+  .money-table .col-account .pill { font-size: .66rem; padding: 1px 7px; }
+  .money-table .col-account strong { font-size: .88rem; }
+  .money-table .col-balance { font-size: .9rem; }
+}
