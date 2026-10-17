@@ -133,7 +133,7 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .login-card h1 { margin: 10px 0 2px; }
 .login-card .muted { margin: 0 0 14px; }
 
-/* ---- app shell: sidebar, top bar, content, footer --------------------------------- */
+/* ---- app shell: sidebar, top bar, content --------------------------------- */
 .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 6px; padding: 18px 12px; background: var(--surface); border-right: 1px solid var(--border); }
 .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-bottom: 14px; }
@@ -153,7 +153,6 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .topbar .muted { margin: 2px 0 0; }
 .top-actions { display: flex; gap: 8px; }
 main { width: 100%; max-width: 1120px; margin: 0 auto; padding: var(--gutter); flex: 1; }
-.footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 16px var(--gutter); border-top: 1px solid var(--border); color: var(--muted-2); font-size: .82rem; }
 .banner { margin: 14px var(--gutter) 0; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--amber-bg); color: var(--amber-text); font-weight: 550; }
 .banner a { color: inherit; font-weight: 700; }
 .banner.danger { background: color-mix(in srgb, var(--red) 14%, var(--surface)); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); }

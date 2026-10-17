@@ -1783,12 +1783,10 @@
   };
   const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
-  // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
+  // The reconnect banner comes from the banks list, on every screen.
   async function refreshStatus() {
     try {
       const items = await api("/api/items");
-      const newest = items.map((i) => i.last_synced_at).filter(Boolean).sort((a, b) => new Date(a) - new Date(b)).pop();
-      $("foot-sync").textContent = items.length === 0 ? "No banks linked yet" : newest ? `Last synced ${ago(newest)}` : "Waiting for the first sync\u2026";
       setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
     } catch (err) {
       if (err instanceof SignedOut) showLogin();
