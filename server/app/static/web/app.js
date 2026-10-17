@@ -1070,45 +1070,52 @@
         el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." }))
       : null;
 
-    // One table, a card per row. The less important columns drop away on narrower screens.
+    // One table. Each bank gets a heading row, so the bank is shown once for all its cards, and every
+    // column holds a single kind of figure. The less important columns drop away on narrower screens.
     const dueRelative = (c) => (c.days_until_due === 0 ? "today" : c.days_until_due > 0 ? `in ${c.days_until_due} day${c.days_until_due === 1 ? "" : "s"}` : `${-c.days_until_due} day${c.days_until_due === -1 ? "" : "s"} ago`);
-    const dueCell = (c) => {
-      if (c.due_date == null) return el("td", { class: "col-due col-extra" }, el("span", { class: "muted", text: "Not shared" }));
-      const days = c.days_until_due;
-      const settled = c.status === "paid" || c.status === "nothing_owed";
-      const relative = dueRelative(c);
-      return el("td", { class: "col-due col-extra" }, el("div", { class: c.status === "overdue" ? "neg" : "", text: shortDate(c.due_date) }),
-        el("div", { class: c.status === "overdue" ? "neg small" : "muted small", text: settled ? "next payment date" : relative }));
-    };
-    const cardRows = data.cards.map((c) => {
-      const [label, tone] = DUE_PILLS[c.status];
-      const cur = c.currency;
-      const item = itemsById.get(itemOfAccount.get(c.account_id));
-      const dash = el("span", { class: "muted", text: "\u2014" });
-      return el("tr", { class: c.status === "overdue" ? "overdue" : "" },
-        el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, c.institution),
-          el("div", {}, el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
-            el("div", { class: "muted", text: c.institution || "" }),
-            el("div", {}, el("span", { class: `pill nomargin ${tone}`, text: label })),
-            c.due_date && el("div", { class: `small tiny-only ${c.status === "overdue" ? "neg" : "muted"}`, text: `Due ${shortDate(c.due_date)}${c.status === "paid" || c.status === "nothing_owed" ? "" : ` (${dueRelative(c)})`}` }),
-            c.minimum_payment != null && el("div", { class: "muted small tiny-only", text: `Minimum ${money(c.minimum_payment, cur)}` })))),
-        dueCell(c),
-        el("td", { class: "num col-balance" }, c.statement_balance == null ? dash : money(c.statement_balance, cur)),
-        el("td", { class: "num col-extra" }, c.minimum_payment == null ? dash : money(c.minimum_payment, cur)),
-        el("td", { class: "num col-extra" }, money(c.current_balance, cur)),
-        el("td", { class: "num col-extra" }, c.available_credit == null ? dash : money(c.available_credit, cur)),
-        el("td", { class: "num col-extra" }, c.last_payment_amount == null ? dash : [money(c.last_payment_amount, cur),
-          c.last_payment_date && el("div", { class: "muted small", text: shortDate(c.last_payment_date) })]),
-      );
-    });
-    const updated = data.cards.filter((c) => c.dues_known && c.dues_updated_at).map((c) => c.dues_updated_at).sort().pop();
-    const headers = [["Card", "col-account"], ["Due", "col-due col-extra"], ["Statement balance", "num col-balance"], ["Minimum", "num col-extra"],
-      ["Balance now", "num col-extra"], ["Available credit", "num col-extra"], ["Last payment", "num col-extra"]];
+    const dash = () => el("span", { class: "muted", text: "\u2014" });
+    const headers = [["Card", "col-account"], ["Status", "col-bank"], ["Due date", "col-due"], ["Due in", "col-extra col-wide"],
+      ["Statement balance", "num col-balance"], ["Minimum", "num col-extra"], ["Balance now", "num col-extra"],
+      ["Available credit", "num col-extra col-wide"], ["Last payment", "num col-extra"], ["Paid on", "col-extra col-wide"]];
+    const bankKey = (c) => itemOfAccount.get(c.account_id) || c.institution || "";
+    const banks = new Map();
+    for (const c of data.cards) {
+      if (!banks.has(bankKey(c))) banks.set(bankKey(c), []);
+      banks.get(bankKey(c)).push(c);
+    }
+    const body = [];
+    for (const [key, cards] of banks) {
+      const item = itemsById.get(key);
+      const name = cards[0].institution || (item && item.institution) || "Bank";
+      const stamp = cards.filter((c) => c.dues_known && c.dues_updated_at).map((c) => c.dues_updated_at).sort().pop();
+      body.push(el("tr", { class: "bank-row" }, el("td", { colspan: headers.length },
+        el("div", { class: "bank-heading" }, bankLogo(item, name, 28), el("strong", { text: name }),
+          el("span", { class: "muted", text: `${cards.length} card${cards.length === 1 ? "" : "s"}` }),
+          stamp && el("span", { class: "muted bank-updated", text: `Updated ${ago(stamp)}` })))));
+      for (const c of cards) {
+        const [label, tone] = DUE_PILLS[c.status];
+        const cur = c.currency;
+        const settled = c.status === "paid" || c.status === "nothing_owed";
+        const bad = c.status === "overdue" ? "neg" : "";
+        body.push(el("tr", { class: c.status === "overdue" ? "overdue" : "" },
+          el("td", { class: "col-account" }, el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
+            el("div", { class: "narrow-only" }, el("span", { class: `pill nomargin ${tone}`, text: label }))),
+          el("td", { class: "col-bank" }, el("span", { class: `pill nomargin ${tone}`, text: label })),
+          el("td", { class: `col-due ${bad}` }, c.due_date ? shortDate(c.due_date) : dash()),
+          el("td", { class: `col-extra col-wide ${bad}` }, c.due_date && !settled ? dueRelative(c) : dash()),
+          el("td", { class: "num col-balance" }, c.statement_balance == null ? dash() : money(c.statement_balance, cur)),
+          el("td", { class: "num col-extra" }, c.minimum_payment == null ? dash() : money(c.minimum_payment, cur)),
+          el("td", { class: "num col-extra" }, money(c.current_balance, cur)),
+          el("td", { class: "num col-extra col-wide" }, c.available_credit == null ? dash() : money(c.available_credit, cur)),
+          el("td", { class: "num col-extra" }, c.last_payment_amount == null ? dash() : money(c.last_payment_amount, cur)),
+          el("td", { class: "col-extra col-wide" }, c.last_payment_date ? shortDate(c.last_payment_date) : dash())));
+      }
+    }
     const rows = data.cards.length === 0 ? [] : [el("section", { class: "card acct-section" },
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table money-table" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
-        el("tbody", {}, cardRows))),
-      el("p", { class: "muted", text: `Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed.${updated ? ` Bank data updated ${ago(updated)}.` : ""}` }),
+        el("tbody", {}, body))),
+      el("p", { class: "muted", text: "Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed." }),
       !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances here are still current." }))];
     view().replaceChildren(viewerNote(), ...(empty ? [empty] : []), ...rows);
   }
