@@ -378,22 +378,34 @@
     const credit = kind === "credit";
     const showOwner = people.length > 0;
     const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
-    const headers = [["Account", "col-account"], ["Bank", "col-bank"], showOwner && ["Owner", "col-owner"],
+    // The bank is its own column: one cell spans all of that bank's accounts in this section, so it
+    // is shown once. Banks are ordered by what they hold, and each bank's accounts the same way.
+    const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
       [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance"]].filter(Boolean);
-    const sorted = rows.slice().sort((a, b) => Math.abs(b.current_balance || 0) - Math.abs(a.current_balance || 0));
-    const body = sorted.map((a) => {
+    const size = (a) => Math.abs(a.current_balance || 0);
+    const banks = new Map();
+    for (const a of rows) {
+      const key = a.item_id || a.institution || "";
+      if (!banks.has(key)) banks.set(key, []);
+      banks.get(key).push(a);
+    }
+    const groups = [...banks.values()]
+      .map((accounts) => accounts.slice().sort((x, y) => size(y) - size(x)))
+      .sort((x, y) => y.reduce((sum, a) => sum + size(a), 0) - x.reduce((sum, a) => sum + size(a), 0));
+    const body = groups.flatMap((accounts) => accounts.map((a, index) => {
       const item = itemsById.get(a.item_id);
       const available = credit && a.credit_limit != null
         ? (a.available_balance ?? (a.current_balance != null ? a.credit_limit - a.current_balance : null)) : null;
       const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
       const cells = [
-        el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, a.institution),
-          el("div", {}, el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
-            a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
-            el("div", { class: "muted narrow-only", text: [a.institution, showOwner ? (ownerText(a) || "") : ""].filter(Boolean).join(" \u00B7 ") })))),
-        el("td", { class: "col-bank", text: a.institution || "" }),
+        index === 0 && el("td", { class: "col-bankname shared", rowspan: accounts.length },
+          el("div", { class: "bank-cell" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
+        el("td", { class: "col-account" },
+          el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+          a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
+          showOwner && el("div", { class: "muted narrow-only", text: ownerText(a) || "" })),
         showOwner && el("td", { class: "col-owner" }, ownersCell(a)),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
         credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
@@ -401,15 +413,16 @@
         kind === "depository" && el("td", { class: "num col-extra", text: a.available_balance != null ? money(a.available_balance, a.currency) : "\u2014" }),
         el("td", { class: "num col-balance" }, a.current_balance == null ? "\u2014" : money(a.current_balance, a.currency)),
       ].filter(Boolean);
-      return el("tr", { class: "click", tabindex: 0, onclick: (e) => { if (!e.target.closest("a")) open(a); },
+      return el("tr", { class: `click${index === 0 ? " bank-first" : ""}`, tabindex: 0,
+        onclick: (e) => { if (!e.target.closest("a, td.shared")) open(a); },
         onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(a); } }, cells);
-    });
+    }));
     return el("section", { class: `card acct-section ${kind}` },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
         el("div", { class: "grow" }, el("h2", { text: label }), el("div", { class: "muted", text: `${rows.length} account${rows.length === 1 ? "" : "s"}` })),
         el("div", { class: "section-total", text: sectionTotals(rows, kind) })),
-      el("div", { class: "table-wrap" }, el("table", { class: "acct-table" },
+      el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
         el("tbody", {}, body))));
   }

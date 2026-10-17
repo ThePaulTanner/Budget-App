@@ -431,3 +431,20 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 .tabs-sub button { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: .5rem .9rem; color: var(--muted); white-space: nowrap; margin-bottom: -1px; }
 .tabs-sub button:hover { color: var(--text); }
 .tabs-sub button[aria-pressed="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 650; }
+
+/* Accounts: the same shared bank column as Money Management */
+.bank-grouped td.shared { vertical-align: middle; border-right: 1px solid var(--border); }
+.bank-grouped tr.bank-first td { border-top: 1px solid var(--border-strong); }
+.bank-grouped tbody tr.bank-first:first-child td { border-top: 0; }
+.bank-grouped .bank-cell { display: flex; align-items: center; gap: 8px; }
+.bank-grouped .bank-cell .bank-logo { flex: none; }
+.bank-grouped .col-bankname { padding-left: 14px; width: 180px; }
+.bank-grouped td { padding-left: 8px; padding-right: 8px; }
+@media (max-width: 760px) {
+  .bank-grouped .bank-cell { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .bank-grouped .bank-cell strong { font-size: .66rem; overflow-wrap: normal; }
+  .bank-grouped .bank-cell .bank-logo { width: 24px; height: 24px; }
+  .bank-grouped .col-bankname { padding-left: 8px; min-width: 52px; width: auto; }
+  .bank-grouped td, .bank-grouped th { padding-left: 4px; padding-right: 4px; }
+  .bank-grouped .col-account { padding-left: 8px; }
+}
