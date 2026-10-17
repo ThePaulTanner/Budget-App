@@ -508,7 +508,7 @@
     success: ["Signed in", false], bad_password: ["Wrong password", true], bad_code: ["Wrong authenticator code", true],
     unknown_user: ["Unknown username", true], rate_limited: ["Blocked: too many attempts", true],
     locked: ["Refused: sign-in is locked", true], lockout: ["Sign-in locked after too many failures", true],
-    unlocked: ["Unlocked from the NAS", false],
+    unlocked: ["Unlocked from the NAS", false], login_removed: ["A login was removed", false],
   };
   const FAILED = new Set(["bad_password", "bad_code", "unknown_user", "lockout"]);
 
@@ -1473,7 +1473,7 @@
   // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
   const SETTINGS_GROUPS = [
     ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
-    ["security", "Security", [["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
+    ["security", "Security", [["logins", "Logins"], ["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
     ["look", "Appearance", [["appearance", "Appearance"]]],
   ];
   const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, , tabs]) => tabs);
@@ -1482,9 +1482,9 @@
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log, backups] = await Promise.all([
+    const [items, sessions, rules, accounts, choices, log, backups, logins] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
-      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} }))]);
+      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} })), api("/auth/users").catch(() => [])]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -1737,6 +1737,25 @@
         } }))),
       el("p", { class: "muted", text: "Copies are encrypted with your master key and saved in the backups folder inside your data folder. They stay on the NAS, so a disk failure would take them too: download one now and then and keep it somewhere else, along with your master key (a copy is useless without it)." }));
 
+    // ---- Logins: who can sign in. Each has their own password and authenticator; all see everything.
+    const loginsCard = el("section", { class: "card" }, el("h2", { text: "Logins" }),
+      el("p", { class: "muted", text: "Everyone listed here signs in with their own username, password and authenticator code. They all see everything, including every account. They are separate from the People list, which only labels who owns an account." }),
+      logins.map((u) => el("div", { class: "row" }, el("div", { class: "grow" },
+        el("strong", { text: u.username }), u.you && el("span", { class: "badge", text: "You" }),
+        el("div", { class: "muted", text: `${u.last_sign_in ? `Last signed in ${ago(u.last_sign_in)}` : "Has not signed in yet"} \u00B7 ${u.devices} device${u.devices === 1 ? "" : "s"} signed in` })),
+        !u.you && el("button", { type: "button", class: "danger", text: "Remove login", onclick: async () => {
+          if (!(await confirmBox({
+            title: `Remove ${u.username}'s login?`,
+            intro: `${u.username} will be signed out everywhere and can no longer sign in. Accounts and data are not affected.`,
+            confirmText: "Remove login", cancelText: "Keep it", danger: true }))) return;
+          try { await api(`/auth/users/${u.id}`, { method: "DELETE" }); toast("Login removed."); reload(); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }))),
+      el("h3", { text: "Add a login" }),
+      el("p", { class: "muted", text: "A login is added on the NAS, so only someone with access to it can create one. Over SSH, run:" }),
+      el("pre", { class: "code" }, "sudo docker exec -it homefinance python -m app.cli create-user --username NAME"),
+      el("p", { class: "muted", text: "It asks for a password (12 or more characters) and shows a QR code to scan with an authenticator app, plus one-time recovery codes to save. Their phone also needs Tailscale to reach the app." }));
+
     const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
       log.locked
         ? el("p", { class: "error", role: "alert", text: "Sign-in is locked. Unlock it from the NAS: docker exec -it homefinance python -m app.cli unlock" })
@@ -1744,13 +1763,13 @@
       log.events.length === 0 && el("p", { class: "empty", text: "Nothing recorded yet." }),
       log.events.map((e) => {
         const [label, bad] = LOGIN_RESULTS[e.result] || [e.result, false];
-        const detail = [new Date(e.at).toLocaleString("en-CA"), e.ip && `from ${e.ip}`, e.origin, e.method === "recovery" && "recovery code", e.device_name].filter(Boolean).join(" \u00B7 ");
+        const detail = [new Date(e.at).toLocaleString("en-CA"), e.username, e.ip && `from ${e.ip}`, e.origin, e.method === "recovery" && "recovery code", e.device_name].filter(Boolean).join(" \u00B7 ");
         return el("div", { class: "row" }, el("div", { class: "grow" },
           el("div", {}, el("strong", { class: bad ? "neg" : "", text: label }), e.count > 1 && el("span", { class: "badge", text: `\u00D7${e.count}` })),
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], backups: [backupsCard], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], devices: [devices], backups: [backupsCard], log: [activity] };
     const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
     const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
     const tabBar = el("div", { class: "tabs-sub", role: "group", "aria-label": "Settings pages" });

@@ -451,3 +451,5 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 
 /* Banks: Remove only shows once Edit is pressed */
 .banks-card:not(.editing) .bank-remove { display: none; }
+
+pre.code { margin: 0 0 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); overflow-x: auto; font-size: .82rem; user-select: all; }

@@ -149,13 +149,14 @@ def test_logout_revokes_the_session(login, client):
     assert client.post("/auth/refresh", json={"refresh_token": token["refresh_token"]}).status_code == 401
 
 
-def test_only_one_user_and_strong_password(services):
+def test_strong_password_and_unique_names(services):
     auth = services.auth
     with pytest.raises(ValueError, match="at least"):
         auth.create_user("a", "short")
     auth.create_user("a", PASSWORD)
-    with pytest.raises(ValueError, match="one user"):
-        auth.create_user("b", PASSWORD)
+    auth.create_user("b", PASSWORD)  # a second login is allowed (see test_logins.py)
+    with pytest.raises(ValueError, match="already taken"):
+        auth.create_user("A", PASSWORD)
 
 
 def test_password_is_not_stored_or_reversible(login, services):

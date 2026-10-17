@@ -12,7 +12,8 @@
       "method": null,
       "device_name": "Web browser",
       "user_known": true,
-      "count": 4
+      "count": 4,
+      "username": "paul"
     },
     {
       "at": "2026-10-16T00:21:51.482913Z",
@@ -22,7 +23,8 @@
       "method": null,
       "device_name": "Web browser",
       "user_known": true,
-      "count": 1
+      "count": 1,
+      "username": "paul"
     },
     {
       "at": "2026-10-16T00:21:51.481002Z",
@@ -32,7 +34,8 @@
       "method": null,
       "device_name": "Web browser",
       "user_known": true,
-      "count": 1
+      "count": 1,
+      "username": "paul"
     },
     {
       "at": "2026-10-15T21:06:02.771455Z",
@@ -42,7 +45,8 @@
       "method": "totp",
       "device_name": "iPhone",
       "user_known": true,
-      "count": 1
+      "count": 1,
+      "username": "paul"
     }
   ]
 }
