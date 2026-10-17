@@ -1066,22 +1066,10 @@
     if (id !== navId) return;
     const itemsById = new Map(items.map((i) => [i.id, i]));
     const itemOfAccount = new Map(accounts.map((a) => [a.id, a.item_id]));
-    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
-    const unpaid = data.cards.filter((c) => c.status !== "paid" && c.status !== "nothing_owed" && c.due_date);
-    const next = unpaid.slice().sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
-
-    const summary = el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
-      data.cards.length === 0
-        ? el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." })
-        : [
-          Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
-            stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
-            stat("Minimum payments", money(t.minimum_due, cur)),
-            stat("Total owed on cards", money(t.owed, cur)))),
-          next && el("p", { text: `Next payment: ${next.institution} ${next.name}${next.mask ? ` \u2022\u2022${next.mask}` : ""}. ${dueText(next)}` }),
-          !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances below are still current." }),
-          el("p", { class: "muted", text: "Information only. HomeFinance cannot move money, so pay your cards at your bank." }),
-        ]);
+    const empty = data.cards.length === 0
+      ? el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
+        el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." }))
+      : null;
 
     // One table, a card per row. The less important columns drop away on narrower screens.
     const dueRelative = (c) => (c.days_until_due === 0 ? "today" : c.days_until_due > 0 ? `in ${c.days_until_due} day${c.days_until_due === 1 ? "" : "s"}` : `${-c.days_until_due} day${c.days_until_due === -1 ? "" : "s"} ago`);
@@ -1121,8 +1109,9 @@
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table money-table" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
         el("tbody", {}, cardRows))),
-      el("p", { class: "muted", text: `Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed.${updated ? ` Bank data updated ${ago(updated)}.` : ""}` }))];
-    view().replaceChildren(viewerNote(), summary, ...rows);
+      el("p", { class: "muted", text: `Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed.${updated ? ` Bank data updated ${ago(updated)}.` : ""}` }),
+      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances here are still current." }))];
+    view().replaceChildren(viewerNote(), ...(empty ? [empty] : []), ...rows);
   }
 
   const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
