@@ -378,22 +378,34 @@
     const credit = kind === "credit";
     const showOwner = people.length > 0;
     const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
-    const headers = [["Account", "col-account"], ["Bank", "col-bank"], showOwner && ["Owner", "col-owner"],
+    // The bank is its own column: one cell spans all of that bank's accounts in this section, so it
+    // is shown once. Banks are ordered by what they hold, and each bank's accounts the same way.
+    const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
       [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance"]].filter(Boolean);
-    const sorted = rows.slice().sort((a, b) => Math.abs(b.current_balance || 0) - Math.abs(a.current_balance || 0));
-    const body = sorted.map((a) => {
+    const size = (a) => Math.abs(a.current_balance || 0);
+    const banks = new Map();
+    for (const a of rows) {
+      const key = a.item_id || a.institution || "";
+      if (!banks.has(key)) banks.set(key, []);
+      banks.get(key).push(a);
+    }
+    const groups = [...banks.values()]
+      .map((accounts) => accounts.slice().sort((x, y) => size(y) - size(x)))
+      .sort((x, y) => y.reduce((sum, a) => sum + size(a), 0) - x.reduce((sum, a) => sum + size(a), 0));
+    const body = groups.flatMap((accounts) => accounts.map((a, index) => {
       const item = itemsById.get(a.item_id);
       const available = credit && a.credit_limit != null
         ? (a.available_balance ?? (a.current_balance != null ? a.credit_limit - a.current_balance : null)) : null;
       const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
       const cells = [
-        el("td", { class: "col-account" }, el("div", { class: "acct" }, bankLogo(item, a.institution),
-          el("div", {}, el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
-            a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
-            el("div", { class: "muted narrow-only", text: [a.institution, showOwner ? (ownerText(a) || "") : ""].filter(Boolean).join(" \u00B7 ") })))),
-        el("td", { class: "col-bank", text: a.institution || "" }),
+        index === 0 && el("td", { class: "col-bankname shared", rowspan: accounts.length },
+          el("div", { class: "bank-cell" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
+        el("td", { class: "col-account" },
+          el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+          a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
+          showOwner && el("div", { class: "muted narrow-only", text: ownerText(a) || "" })),
         showOwner && el("td", { class: "col-owner" }, ownersCell(a)),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
         credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
@@ -401,15 +413,16 @@
         kind === "depository" && el("td", { class: "num col-extra", text: a.available_balance != null ? money(a.available_balance, a.currency) : "\u2014" }),
         el("td", { class: "num col-balance" }, a.current_balance == null ? "\u2014" : money(a.current_balance, a.currency)),
       ].filter(Boolean);
-      return el("tr", { class: "click", tabindex: 0, onclick: (e) => { if (!e.target.closest("a")) open(a); },
+      return el("tr", { class: `click${index === 0 ? " bank-first" : ""}`, tabindex: 0,
+        onclick: (e) => { if (!e.target.closest("a, td.shared")) open(a); },
         onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(a); } }, cells);
-    });
+    }));
     return el("section", { class: `card acct-section ${kind}` },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
         el("div", { class: "grow" }, el("h2", { text: label }), el("div", { class: "muted", text: `${rows.length} account${rows.length === 1 ? "" : "s"}` })),
         el("div", { class: "section-total", text: sectionTotals(rows, kind) })),
-      el("div", { class: "table-wrap" }, el("table", { class: "acct-table" },
+      el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
         el("tbody", {}, body))));
   }
@@ -495,7 +508,7 @@
     success: ["Signed in", false], bad_password: ["Wrong password", true], bad_code: ["Wrong authenticator code", true],
     unknown_user: ["Unknown username", true], rate_limited: ["Blocked: too many attempts", true],
     locked: ["Refused: sign-in is locked", true], lockout: ["Sign-in locked after too many failures", true],
-    unlocked: ["Unlocked from the NAS", false],
+    unlocked: ["Unlocked from the NAS", false], login_removed: ["A login was removed", false],
   };
   const FAILED = new Set(["bad_password", "bad_code", "unknown_user", "lockout"]);
 
@@ -2062,7 +2075,7 @@
   // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
   const SETTINGS_GROUPS = [
     ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
-    ["security", "Security", [["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
+    ["security", "Security", [["logins", "Logins"], ["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
     ["look", "Appearance", [["appearance", "Appearance"]]],
   ];
   const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, , tabs]) => tabs);
@@ -2071,9 +2084,9 @@
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log, backups] = await Promise.all([
+    const [items, sessions, rules, accounts, choices, log, backups, logins] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
-      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} }))]);
+      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} })), api("/auth/users").catch(() => [])]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -2178,7 +2191,7 @@
         el("div", { class: "row bank-line" }, bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
           el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
           i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
-          el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+          el("button", { type: "button", class: "danger bank-remove", text: "Remove", onclick: async () => {
             if (!(await confirmBox({
               title: `Remove ${name}?`,
               intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
@@ -2196,8 +2209,15 @@
         group.length === 0 && el("p", { class: "muted bank-note", text: i.last_synced_at ? "No accounts at this bank." : "Its accounts appear after the first sync." }));
     }
 
-    const banks = el("section", { class: "card" },
-      el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton)),
+    // Removing a bank is hidden until you press Edit, so it takes a deliberate extra click.
+    const editButton = el("button", { type: "button", text: "Edit", "aria-pressed": "false", onclick: () => {
+      const on = !banks.classList.contains("editing");
+      banks.classList.toggle("editing", on);
+      editButton.textContent = on ? "Done" : "Edit";
+      editButton.setAttribute("aria-pressed", String(on));
+    } });
+    const banks = el("section", { class: "card banks-card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton, items.length > 0 && editButton)),
       syncOut,
       el("p", { class: "muted", text: people.length > 0
         ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or tick Hide to leave it out of totals and budgets."
@@ -2319,6 +2339,25 @@
         } }))),
       el("p", { class: "muted", text: "Copies are encrypted with your master key and saved in the backups folder inside your data folder. They stay on the NAS, so a disk failure would take them too: download one now and then and keep it somewhere else, along with your master key (a copy is useless without it)." }));
 
+    // ---- Logins: who can sign in. Each has their own password and authenticator; all see everything.
+    const loginsCard = el("section", { class: "card" }, el("h2", { text: "Logins" }),
+      el("p", { class: "muted", text: "Everyone listed here signs in with their own username, password and authenticator code. They all see everything, including every account. They are separate from the People list, which only labels who owns an account." }),
+      logins.map((u) => el("div", { class: "row" }, el("div", { class: "grow" },
+        el("strong", { text: u.username }), u.you && el("span", { class: "badge", text: "You" }),
+        el("div", { class: "muted", text: `${u.last_sign_in ? `Last signed in ${ago(u.last_sign_in)}` : "Has not signed in yet"} \u00B7 ${u.devices} device${u.devices === 1 ? "" : "s"} signed in` })),
+        !u.you && el("button", { type: "button", class: "danger", text: "Remove login", onclick: async () => {
+          if (!(await confirmBox({
+            title: `Remove ${u.username}'s login?`,
+            intro: `${u.username} will be signed out everywhere and can no longer sign in. Accounts and data are not affected.`,
+            confirmText: "Remove login", cancelText: "Keep it", danger: true }))) return;
+          try { await api(`/auth/users/${u.id}`, { method: "DELETE" }); toast("Login removed."); reload(); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }))),
+      el("h3", { text: "Add a login" }),
+      el("p", { class: "muted", text: "A login is added on the NAS, so only someone with access to it can create one. Over SSH, run:" }),
+      el("pre", { class: "code" }, "sudo docker exec -it homefinance python -m app.cli create-user --username NAME"),
+      el("p", { class: "muted", text: "It asks for a password (12 or more characters) and shows a QR code to scan with an authenticator app, plus one-time recovery codes to save. Their phone also needs Tailscale to reach the app." }));
+
     const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
       log.locked
         ? el("p", { class: "error", role: "alert", text: "Sign-in is locked. Unlock it from the NAS: docker exec -it homefinance python -m app.cli unlock" })
@@ -2326,13 +2365,13 @@
       log.events.length === 0 && el("p", { class: "empty", text: "Nothing recorded yet." }),
       log.events.map((e) => {
         const [label, bad] = LOGIN_RESULTS[e.result] || [e.result, false];
-        const detail = [new Date(e.at).toLocaleString("en-CA"), e.ip && `from ${e.ip}`, e.origin, e.method === "recovery" && "recovery code", e.device_name].filter(Boolean).join(" \u00B7 ");
+        const detail = [new Date(e.at).toLocaleString("en-CA"), e.username, e.ip && `from ${e.ip}`, e.origin, e.method === "recovery" && "recovery code", e.device_name].filter(Boolean).join(" \u00B7 ");
         return el("div", { class: "row" }, el("div", { class: "grow" },
           el("div", {}, el("strong", { class: bad ? "neg" : "", text: label }), e.count > 1 && el("span", { class: "badge", text: `\u00D7${e.count}` })),
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], backups: [backupsCard], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], devices: [devices], backups: [backupsCard], log: [activity] };
     const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
     const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
     const tabBar = el("div", { class: "tabs-sub", role: "group", "aria-label": "Settings pages" });
@@ -2385,12 +2424,10 @@
   };
   const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
-  // The footer's "last synced" and the reconnect banner come from the banks list, on every screen.
+  // The reconnect banner comes from the banks list, on every screen.
   async function refreshStatus() {
     try {
       const items = await api("/api/items");
-      const newest = items.map((i) => i.last_synced_at).filter(Boolean).sort((a, b) => new Date(a) - new Date(b)).pop();
-      $("foot-sync").textContent = items.length === 0 ? "No banks linked yet" : newest ? `Last synced ${ago(newest)}` : "Waiting for the first sync\u2026";
       setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
     } catch (err) {
       if (err instanceof SignedOut) showLogin();

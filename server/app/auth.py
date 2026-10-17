@@ -154,14 +154,15 @@ class AuthService:
         return self.db.one("SELECT 1 FROM users LIMIT 1") is not None
 
     def create_user(self, username: str, password: str) -> tuple[str, str, list[str]]:
-        """Create the one account. Returns (totp_secret, otpauth_uri, recovery_codes)."""
+        """Create a login (each has its own password, authenticator and recovery codes). Everyone who
+        signs in can see everything. Returns (totp_secret, otpauth_uri, recovery_codes)."""
         username = username.strip().lower()
         if not username:
             raise ValueError("Username is required.")
         if len(password) < MIN_PASSWORD_LENGTH:
             raise ValueError(f"Use a password of at least {MIN_PASSWORD_LENGTH} characters.")
-        if self.has_user():
-            raise ValueError("A user already exists. This server is built for one user.")
+        if self.db.one("SELECT 1 FROM users WHERE username=?", (username,)):
+            raise ValueError("That username is already taken.")
         secret = pyotp.random_base32()
         sealed = seal(secret.encode(), self.keys.kek, b"totp:" + username.encode())
         codes = ["-".join(secrets.token_hex(2) for _ in range(5)) for _ in range(10)]
@@ -222,16 +223,16 @@ class AuthService:
         with self._login_lock:
             user = self.db.one("SELECT * FROM users WHERE username=?", (key,))
             known = user is not None
-            # One user: if the account is locked, every attempt gets the same refusal, so the
-            # answer does not reveal whether the username exists.
+            # If any login is locked, every attempt gets the same refusal, so the answer does not
+            # reveal whether the username exists (and a locked household stays locked until unlock).
             if self.db.one("SELECT 1 FROM users WHERE locked_at IS NOT NULL") is not None:
-                self._log("locked", ip, origin, device=device_name, known=known)
+                self._log("locked", ip, origin, device=device_name, known=known, user_id=user["id"] if user else None)
                 raise AuthError(LOCKED_STATUS, LOCKED_MESSAGE)
             try:
                 self.user_limiter.check(key)
                 self.ip_limiter.check(ip)
             except AuthError:
-                self._log("rate_limited", ip, origin, device=device_name, known=known)
+                self._log("rate_limited", ip, origin, device=device_name, known=known, user_id=user["id"] if user else None)
                 raise
             password_ok = self._verify_password(user["password_hash"] if user else None, password)
             code = code.strip()
@@ -245,13 +246,13 @@ class AuthService:
                 result = "unknown_user" if user is None else "bad_password" if not password_ok else "bad_code"
                 self.user_limiter.failure(key)
                 self.ip_limiter.failure(ip)
-                self._log(result, ip, origin, device=device_name, known=known)
+                self._log(result, ip, origin, device=device_name, known=known, user_id=user["id"] if user else None)
                 if user is not None:
                     self._count_failure(user["id"], ip, origin, device_name)
                 raise AuthError(401, INVALID)
             self.user_limiter.success(key)
             self.db.run("UPDATE users SET failed_streak=0 WHERE id=?", (user["id"],))
-            self._log("success", ip, origin, device=device_name, known=True, method=method)
+            self._log("success", ip, origin, device=device_name, known=True, method=method, user_id=user["id"])
             if self.hasher.check_needs_rehash(user["password_hash"]):
                 self.db.run(
                     "UPDATE users SET password_hash=? WHERE id=?",
@@ -276,7 +277,7 @@ class AuthService:
             if self.db.run(
                 "UPDATE users SET locked_at=? WHERE id=? AND locked_at IS NULL", (utcnow(), user_id)
             ):
-                self._log("lockout", ip, origin, device=device, known=True)
+                self._log("lockout", ip, origin, device=device, known=True, user_id=user_id)
 
     def _log(
         self,
@@ -287,6 +288,7 @@ class AuthService:
         device: str | None = None,
         known: bool = False,
         method: str | None = None,
+        user_id: int | None = None,
     ) -> None:
         """Record one attempt. Only metadata: never the password, the code, or a username
         that is not the real one (people sometimes type a password into the username box)."""
@@ -295,14 +297,14 @@ class AuthService:
         # nothing can inject terminal escape codes when the owner runs `cli login-log`.
         ip, origin, device = (_printable(v) for v in (ip, origin, device or ""))
         if result in COLLAPSED_RESULTS:
-            last = self.db.one("SELECT id, result, ip FROM login_events ORDER BY id DESC LIMIT 1")
-            if last is not None and last["result"] == result and last["ip"] == ip[:64]:
+            last = self.db.one("SELECT id, result, ip, user_id FROM login_events ORDER BY id DESC LIMIT 1")
+            if last is not None and last["result"] == result and last["ip"] == ip[:64] and last["user_id"] == user_id:
                 self.db.run("UPDATE login_events SET count=count+1, at=? WHERE id=?", (now, last["id"]))
                 return
         self.db.run(
-            "INSERT INTO login_events(at, result, ip, origin, method, device_name, user_known) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (now, result, ip[:64], origin[:120] or None, method, (device or "")[:80] or None, int(known)),
+            "INSERT INTO login_events(at, result, ip, origin, method, device_name, user_known, user_id) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (now, result, ip[:64], origin[:120] or None, method, (device or "")[:80] or None, int(known), user_id),
         )
         cutoff = (datetime.now(UTC) - timedelta(days=LOG_RETENTION_DAYS)).isoformat().replace("+00:00", "Z")
         self.db.run("DELETE FROM login_events WHERE at < ?", (cutoff,))
@@ -311,16 +313,18 @@ class AuthService:
         )
 
     def login_log(self, limit: int = 50) -> dict:
-        user = self.db.one("SELECT failed_streak, locked_at FROM users LIMIT 1")
+        state = self.db.one(
+            "SELECT max(failed_streak) AS streak, min(locked_at) AS locked_at FROM users"
+        )
         rows = self.db.query(
-            "SELECT at, result, ip, origin, method, device_name, user_known, count "
-            "FROM login_events ORDER BY id DESC LIMIT ?",
+            "SELECT e.at, e.result, e.ip, e.origin, e.method, e.device_name, e.user_known, e.count, u.username "
+            "FROM login_events e LEFT JOIN users u ON u.id = e.user_id ORDER BY e.id DESC LIMIT ?",
             (limit,),
         )
         return {
-            "locked": bool(user and user["locked_at"]),
-            "locked_at": user["locked_at"] if user else None,
-            "failed_streak": user["failed_streak"] if user else 0,
+            "locked": bool(state and state["locked_at"]),
+            "locked_at": state["locked_at"] if state else None,
+            "failed_streak": (state["streak"] or 0) if state else 0,
             "max_failed_logins": self.max_failed_logins,
             "events": [
                 {
@@ -331,6 +335,7 @@ class AuthService:
                     "method": r["method"],
                     "device_name": r["device_name"],
                     "user_known": bool(r["user_known"]),
+                    "username": r["username"],
                     "count": r["count"],
                 }
                 for r in rows
@@ -340,8 +345,7 @@ class AuthService:
     def unlock(self) -> bool:
         """Clear the hard lock and the failure count. Returns whether it was locked."""
         with self._login_lock:
-            user = self.db.one("SELECT locked_at FROM users LIMIT 1")
-            was_locked = bool(user and user["locked_at"])
+            was_locked = self.db.one("SELECT 1 FROM users WHERE locked_at IS NOT NULL") is not None
             self.db.run("UPDATE users SET locked_at=NULL, failed_streak=0")
             if was_locked:
                 self._log("unlocked", "cli", known=True)
@@ -432,6 +436,41 @@ class AuthService:
             "WHERE (refresh_hash=? OR prev_refresh_hash=?) AND revoked_at IS NULL",
             (utcnow(), digest, digest),
         )
+
+    # -- logins ------------------------------------------------------------
+
+    def logins(self, ctx: AuthContext) -> list[dict]:
+        """Everyone who can sign in, with when they last did and how many devices are signed in."""
+        rows = self.db.query(
+            "SELECT u.id, u.username, u.created_at, "
+            "(SELECT max(at) FROM login_events e WHERE e.user_id = u.id AND e.result = 'success') AS last_sign_in, "
+            "(SELECT count(*) FROM sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL) AS devices "
+            "FROM users u ORDER BY u.id"
+        )
+        return [
+            {
+                "id": r["id"],
+                "username": r["username"],
+                "created_at": r["created_at"],
+                "last_sign_in": r["last_sign_in"],
+                "devices": r["devices"],
+                "you": r["id"] == ctx.user_id,
+            }
+            for r in rows
+        ]
+
+    def remove_login(self, ctx: AuthContext, user_id: int) -> str:
+        """Delete someone else's login, their devices and recovery codes. Returns "removed", "self" or
+        "missing". You cannot remove the login you are signed in with."""
+        if user_id == ctx.user_id:
+            return "self"
+        with self._login_lock:
+            row = self.db.one("SELECT username FROM users WHERE id=?", (user_id,))
+            if row is None:
+                return "missing"
+            self.db.run("DELETE FROM users WHERE id=?", (user_id,))
+            self._log("login_removed", "-", origin=f"removed {row['username']}", known=True, user_id=ctx.user_id)
+            return "removed"
 
     # -- devices -----------------------------------------------------------
 

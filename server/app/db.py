@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA = """
 CREATE TABLE users (
@@ -138,7 +138,8 @@ CREATE TABLE login_events (
   method TEXT,
   device_name TEXT,
   user_known INTEGER NOT NULL DEFAULT 0,
-  count INTEGER NOT NULL DEFAULT 1
+  count INTEGER NOT NULL DEFAULT 1,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE TABLE merchants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -341,6 +342,11 @@ CREATE INDEX investment_transactions_security ON investment_transactions(securit
     9: """
 ALTER TABLE transactions ADD COLUMN cashflow_override TEXT;
 ALTER TABLE transactions ADD COLUMN transfer_pair_id TEXT;
+""",
+
+    # More than one login: which login each sign-in attempt was for.
+    10: """
+ALTER TABLE login_events ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
 """}
 
 

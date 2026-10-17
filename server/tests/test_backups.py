@@ -97,23 +97,24 @@ def test_upgrading_the_database_keeps_a_copy_first(tmp_path):
     path = tmp_path / "old.db"
     old = Database(path, key)
     old.run("INSERT INTO budgets(category, monthly_limit) VALUES ('FOOD', '100')")
-    old.run("DROP TABLE custom_categories")  # what the newer layouts add
-    old.run("DROP TABLE investment_transactions")
-    old.run("ALTER TABLE transactions DROP COLUMN cashflow_override")
-    old.run("ALTER TABLE transactions DROP COLUMN transfer_pair_id")
-    old.run("PRAGMA user_version = 7")  # looks like the previous release
+    old.run("ALTER TABLE login_events RENAME TO login_events_new")  # what the last layout change added:
+    old.run("CREATE TABLE login_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, result TEXT NOT NULL, "
+            "ip TEXT, origin TEXT, method TEXT, device_name TEXT, user_known INTEGER NOT NULL DEFAULT 0, "
+            "count INTEGER NOT NULL DEFAULT 1)")  # a login_events table without its user_id column
+    old.run("DROP TABLE login_events_new")
+    old.run("PRAGMA user_version = 10")  # looks like the previous release
     old.close()
     upgraded = Database(path, key)  # the migrations run on open
     copies = list_backups(upgraded)
-    assert [c["kind"] for c in copies] == ["upgrade"] and "v7-to-" in copies[0]["name"]
+    assert [c["kind"] for c in copies] == ["upgrade"] and "v10-to-" in copies[0]["name"]
     from sqlcipher3 import dbapi2 as sqlcipher
 
     before = sqlcipher.connect(str(tmp_path / "backups" / copies[0]["name"]))  # raw: opening it must not upgrade it
     before.execute(f"PRAGMA key = \"x'{key}'\"")
-    assert before.execute("PRAGMA user_version").fetchone()[0] == 7  # the copy is from before the upgrade
+    assert before.execute("PRAGMA user_version").fetchone()[0] == 10  # the copy is from before the upgrade
     assert before.execute("SELECT monthly_limit FROM budgets").fetchone()[0] == "100"
     before.close()
-    assert upgraded.one("PRAGMA user_version")[0] > 7
+    assert upgraded.one("PRAGMA user_version")[0] > 10
     upgraded.close()
 
 

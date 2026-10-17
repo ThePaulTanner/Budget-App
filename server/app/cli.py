@@ -1,6 +1,6 @@
 """Command line helpers. Run inside the container:
 
-    docker exec -it homefinance python -m app.cli create-user --username paul
+    docker exec -it homefinance python -m app.cli create-user --username paul     (also adds a second login)
     docker exec -it homefinance python -m app.cli login-log
     docker exec -it homefinance python -m app.cli unlock
     docker exec -it homefinance python -m app.cli reset-networth
@@ -31,8 +31,7 @@ def _create_user(args: argparse.Namespace) -> int:
 
     services = build_services(load_settings())
     if services.auth.has_user():
-        print("A user already exists. This server is built for one user.", file=sys.stderr)
-        return 1
+        print("Adding another login. Everyone who signs in can see everything.")
     password = getpass.getpass("Password (at least 12 characters): ")
     if password != getpass.getpass("Repeat password: "):
         print("The passwords do not match.", file=sys.stderr)
@@ -84,7 +83,8 @@ def _login_log(args: argparse.Namespace) -> int:
     print(f"Sign-in is {state}. Failed in a row: {data['failed_streak']} of {data['max_failed_logins']}.\n")
     for e in data["events"]:
         times = f" x{e['count']}" if e["count"] > 1 else ""
-        print(f"{e['at']}  {e['result']:<13}{times:<6} from {e['ip'] or '-'}  {e['origin'] or ''}  {e['device_name'] or ''}")
+        who = f"  [{e['username']}]" if e["username"] else ""
+        print(f"{e['at']}  {e['result']:<13}{times:<6} from {e['ip'] or '-'}  {e['origin'] or ''}  {e['device_name'] or ''}{who}")
     return 0
 
 

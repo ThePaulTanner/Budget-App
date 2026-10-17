@@ -27,7 +27,7 @@ The shared `X-API-Key` header of the original handoff is replaced by a real logi
 | **Brute-force protection** | Three layers. (1) Temporary delays: after 5 wrong attempts the sign-in is refused for 30 seconds, doubling up to 15 minutes. (2) **A hard limit:** after `MAX_FAILED_LOGINS` wrong attempts in a row (default 10, counted in the database so a restart does not reset it), new sign-ins are **locked, even with the right password and code**, until you run `python -m app.cli unlock` on the NAS. Devices already signed in keep working. Attempts are handled one at a time, so a burst of parallel guesses cannot sneak past the limit. (3) **A sign-in log:** every attempt (success, wrong password, wrong code, unknown username, delayed, refused, locked) is recorded with time, source address and device name, and shown in the web app's Settings and by `python -m app.cli login-log`. The log never contains a password, a code, or a username that is not yours (people type passwords into the username box). It keeps 180 days and at most 5,000 rows, and repeated refusals from one address collapse into one row with a count. Alerts on new-device sign-ins are not built yet. |
 | **Device management** | A "Signed-in devices" list in Settings, with **Revoke** on each device. |
 | **Bank-linking web page** | The `GET /` Plaid Link page shows nothing until you sign in. If you are already signed in to the web app (section 1b), its cookie signs this page in too. |
-| **Accounts** | Built for one user (Paul) to start. The design allows more household users later. |
+| **Accounts** | One login to start (Paul). More logins can be added on the NAS with `python -m app.cli create-user` (for example for a spouse). Each login has its own password, authenticator and recovery codes, and its own devices; the sign-in log records which login each attempt was for. **Every login sees everything**: there is no per-login access control. A hard lockout (see below) applies to the whole server, not one login. A login is removed from the web app (Settings > Security > Logins) or by deleting the user row; it cannot be created from the web app or API, so adding one needs access to the NAS. |
 
 ## 1b. Web app login (browser) *(server)*
 
@@ -105,10 +105,10 @@ Webhooks need Plaid to reach the server from the internet. We open **only** the 
 
 1. ~~Server code~~ **Built in `server/`** (see `server/README.md`).
 2. ~~Passkey-only~~ **Decided: free Apple ID, so password + authenticator code.**
-3. **Users:** the server is built for exactly one user. Say if someone else needs a login.
+3. **Users:** more than one login is supported (everyone sees everything). If someone should see only part of the data, that needs access rules, which are not built.
 4. **Webhook exposure:** Tailscale Funnel on port 8443 is what the setup guide uses. Say if you prefer a Cloudflare Tunnel.
 5. ~~Signing~~ **Decided: free Apple ID** (reinstall every 7 days).
 
 ## People are labels, not access control
 
-The web app lets you list the people in your household and say who owns each account (`people`, `account_owners`). This only changes what is shown: there is still one login, and anyone who signs in can read every account and can switch to any person's view or to the household. If your wife should not see your accounts, or the reverse, that needs a separate login with its own access rules, which is not built.
+The web app lets you list the people in your household and say who owns each account (`people`, `account_owners`). This only changes what is shown: every login can read every account and can switch to any person's view or to the household. If a login should not see someone else's accounts, that needs access rules per login, which is not built.

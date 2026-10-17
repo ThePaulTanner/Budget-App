@@ -156,3 +156,8 @@ def test_every_page_has_the_logo_as_its_icon(web):
             assert icon.status_code == 200 and len(icon.content) > 100, href
     assert web.get("/static/web/favicon.svg").headers["content-type"].startswith("image/svg+xml")
     assert web.get("/static/web/apple-touch-icon.png").content.startswith(b"\x89PNG")
+
+
+def test_stand_alone_bank_page_links_to_the_app():
+    html = (WEB_DIR.parent / "index.html").read_text()
+    assert 'href="/app"' in html  # the bare address must lead somewhere other than the bank list
