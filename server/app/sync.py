@@ -536,6 +536,12 @@ class SyncManager:
                 for item in items
             ]
             snapshot_networth(self.db)
+            from .transfers import match_transfers
+
+            try:
+                match_transfers(self.db)
+            except Exception:  # cash flow can wait for the next sync; the bank data is already saved
+                log.exception("Transfer matching failed")
             return results
         finally:
             self._lock.release()
