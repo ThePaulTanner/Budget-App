@@ -12,6 +12,11 @@
 
   // ---------------------------------------------------------------- helpers
 
+  // A label with a shorter form for phones: the long one stays for screen readers (see .lg / .sh in app.css).
+  function dual(long, short) {
+    return [el("span", { class: "lg", text: long }), el("span", { class: "sh", "aria-hidden": "true", text: short })];
+  }
+
   function el(tag, props, ...kids) {
     const node = document.createElement(tag);
     for (const [key, value] of Object.entries(props || {})) {
@@ -916,11 +921,11 @@
   // counted / left out by hand. Choices last while the page is open; nothing is written to the browser's
   // storage (only theme.js keeps appearance there). The range and grouping are in the address, so a
   // bookmark reopens the same view.
-  const CF_RANGES = [["mtd", "Month to date"], ["6m", "6 months"], ["12m", "12 months"], ["ytd", "Year to date"], ["all", "All time"], ["custom", "Custom…"]];
+  const CF_RANGES = [["mtd", "Month to date", "MTD"], ["6m", "6 months", "6M"], ["12m", "12 months", "12M"], ["ytd", "Year to date", "YTD"], ["all", "All time", "All"], ["custom", "Custom…", "Custom"]];
   const CF_GROUPS = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
   const CF_BAR_KEYS = [["income", "Income", "cf-inc", "rect"], ["expenses", "Expenses", "cf-exp", "rect"], ["net", "Net", "cf-net", "dot"]];
-  const CF_LINE_KEYS = [["cum_income", "Income so far", "cf-inc"], ["cum_expenses", "Expenses so far", "cf-exp"],
-    ["cum_net", "Saved (income − expenses)", "cf-saved"], ["nw", "Net worth change, accounts shown", "cf-nw"]];
+  const CF_LINE_KEYS = [["cum_income", "Income so far", "cf-inc", "Income"], ["cum_expenses", "Expenses so far", "cf-exp", "Expenses"],
+    ["cum_net", "Saved (income − expenses)", "cf-saved", "Saved"], ["nw", "Net worth change, accounts shown", "cf-nw", "Net worth"]];
   const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, view: "chart", hidden: [] };
   const cf = { ...CF_DEFAULTS };
   let cfZoom = [];
@@ -1040,7 +1045,7 @@
       return { day: span <= 366, week: span > 7 || cf.range === "mtd", month: cf.range !== "mtd" && span >= 28 };
     }
     function paintControls() {
-      rangeSeg.replaceChildren(...CF_RANGES.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(cf.range === key), text: label,
+      rangeSeg.replaceChildren(...CF_RANGES.map(([key, label, short]) => el("button", { type: "button", "aria-pressed": String(cf.range === key),
         onclick: () => {
           cfZoom = [];
           if (key === "custom") {
@@ -1049,7 +1054,7 @@
             paintControls(); cStart.focus(); return;
           }
           Object.assign(cf, { range: key, group: null }); load();
-        } })));
+        } }, dual(label, short))));
       customRow.hidden = cf.range !== "custom";
       const allowed = allowedGroups(), shown = data ? data.group : cf.group;
       groupSeg.replaceChildren(...CF_GROUPS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(shown === key), text: label,
@@ -1093,45 +1098,47 @@
 
     // ---- tiles
     function tile(label, value, sub, extra) {
-      return el("div", { class: "cf-tile" }, el("div", { class: "muted", text: label }), el("strong", { text: value }), sub, extra);
+      return el("div", { class: "cf-tile" }, el("div", { class: "muted cf-tile-label" }, label), el("strong", { text: value }), sub, extra);
     }
     function delta(curValue, prevValue, upIsGood) {
       const p = data.previous;
-      if (!p) return el("div", { class: "muted cf-small", text: "All of your history" });
-      if (!prevValue) return el("div", { class: "muted cf-small", text: "Nothing to compare with" });
+      if (!p) return el("div", { class: "muted cf-small" }, dual("All of your history", "All history"));
+      if (!prevValue) return el("div", { class: "muted cf-small" }, dual("Nothing to compare with", "No comparison"));
       const change = (curValue - prevValue) / Math.abs(prevValue), up = change >= 0;
       const tone = Math.abs(change) < 0.005 ? "" : up === upIsGood ? "income" : "cf-bad";
       return el("div", { class: "muted cf-small", title: `${m0(prevValue)} from ${dayLabel(p.start)} to ${dayLabel(p.end)}` },
         el("span", { class: tone, text: `${up ? "▲" : "▼"} ${Math.abs(change * 100).toFixed(Math.abs(change) < 0.1 ? 1 : 0)}%` }),
-        ` vs ${shortDate(p.start)} – ${shortDate(p.end)}`);
+        dual(` vs ${shortDate(p.start)} – ${shortDate(p.end)}`, " vs before"));
     }
     function renderTiles() {
       const t = data.totals, p = data.previous || {};
       tiles.replaceChildren(
         tile("Income", m0(t.income), delta(t.income, p.income, true)),
         tile("Expenses", m0(t.expenses), delta(t.expenses, p.expenses, false)),
-        tile("Net", sgn(t.net, 0), el("div", { class: "muted cf-small", text: `Average ${sgn(t.avg_income - t.avg_expenses, 0)} per ${data.group}` })),
-        tile("Savings rate", t.savings_rate == null ? "—" : `${Math.round(t.savings_rate * 100)}%`, el("div", { class: "muted cf-small", text: "Net ÷ income" })),
-        tile("Net worth change", sgn(t.net_worth_change, 0), el("div", { class: "muted cf-small", text: `${m0(t.net_worth_start)} → ${m0(t.net_worth_end)}` })));
+        tile("Net", sgn(t.net, 0), el("div", { class: "muted cf-small" },
+          dual(`Average ${sgn(t.avg_income - t.avg_expenses, 0)} per ${data.group}`, `Avg ${sgn(t.avg_income - t.avg_expenses, 0)}/${data.group}`))),
+        tile(dual("Savings rate", "Saved"), t.savings_rate == null ? "—" : `${Math.round(t.savings_rate * 100)}%`, el("div", { class: "muted cf-small", text: "Net ÷ income" })),
+        tile(dual("Net worth change", "Net worth"), sgn(t.net_worth_change, 0), el("div", { class: "muted cf-small" }, dual(`${m0(t.net_worth_start)} → ${m0(t.net_worth_end)}`, `Now ${m0(t.net_worth_end)}`))));
     }
 
     // ---- legends (they double as switches)
-    function legendChip(key, label, cls, shape) {
+    function legendChip(key, label, cls, shape, short = label) {
       const on = !hidden().has(key);
       const swatch = shape === "rect" ? svg("rect", { x: 3, y: 0, width: 10, height: 10, rx: 2, class: `fill ${cls}` })
         : shape === "dot" ? svg("circle", { cx: 8, cy: 5, r: 4, class: `fill ${cls}` })
         : svg("line", { x1: 0, x2: 16, y1: 5, y2: 5, class: `stroke ${cls}` });
       return el("button", { type: "button", class: "cf-chip", "aria-pressed": String(on), title: `Show or hide ${label.toLowerCase()}`,
         onclick: () => { const h = hidden(); if (h.has(key)) h.delete(key); else h.add(key); cf.hidden = [...h]; renderLegends(); draw(); } },
-      svg("svg", { width: 16, height: 10, "aria-hidden": "true" }, swatch), label);
+      svg("svg", { width: 16, height: 10, "aria-hidden": "true" }, swatch), short === label ? label : dual(label, short));
     }
     function renderLegends() {
       const per = data ? data.group : "period";
-      legend1.replaceChildren(el("span", { class: "cf-legend-label", text: `Bars, per ${per} (left scale)` }),
+      legend1.replaceChildren(el("span", { class: "cf-legend-label" }, dual(`Bars, per ${per} (left scale)`, "Bars · left")),
         ...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)));
       const barsShown = CF_BAR_KEYS.some(([key]) => !hidden().has(key));
-      legend2.replaceChildren(el("span", { class: "cf-legend-label", text: barsShown ? "Lines, running total (right scale)" : "Lines, running total" }),
-        ...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
+      legend2.replaceChildren(el("span", { class: "cf-legend-label" },
+        barsShown ? dual("Lines, running total (right scale)", "Totals · right") : dual("Lines, running total", "Totals")),
+        ...CF_LINE_KEYS.map(([k, l, c, short]) => legendChip(k, l, c, "line", short)));
     }
 
     // ---- chart
@@ -1140,8 +1147,8 @@
       if (!data) return;
       const width = Math.max(300, Math.round(plot1.clientWidth || 640));
       const narrow = width < 560;
-      const L = narrow ? 46 : 58, R = narrow ? 46 : 58, T = 12, B = 24;
-      const H = narrow ? 300 : 390;
+      const L = narrow ? 44 : 58, R = narrow ? 48 : 58, T = 12, B = 24;
+      const H = narrow ? 280 : 390;
       const bks = data.buckets, n = bks.length, slot = (width - L - R) / n;
       const cx = (i) => L + slot * (i + 0.5);
       const off = hidden();
@@ -1490,8 +1497,8 @@
     }
 
     function render() {
-      title1.textContent = `Income and expenses per ${data.group}`;
-      rangeLine.textContent = `${dayLabel(data.range.start)} – ${dayLabel(data.range.end)}`;
+      title1.replaceChildren(...dual(`Income and expenses per ${data.group}`, `Cash flow by ${data.group}`));
+      rangeLine.textContent = `${shortDate(data.range.start)} – ${shortDate(data.range.end)}`;
       paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
       notes.textContent = data.notes.join(" ");
     }
@@ -1590,9 +1597,9 @@
     const paint = (data) => {
       const totals = Object.entries(data.totals);
       const status = data.status;
-      const seg = el("div", { class: "seg", role: "group", "aria-label": "Compare against" },
-        CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
-          onclick: () => { invPeriod = key; paint(data); } })));
+      const seg = el("div", { class: "seg wide inv-periods", role: "group", "aria-label": "Compare against" },
+        CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod),
+          onclick: () => { invPeriod = key; paint(data); } }, key === "open" ? dual(label, "Open") : label)));
       const newest = data.holdings.filter((h) => h.price_time).map((h) => h.price_time).sort().pop();
       const statusLine = !status.enabled
         ? "Live prices are turned off on the server. Showing your bank's last prices."
@@ -1660,7 +1667,7 @@
           el("div", { class: "toolbar" }, accountSel, typeSel), activity.node);
         activity.load(true);
       }
-      view().replaceChildren(viewerNote(), head, ...cards, activityCard);
+      view().replaceChildren(viewerNote(), head, ...cards, ...(activityCard ? [activityCard] : []));
     };
 
     const load = async () => paint(await api(scoped("/api/holdings/live"), { timeout: 40000 }));
