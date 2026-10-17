@@ -159,5 +159,5 @@ def test_every_page_has_the_logo_as_its_icon(web):
 
 
 def test_stand_alone_bank_page_links_to_the_app():
-    html = (STATIC_DIR / "index.html").read_text() if "STATIC_DIR" in globals() else (WEB_DIR.parent / "index.html").read_text()
+    html = (WEB_DIR.parent / "index.html").read_text()
     assert 'href="/app"' in html  # the bare address must lead somewhere other than the bank list
