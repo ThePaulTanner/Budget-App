@@ -572,7 +572,6 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       el("div", { class: "toolbar" }, seg),
       chartBox,
-      el("p", { class: "muted", text: `Last synced ${ago(summary.last_synced_at)}. Pull new bank data from Settings.` }),
       el("p", {}, el("a", { href: "#/accounts", text: "See every account and its balance" })));
 
     const budgeted = summary.budgeted_this_month;
