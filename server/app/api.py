@@ -5,6 +5,7 @@ Every `/api/*` and `/auth/*` route except login and refresh needs a bearer token
 sign-in form: it can show nothing until you log in.
 """
 
+import logging
 import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -17,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, condecimal
 
+from . import backup as backup_module
 from . import merchants as merchants_mod
 from . import rules as rules_mod
 from .auth import AuthContext, AuthError
@@ -1221,6 +1223,36 @@ def create_api_app(services: Services) -> FastAPI:
                 for r in rows
             ],
         }
+
+    # -- backups --------------------------------------------------------------
+
+    @app.get("/api/backups")
+    def backups(ctx: Auth):
+        """Copies of the database kept on the server, newest first. `last_daily` is when the timer
+        last took one (null if it never has)."""
+        found = backup_module.list_backups(db)
+        last = backup_module.last_daily(db)
+        return {
+            "keep": backup_module.KEEP,
+            "last_daily": last.isoformat(timespec="seconds").replace("+00:00", "Z") if last else None,
+            "backups": found,
+        }
+
+    @app.post("/api/backup", status_code=201)
+    def make_backup(ctx: Auth):
+        try:
+            return backup_module.create_backup(db, "manual")
+        except Exception:
+            logging.getLogger("homefinance.backup").exception("A manual backup failed")
+            raise HTTPException(500, "The backup could not be written. Check the free space on the NAS.") from None
+
+    @app.get("/api/backups/{name}")
+    def download_backup(name: str, ctx: Auth):
+        """One copy, as a file. It is encrypted: it opens only with your master key."""
+        path = backup_module.find_backup(db, name)
+        if path is None:
+            raise HTTPException(404, "backup not found")
+        return FileResponse(path, media_type="application/octet-stream", filename=name)
 
     @app.get("/api/networth")
     def networth(

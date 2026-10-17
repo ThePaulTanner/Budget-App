@@ -1,0 +1,22 @@
+{
+  "keep": {
+    "daily": 14,
+    "manual": 10,
+    "upgrade": 5
+  },
+  "last_daily": "2026-10-02T03:00:00Z",
+  "backups": [
+    {
+      "name": "homefinance-manual-20261002T141500Z.db",
+      "kind": "manual",
+      "created_at": "2026-10-02T14:15:00Z",
+      "size_bytes": 1253376
+    },
+    {
+      "name": "homefinance-daily-20261002T030000Z.db",
+      "kind": "daily",
+      "created_at": "2026-10-02T03:00:00Z",
+      "size_bytes": 1249280
+    }
+  ]
+}

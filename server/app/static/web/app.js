@@ -180,6 +180,23 @@
     return data;
   }
 
+  // A file download with the bearer token (a plain link cannot send it). Saves it under `filename`.
+  async function downloadFile(path, filename) {
+    if (!token || Date.now() >= tokenExpiry) { if (!(await renewOnce())) throw new SignedOut(); }
+    let response = await plainFetch(path, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120000) });
+    if (response.status === 401) {
+      if (!(await renewOnce())) throw new SignedOut();
+      response = await plainFetch(path, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120000) });
+    }
+    if (!response.ok) throw new HttpError(response.status, `Download failed (${response.status})`);
+    const url = URL.createObjectURL(await response.blob());
+    const link = el("a", { href: url, download: filename });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   // ---------------------------------------------------------------- charts
 
   // Net worth over time with a line each for assets, liabilities and investments. The key above the
@@ -1440,13 +1457,14 @@
     return card;
   }
 
-  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["categories", "Categories"], ["appearance", "Appearance"], ["devices", "Devices"], ["log", "Sign-in log"]];
+  const SETTINGS_TABS = [["banks", "Banks"], ["people", "People"], ["rules", "Rules"], ["categories", "Categories"], ["appearance", "Appearance"], ["devices", "Devices"], ["backups", "Backups"], ["log", "Sign-in log"]];
   let settingsTab = "banks";
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log] = await Promise.all([
-      api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50")]);
+    const [items, sessions, rules, accounts, choices, log, backups] = await Promise.all([
+      api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
+      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} }))]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -1666,6 +1684,32 @@
       el("h3", { text: "All categories" }),
       categoryRows);
 
+    // ---- Backups: copies of the encrypted database, kept on the NAS next to it.
+    const BACKUP_KINDS = { daily: "Daily", manual: "Manual", upgrade: "Before an upgrade" };
+    const sizeText = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+    const backupButton = el("button", { type: "button", class: "primary", text: "Back up now", onclick: async () => {
+      backupButton.disabled = true; backupButton.textContent = "Backing up\u2026";
+      try { await api("/api/backup", { method: "POST", timeout: 120000 }); toast("Backup saved."); reload(); }
+      catch (err) { backupButton.disabled = false; backupButton.textContent = "Back up now"; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+    } });
+    const backupsCard = el("section", { class: "card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Backups" }), backupButton),
+      el("p", { class: "muted", text: backups.last_daily
+        ? `A copy is taken automatically every day. The last one was ${ago(backups.last_daily)}.`
+        : "A copy is taken automatically every day. None has been taken yet." }),
+      el("p", { class: "muted", text: `The newest ${backups.keep.daily || 14} daily copies and ${backups.keep.manual || 10} manual ones are kept. A copy is also taken just before the app upgrades its database.` }),
+      backups.backups.length === 0 && el("p", { class: "empty", text: "No backups yet. Press Back up now." }),
+      backups.backups.map((b) => el("div", { class: "row" },
+        el("div", { class: "grow" }, el("strong", { text: BACKUP_KINDS[b.kind] || b.kind }),
+          el("div", { class: "muted", text: `${new Date(b.created_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })} \u00B7 ${sizeText(b.size_bytes)}` })),
+        el("button", { type: "button", text: "Download", onclick: async (e) => {
+          e.target.disabled = true;
+          try { await downloadFile(`/api/backups/${encodeURIComponent(b.name)}`, b.name); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+          finally { e.target.disabled = false; }
+        } }))),
+      el("p", { class: "muted", text: "Copies are encrypted with your master key and saved in the backups folder inside your data folder. They stay on the NAS, so a disk failure would take them too: download one now and then and keep it somewhere else, along with your master key (a copy is useless without it)." }));
+
     const activity = el("section", { class: "card" }, el("h2", { text: "Sign-in activity" }),
       log.locked
         ? el("p", { class: "error", role: "alert", text: "Sign-in is locked. Unlock it from the NAS: docker exec -it homefinance python -m app.cli unlock" })
@@ -1679,7 +1723,7 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], devices: [devices], backups: [backupsCard], log: [activity] };
     const tabs = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" },
       SETTINGS_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label,
         onclick: () => { settingsTab = key; show(); } })));

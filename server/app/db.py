@@ -7,12 +7,15 @@ as TEXT decimals, never floats, and summed in Python with `Decimal`.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
+
+log = logging.getLogger("homefinance.db")
 
 SCHEMA_VERSION = 9
 
@@ -350,6 +353,8 @@ class Database:
         insecure_plaintext: bool = False,
     ) -> None:
         self._lock = threading.RLock()
+        self.path = Path(path)
+        self._key_hex = key_hex
         if key_hex is None and not insecure_plaintext:
             raise DatabaseError("Refusing to open an unencrypted database.")
         module: Any = sqlite3
@@ -364,6 +369,7 @@ class Database:
             self._conn = sqlcipher.connect(str(path), check_same_thread=False)
             # Raw key form: skips the passphrase KDF. Fine, the key is 256 random bits.
             self._conn.execute(f"PRAGMA key = \"x'{key_hex}'\"")
+        self._module = module
         self._conn.isolation_level = None  # explicit transactions below
         self._conn.row_factory = module.Row
         try:
@@ -385,6 +391,15 @@ class Database:
                     f"This database is from a newer version (schema {version}); "
                     "update the server image instead of downgrading."
                 )
+            if 0 < version < SCHEMA_VERSION:
+                # An upgrade cannot be undone by an older image, so keep a copy first. Best effort:
+                # a failure here (a full disk, say) is logged and does not stop the server starting.
+                try:
+                    from .backup import create_backup
+
+                    create_backup(self, "upgrade", label=f"v{version}-to-v{SCHEMA_VERSION}")
+                except Exception:
+                    log.exception("Could not back up the database before upgrading it")
             while version < SCHEMA_VERSION:
                 script = SCHEMA if version == 0 else MIGRATIONS[version]
                 target = SCHEMA_VERSION if version == 0 else version + 1
@@ -399,6 +414,18 @@ class Database:
                     self._conn.execute("ROLLBACK")
                     raise
                 version = target
+
+    def backup_to(self, target: Path | str) -> None:
+        """Write a consistent copy of the database to `target`, encrypted with the same key.
+        Other work waits for the few moments this takes."""
+        with self._lock:
+            dest = self._module.connect(str(target))
+            try:
+                if self._key_hex is not None:
+                    dest.execute(f"PRAGMA key = \"x'{self._key_hex}'\"")
+                self._conn.backup(dest)
+            finally:
+                dest.close()
 
     def query(self, sql: str, params: tuple | list = ()) -> list[Any]:
         with self._lock:
