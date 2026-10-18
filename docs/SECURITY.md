@@ -43,6 +43,18 @@ The web app at `/app` uses the same password + authenticator code, but keeps its
 | **Devices** | Shows up as "Web browser" in the signed-in devices list and can be revoked like any device. Signing out revokes the session on the server and clears the cookie. |
 | **Honest limits** | A browser cookie is easier to steal from a compromised computer than a Face-ID-locked Keychain item, and there is no idle lock on an open page. Use the web app only on computers you trust, and revoke it from Settings when you stop. |
 
+### Passkeys (Face ID) in the web app *(server)*
+
+A signed-in user can add a **passkey** (WebAuthn) in Settings → Security → Passkeys. The sign-in page then offers **Sign in with Face ID**: the phone checks your face and signs a one-time challenge; the server checks that signature against the stored public key and opens the same cookie session as a password sign-in.
+
+| Piece | Choice |
+|---|---|
+| **What is stored** | Only the passkey's public key, a name, a counter and dates. No biometric ever leaves the phone. |
+| **What is required** | User verification (Face ID, Touch ID or the device unlock) and the key tied to this address (the Tailscale host name). A passkey made for another address, a challenge used twice or older than two minutes, a wrong signature, or a counter that goes backwards is refused. Passkeys cannot be created for a bare IP address. |
+| **Lock and limits** | Sign-in is refused while the hard lock is on, and bad answers are logged (`Passkey refused`) and counted against the address limit. They cannot be guessed at, so they never lock a login. |
+| **Fallback** | Password and authenticator code keep working, and are how a new device or a new login starts. Removing a login removes its passkeys. |
+| **Honest limits** | A passkey that syncs through iCloud Keychain also works on your other Apple devices, so anyone with your Apple account and an unlocked device can sign in without the password or code. If that worries you, do not add one; removing a passkey takes effect at once. Other people on the tailnet gain nothing from a passkey they do not have. |
+
 **Trade-off of the hard lock:** anyone who can reach the server (any device on your tailnet) can lock you out of *new* sign-ins by guessing wrongly on purpose. They cannot get in that way, and you can always unlock from the NAS, which is the point of making unlocking need shell access there. A lock does not sign out existing devices. **Source address:** behind Tailscale Serve every request reaches the container from the NAS itself, so the log's "from" is usually `127.0.0.1`. The log also records the `Tailscale-User-Login` and `X-Forwarded-For` headers when the proxy sends them, labelled as claimed by the proxy; they are for you to read and are not used for any decision.
 
 ## 2. App login (iOS)
