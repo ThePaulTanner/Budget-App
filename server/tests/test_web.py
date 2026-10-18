@@ -161,3 +161,12 @@ def test_every_page_has_the_logo_as_its_icon(web):
 def test_stand_alone_bank_page_links_to_the_app():
     html = (WEB_DIR.parent / "index.html").read_text()
     assert 'href="/app"' in html  # the bare address must lead somewhere other than the bank list
+
+
+def test_phone_layout_turns_zoom_off_and_inputs_do_not_trigger_it():
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[1] / "app/static/web"
+    script, css = (web / "app.js").read_text(), (web / "app.css").read_text()
+    assert "(max-width: 760px) and (pointer: coarse)" in script and "user-scalable=no" in script
+    assert "touch-action: manipulation" in css and "input, select, textarea { font-size: 16px; }" in css

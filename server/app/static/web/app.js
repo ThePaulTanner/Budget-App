@@ -10,6 +10,12 @@
   const UNREACHABLE = "Can't reach your server — is Tailscale connected?";
   const MINUS = "−";
 
+  // The phone layout does not zoom: no pinch or double-tap resizing. Phones' browsers may still allow a
+  // pinch (iPhone Safari ignores this by design, for accessibility); Android Chrome obeys it. Desktop is untouched.
+  if (window.matchMedia("(max-width: 760px) and (pointer: coarse)").matches) {
+    document.querySelector("meta[name=viewport]")?.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover");
+  }
+
   // ---------------------------------------------------------------- helpers
 
   function el(tag, props, ...kids) {

@@ -542,3 +542,9 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .version-line { margin: 16px 0 0; font-size: 0.85rem; text-align: center; }
 .passkey-btn { margin-top: 10px; }
 .passkey-add { align-items: flex-end; flex-wrap: wrap; }
+
+/* Touch screens: no double-tap zoom, and inputs at 16px so iPhones do not zoom in when you tap one. */
+@media (pointer: coarse) {
+  html { touch-action: manipulation; }
+  input, select, textarea { font-size: 16px; }
+}
