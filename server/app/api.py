@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, condecimal
 
 from . import backup as backup_module
+from . import version as version_module
 from . import cashflow as cashflow_mod
 from . import merchants as merchants_mod
 from . import rules as rules_mod
@@ -1315,6 +1316,11 @@ def create_api_app(services: Services) -> FastAPI:
                 for r in rows
             ],
         }
+
+    @app.get("/api/version")
+    def version(ctx: Auth):
+        """Which release the server is running: `version` and the short commit `build` (null from source)."""
+        return version_module.info()
 
     # -- backups --------------------------------------------------------------
 

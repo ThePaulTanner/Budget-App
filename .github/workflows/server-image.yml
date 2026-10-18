@@ -31,6 +31,7 @@ jobs:
           context: server
           platforms: linux/amd64
           push: true
+          build-args: GIT_SHA=${{ github.sha }}
           tags: |
             ${{ steps.name.outputs.image }}:latest
             ${{ steps.name.outputs.image }}:sha-${{ github.sha }}

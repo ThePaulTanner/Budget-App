@@ -523,6 +523,7 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 @media (max-width: 760px) {
   .cf-tip { display: none !important; }
 }
+.version-line { margin: 16px 0 0; font-size: 0.85rem; text-align: center; }
 
 /* ---- phone: tighter spacing and a slightly smaller type scale ------------------------------------
    Long labels have a short form (.lg / .sh): the short one shows on phones, the long one stays for

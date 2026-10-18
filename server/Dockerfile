@@ -18,6 +18,10 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 
+# The commit this image was built from, shown next to the version number in Settings.
+ARG GIT_SHA=""
+ENV HF_BUILD=$GIT_SHA
+
 # Runs as a normal user, never root. On a bind mount, docker-compose sets `user:`
 # to match the owner of the data folder.
 RUN useradd --system --uid 10001 --no-create-home app \

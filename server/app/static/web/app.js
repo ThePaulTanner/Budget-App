@@ -2091,9 +2091,10 @@
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log, backups, logins] = await Promise.all([
+    const [items, sessions, rules, accounts, choices, log, backups, logins, release] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
-      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} })), api("/auth/users").catch(() => [])]);
+      api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} })), api("/auth/users").catch(() => []),
+      api("/api/version").catch(() => null)]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -2379,6 +2380,7 @@
       }));
 
     const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], devices: [devices], backups: [backupsCard], log: [activity] };
+    const versionLine = el("p", { class: "muted version-line", text: release ? `HomeFinance version ${release.version}${release.build ? ` (build ${release.build})` : ""}` : "HomeFinance version unknown" });
     const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
     const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
     const tabBar = el("div", { class: "tabs-sub", role: "group", "aria-label": "Settings pages" });
@@ -2390,7 +2392,7 @@
         onclick: () => choose(lastTab[key]) })));
       tabBar.replaceChildren(...groupTabs.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label, onclick: () => choose(key) })));
       tabBar.hidden = groupTabs.length < 2;
-      view().replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar, ...sections[settingsTab]);
+      view().replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar, ...sections[settingsTab], versionLine);
     }
     show();
   }

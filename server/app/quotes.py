@@ -25,7 +25,8 @@ import httpx
 
 log = logging.getLogger("homefinance.quotes")
 
-YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")  # throttled separately: try the other when one answers 429
+YAHOO_CHART = "https://{host}/v8/finance/chart/{symbol}"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
@@ -96,6 +97,7 @@ class YahooProvider:
         self._spacing = spacing
         self._pace_lock = threading.Lock()
         self._next_slot = 0.0
+        self._host = 0  # index into YAHOO_HOSTS of the one that last worked
 
     def _pace(self) -> None:
         """Hand out request slots at least `spacing` seconds apart, whichever thread asks."""
@@ -108,16 +110,28 @@ class YahooProvider:
         if slot > now:
             time.sleep(slot - now)
 
+    def _get(self, symbol: str, range_: str) -> httpx.Response:
+        """Ask one host, and on a 429 ask the other once; remember the one that answered."""
+        response: httpx.Response | None = None
+        for step in range(len(YAHOO_HOSTS)):
+            index = (self._host + step) % len(YAHOO_HOSTS)
+            self._pace()
+            try:
+                response = self._client.get(
+                    YAHOO_CHART.format(host=YAHOO_HOSTS[index], symbol=symbol),
+                    params={"range": range_, "interval": "1d"},
+                    headers={"User-Agent": USER_AGENT, "Accept": "application/json"},  # the default one is throttled
+                )
+            except httpx.HTTPError as exc:
+                raise QuoteError("unavailable", f"could not reach Yahoo Finance ({type(exc).__name__})") from None
+            if response.status_code != 429:
+                self._host = index
+                return response
+        assert response is not None
+        return response
+
     def _chart(self, symbol: str, range_: str) -> dict[str, Any]:
-        self._pace()
-        try:
-            response = self._client.get(
-                YAHOO_CHART.format(symbol=symbol),
-                params={"range": range_, "interval": "1d"},
-                headers={"User-Agent": USER_AGENT, "Accept": "application/json"},  # the default one is throttled
-            )
-        except httpx.HTTPError as exc:
-            raise QuoteError("unavailable", f"could not reach Yahoo Finance ({type(exc).__name__})") from None
+        response = self._get(symbol, range_)
         if response.status_code == 404:
             raise QuoteError("unknown", "symbol not found")
         if response.status_code == 429:
