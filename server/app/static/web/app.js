@@ -542,7 +542,7 @@
     return data;
   }
 
-  async function addPasskey(name) {
+  async function addPasskey(name, password) {
     const options = await api("/api/passkeys/options", { method: "POST" });
     const key = options.publicKey;
     let credential;
@@ -556,7 +556,7 @@
       throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
     }
     return api("/api/passkeys", { method: "POST", body: {
-      handle: options.handle, name, client_data: b64url.encode(credential.response.clientDataJSON),
+      handle: options.handle, name, password, client_data: b64url.encode(credential.response.clientDataJSON),
       attestation: b64url.encode(credential.response.attestationObject) } });
   }
 
@@ -2178,6 +2178,7 @@
       el("div", { class: "actions" }, el("button", { type: "button", text: "Sign out", onclick: signOut })));
 
     const passkeyName = el("input", { value: guessDevice(), maxlength: "60", "aria-label": "Name for this passkey" });
+    const passkeyPassword = el("input", { type: "password", autocomplete: "current-password", "aria-label": "Your password" });
     const passkeyMessage = el("p", { class: "error", role: "alert" });
     const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys (Face ID)" }),
       el("p", { class: "muted", text: "Sign in with Face ID or your device's unlock instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
@@ -2192,10 +2193,11 @@
           catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
         } }))),
       passkeysSupported()
-        ? el("div", { class: "actions passkey-add" }, el("label", {}, "Name", passkeyName),
+        ? el("div", { class: "actions passkey-add" }, el("label", {}, "Name", passkeyName), el("label", {}, "Your password (to confirm)", passkeyPassword),
           el("button", { type: "button", class: "primary", text: "Add a passkey on this device", onclick: async () => {
             passkeyMessage.textContent = "";
-            try { await addPasskey(passkeyName.value.trim() || guessDevice()); toast("Passkey added"); reload(); }
+            if (!passkeyPassword.value) { passkeyMessage.textContent = "Enter your password to confirm."; return; }
+            try { await addPasskey(passkeyName.value.trim() || guessDevice(), passkeyPassword.value); toast("Passkey added"); reload(); }
             catch (err) { if (err instanceof SignedOut) showLogin(); else passkeyMessage.textContent = err.message; }
           } }), passkeyMessage)
         : el("p", { class: "muted", text: "This browser cannot make passkeys. Open HomeFinance in Safari or Chrome on your phone." }));

@@ -129,6 +129,7 @@ class PasskeyAssertionBody(BaseModel):
 class PasskeyAddBody(BaseModel):
     handle: str = Field(min_length=1, max_length=100)
     name: str = Field(default="", max_length=100)
+    password: str = Field(min_length=1, max_length=1000)
     client_data: str = Field(min_length=1, max_length=8192)
     attestation: str = Field(min_length=1, max_length=65536)
 
@@ -1368,7 +1369,7 @@ def create_api_app(services: Services) -> FastAPI:
     def passkey_add(body: PasskeyAddBody, ctx: Auth, request: Request):
         try:
             return auth.passkey_register(
-                ctx, body.handle, body.name, body.client_data, body.attestation, request.headers.get("host", "")
+                ctx, body.handle, body.name, body.password, body.client_data, body.attestation, request.headers.get("host", "")
             )
         except passkeys.PasskeyError as exc:
             raise HTTPException(400, str(exc)) from None

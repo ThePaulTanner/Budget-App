@@ -296,7 +296,20 @@ class AuthService:
             },
         }
 
-    def passkey_register(self, ctx: AuthContext, handle: str, name: str, client_data: str, attestation: str, host: str) -> dict:
+    def passkey_register(
+        self, ctx: AuthContext, handle: str, name: str, password: str, client_data: str, attestation: str, host: str
+    ) -> dict:
+        """Add a passkey. Needs the password again: a passkey signs in without the authenticator code, so a
+        borrowed 15-minute access token must not be enough to make one."""
+        user = self.db.one("SELECT username, password_hash FROM users WHERE id=?", (ctx.user_id,))
+        if user is None:
+            raise AuthError(401, INVALID)
+        with self._login_lock:
+            self.user_limiter.check(user["username"])
+            if not self._verify_password(user["password_hash"], password):
+                self.user_limiter.failure(user["username"])
+                raise passkeys.PasskeyError("Wrong password")
+            self.user_limiter.success(user["username"])
         challenge = self.challenges.take(handle, "register", ctx.user_id)
         credential_id, public_key, count = passkeys.verify_registration(
             challenge, host, passkeys.unb64u(client_data), passkeys.unb64u(attestation)
@@ -365,6 +378,7 @@ class AuthService:
                           user_id=row["user_id"] if row else None)
                 raise AuthError(401, str(exc)) from None
             self.db.run("UPDATE passkeys SET sign_count=?, last_used_at=? WHERE id=?", (count, utcnow(), row["id"]))
+            # A passkey sign-in also clears the streak towards a password lockout: it is a proven sign-in.
             self.db.run("UPDATE users SET failed_streak=0 WHERE id=?", (row["user_id"],))
             self._log("success", ip, origin, device="Web browser", known=True, method="passkey", user_id=row["user_id"])
             return self._open_session(row["user_id"], "Web browser")

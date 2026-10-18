@@ -84,6 +84,8 @@ def _cbor(data: bytes, at: int = 0, depth: int = 0) -> tuple[Any, int]:
         out = {}
         for _ in range(value):
             key, at = _cbor(data, at, depth + 1)
+            if not isinstance(key, (int, str, bytes)):
+                raise PasskeyError("Unreadable passkey data")
             item, at = _cbor(data, at, depth + 1)
             out[key] = item
         return out, at

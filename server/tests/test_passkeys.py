@@ -12,6 +12,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app import passkeys
 
+from .conftest import PASSWORD
+
 HOST = "testserver"
 WEB = {"X-Requested-With": "HomeFinance"}
 
@@ -78,10 +80,10 @@ class Phone:
         }
 
 
-def add_passkey(client, auth, phone=None, **kwargs):
+def add_passkey(client, auth, phone=None, password=PASSWORD, **kwargs):
     phone = phone or Phone()
     options = client.post("/api/passkeys/options", headers=auth).json()
-    added = client.post("/api/passkeys", headers=auth, json=phone.register(options, **kwargs))
+    added = client.post("/api/passkeys", headers=auth, json={**phone.register(options, **kwargs), "password": password})
     return phone, added
 
 
@@ -212,3 +214,26 @@ def test_ip_addresses_are_not_valid_relying_parties():
     with pytest.raises(passkeys.PasskeyError):
         passkeys.rp_id_for("192.168.1.5:8080")
     assert passkeys.rp_id_for("tanner-nas.example.ts.net") == "tanner-nas.example.ts.net"
+
+
+def test_adding_a_passkey_needs_the_password_again(client, auth):
+    _, added = add_passkey(client, auth, password="not the password")
+    assert added.status_code == 400 and added.json()["detail"] == "Wrong password"
+    assert client.get("/api/passkeys", headers=auth).json() == []
+
+
+def test_guessing_the_password_there_is_rate_limited(client, auth):
+    codes = [add_passkey(client, auth, password=f"wrong guess {i}")[1].status_code for i in range(7)]
+    assert codes[:5] == [400] * 5 and codes[5] == 429
+    assert add_passkey(client, auth)[1].status_code == 429  # even the right one waits
+
+
+def test_cbor_map_with_a_container_key_is_a_clean_refusal():
+    with pytest.raises(passkeys.PasskeyError):
+        passkeys.cbor_decode(bytes([0xA1, 0x80, 0x01]))
+
+
+def test_a_counter_that_falls_back_to_zero_is_refused(client, auth):
+    phone, _ = add_passkey(client, auth)
+    assert sign_in(client, phone, counter=3).status_code == 200
+    assert sign_in(client, phone, counter=0).status_code == 401

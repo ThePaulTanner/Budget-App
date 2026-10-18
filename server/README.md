@@ -171,6 +171,7 @@ Any secret can also be given directly as `NAME` instead of `NAME_FILE`, but file
 
 - **Sign in from the app/web:** password + a fresh authenticator code. Devices are listed at `GET /auth/sessions` and can be revoked.
 - **Update:** pull the new image and recreate the project (Container Manager → Project → Build/Update).
+- **Passkeys and the address:** a passkey is tied to the host name in the address bar (your `…ts.net` name) and expects plain HTTPS on the normal port, which is how Tailscale Serve publishes it. If you ever see "This passkey belongs to a different address", you opened the app through a different name or a port; use the Tailscale address.
 - **Backups:** the app copies its database to `data/backups` once a day, when you press **Back up now** (web app → Settings → Backups) and automatically just before it upgrades its database. The newest 14 daily, 10 manual and 5 pre-upgrade copies are kept. Copies are encrypted with the same key, so they are safe to leave on the NAS and to download, and useless without the master key. They live on the same disk as the database, so also back up the whole `data` folder (Hyper Backup) **and, separately,** the master key.
 - **Restore a backup:** stop the app, put the copy in place and start it again:
   ```
