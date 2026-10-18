@@ -28,3 +28,11 @@ def test_endpoint_needs_a_login(client):
 def test_settings_page_shows_it():
     script = (Path(version.__file__).parent / "static/web/app.js").read_text()
     assert "/api/version" in script and "HomeFinance version" in script
+
+
+def test_fixture_has_the_endpoints_shape(seeded):
+    import json
+
+    client, auth = seeded
+    fixture = json.loads((Path(version.__file__).parents[2] / "api-fixtures/version.json").read_text())
+    assert set(fixture) == set(client.get("/api/version", headers=auth).json())
