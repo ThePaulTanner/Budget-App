@@ -524,6 +524,8 @@
   let pendingPing = null;
   let idleHold = false;  // true while Plaid's window is open (it is in another frame and cannot be seen touching the page)
 
+  // true: recorded. false: the server says the session is over (401). A network or server error throws instead,
+  // so one failed ping never signs you out; the page's own clock still ends an idle session.
   async function activityPing() {
     if (!token || Date.now() >= tokenExpiry) { if (!(await renewOnce())) return false; }
     const send = () => plainFetch("/web/activity", { method: "POST", headers: { Authorization: `Bearer ${token}`, "X-Requested-With": "HomeFinance" } });
@@ -531,8 +533,10 @@
     if (response.status === 401) {
       if (!(await renewOnce())) return false;
       response = await send();
+      if (response.status === 401) return false;
     }
-    return response.ok;
+    if (!response.ok) throw new Error(`Could not tell the server you are here (${response.status})`);
+    return true;
   }
 
   function reportActivity() {
@@ -570,18 +574,21 @@
     idleTimer = setInterval(checkIdle, 1000);
   }
 
-  async function idleSignOut(reason = "You were signed out after a period of inactivity. Sign in again.") {
+  async function idleSignOut(reason = "") {
     if (idleTimer === null) return;  // already signed out
     stopIdleWatch();
     try { await plainFetch("/web/logout", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } }); } catch (_) { /* the server expires it too */ }
     budgetMonth = null;
-    showLogin(reason);
+    showLogin(reason || signOutReason || "You were signed out after a period of inactivity. Sign in again.");  // the server's own reason wins
   }
 
   function checkIdle() {
     if (idleTimer === null) return;
     if (Date.now() >= sessionEnds) { idleSignOut("This session reached its time limit. Sign in again."); return; }
-    if (idleHold) lastActive = Date.now();
+    if (idleHold) {
+      lastActive = Date.now();
+      if (Date.now() - lastPing > 60000) reportActivity();  // the server's clock has to hear about it too
+    }
     const left = idleSeconds - (Date.now() - lastActive) / 1000;
     if (left <= 0) { idleSignOut(); return; }
     if (left > IDLE_WARNING_SECONDS) return;
@@ -593,13 +600,17 @@
         el("p", {}, "You will be signed out in ", count, " seconds because there has been no activity."),
         el("div", { class: "actions" },
           el("button", { type: "button", class: "primary", text: "Stay signed in", onclick: async () => {
-            let ok = false;
-            try { ok = await activityPing(); } catch (_) { /* treated as signed out below */ }
+            let ok;
+            try { ok = await activityPing(); } catch (_) {
+              box.querySelector(".idle-error").textContent = "Could not reach the server. Try again.";  // the countdown carries on
+              return;
+            }
             if (!ok) { idleSignOut(); return; }
             lastActive = lastPing = Date.now();
             box.close();
           } }),
-          el("button", { type: "button", class: "secondary", text: "Sign out now", onclick: () => idleSignOut("Signed out.") }))));
+          el("button", { type: "button", class: "secondary", text: "Sign out now", onclick: () => idleSignOut("Signed out.") })),
+        el("p", { class: "error idle-error", role: "alert" })));
       box.oncancel = (event) => event.preventDefault();  // Escape does not count as an answer
       box.showModal();
     }
@@ -2184,6 +2195,7 @@
       token: linkToken,
       onSuccess: async (publicToken) => {
         idleHold = false;
+        reportActivity();
         try {
           if (item) {
             await api("/api/link/complete", { method: "POST", body: { item_id: item.id } });
@@ -2198,7 +2210,7 @@
           if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
         }
       },
-      onExit: (err) => { idleHold = false; if (err) toast(err.display_message || err.error_message || "Linking was cancelled.", true); },
+      onExit: (err) => { idleHold = false; reportActivity(); if (err) toast(err.display_message || err.error_message || "Linking was cancelled.", true); },
     }).open();
   }
 
