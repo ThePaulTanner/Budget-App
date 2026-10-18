@@ -41,6 +41,8 @@ class Settings:
     sync_interval_minutes: int = 60
     live_quotes: bool = True  # live prices for investment positions from Yahoo Finance
     max_failed_logins: int = 10  # in a row; then new sign-ins stay locked until `cli unlock`
+    web_idle_minutes: int = 10  # the web app signs you out after this long without you touching it
+    web_max_hours: int = 8  # and after this long in total, however busy you are
     # Test-only escape hatches. Never set these in production.
     insecure_plaintext_db: bool = False
     plaid_base_url: str | None = None
@@ -84,5 +86,7 @@ def load_settings() -> Settings:
         sync_interval_minutes=int(os.environ.get("SYNC_INTERVAL_MINUTES", "60")),
         live_quotes=_bool("LIVE_QUOTES", True),
         max_failed_logins=max(3, min(100, int(os.environ.get("MAX_FAILED_LOGINS", "10")))),
+        web_idle_minutes=max(2, min(60, int(os.environ.get("WEB_IDLE_MINUTES", "10")))),
+        web_max_hours=max(1, min(24, int(os.environ.get("WEB_MAX_HOURS", "8")))),
         insecure_plaintext_db=_bool("HF_INSECURE_PLAINTEXT_DB"),
     )

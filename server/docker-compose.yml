@@ -22,6 +22,8 @@ services:
       BASE_CURRENCY: ${BASE_CURRENCY:-CAD}
       PUBLIC_WEBHOOK_URL: ${PUBLIC_WEBHOOK_URL:-}   # https://<nas>.<tailnet>.ts.net:8443/plaid/webhook
       LIVE_QUOTES: ${LIVE_QUOTES:-true}   # live prices from Yahoo Finance; only ticker symbols are sent
+      WEB_IDLE_MINUTES: ${WEB_IDLE_MINUTES:-10}     # the web app signs you out after this long without activity
+      WEB_MAX_HOURS: ${WEB_MAX_HOURS:-8}            # and after this long in total
       MAX_FAILED_LOGINS: ${MAX_FAILED_LOGINS:-10}   # failed sign-ins in a row before new sign-ins lock (python -m app.cli unlock)
       SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-60}   # backup timer; webhooks do the real work
       HF_MASTER_KEY_FILE: /run/secrets/hf_master_key

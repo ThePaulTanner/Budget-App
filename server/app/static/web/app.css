@@ -219,9 +219,13 @@ svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 
 /* ---- dialogs, toast, privacy cover ------------------------------------------------------- */
 dialog { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
-dialog#confirm { width: min(460px, calc(100vw - 24px)); }
+dialog#confirm, dialog#idle { width: min(460px, calc(100vw - 24px)); }
 dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
-.confirm { text-align: center; }
+.confirm, .idle { text-align: center; }
+.idle h2 { margin: 6px 0 10px; font-size: 1.35rem; }
+.idle p { margin: 0 auto 12px; max-width: 42ch; }
+.idle .actions { justify-content: center; margin-top: 18px; }
+.idle-count { font-variant-numeric: tabular-nums; font-weight: 700; }
 .confirm h2 { margin: 6px 0 10px; font-size: 1.35rem; }
 .confirm p { margin: 0 auto 12px; max-width: 42ch; }
 .confirm ul { text-align: left; margin: 0 auto 16px; padding-left: 1.2rem; max-width: 42ch; display: grid; gap: 8px; }

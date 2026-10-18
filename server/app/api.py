@@ -73,7 +73,6 @@ APP_CSP = (
 # `__Host-` makes browsers insist on Secure, Path=/ and no Domain, so a sibling site
 # cannot plant or overwrite it.
 WEB_COOKIE = "__Host-hf_rt"
-WEB_COOKIE_MAX_AGE = 30 * 24 * 3600  # renewed each time the page refreshes
 WEB_HEADER = "x-requested-with"
 WEB_HEADER_VALUE = "HomeFinance"
 
@@ -466,13 +465,13 @@ def create_api_app(services: Services) -> FastAPI:
                 "token_type": tokens["token_type"],
                 "expires_in": tokens["expires_in"],
                 "session_id": tokens["session_id"],
+                **auth.web_info(tokens["session_id"]),
             }
         )
         response.set_cookie(
             WEB_COOKIE,
             tokens["refresh_token"],
-            max_age=WEB_COOKIE_MAX_AGE,
-            path="/",
+            path="/",  # no max-age: a session cookie, gone when the browser closes; the server enforces the time limits
             secure=True,
             httponly=True,
             samesite="strict",
@@ -488,7 +487,7 @@ def create_api_app(services: Services) -> FastAPI:
     def web_login(body: WebLoginBody, request: Request):
         require_same_site(request)
         ip = request.client.host if request.client else "-"
-        return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip, origin_of(request)))
+        return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip, origin_of(request), web=True))
 
     @app.post("/web/passkey/options")
     def web_passkey_options(request: Request):
@@ -508,6 +507,12 @@ def create_api_app(services: Services) -> FastAPI:
                 request.headers.get("host", ""), ip, origin_of(request),
             )
         )
+
+    @app.post("/web/activity")
+    def web_activity(ctx: Auth, request: Request):
+        """The page tells the server you are still there (a tap, a key, a scroll). Resets the idle clock."""
+        require_same_site(request)
+        return auth.web_activity(ctx)
 
     @app.post("/web/refresh")
     def web_refresh(request: Request):

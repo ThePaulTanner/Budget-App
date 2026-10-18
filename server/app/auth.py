@@ -35,6 +35,9 @@ from .crypto import Keys, seal, unseal
 from .db import Database, utcnow
 
 ACCESS_TTL_SECONDS = 15 * 60
+INACTIVE = "Signed out after a period of inactivity"
+SESSION_OVER = "This session reached its time limit. Sign in again."
+WEB_IDLE_GRACE = 15  # seconds the server allows beyond the page's own idle clock, for a slow network
 REFRESH_GRACE_SECONDS = 60
 MIN_PASSWORD_LENGTH = 12
 ISSUER = "HomeFinance"
@@ -123,11 +126,15 @@ class AuthService:
         clock: Callable[[], float] = time.time,
         hasher: PasswordHasher | None = None,
         max_failed_logins: int = 10,
+        web_idle_seconds: int = 600,
+        web_max_seconds: int = 8 * 3600,
     ) -> None:
         self.db = db
         self.keys = keys
         self.clock = clock
         self.max_failed_logins = max_failed_logins
+        self.web_idle_seconds = web_idle_seconds
+        self.web_max_seconds = web_max_seconds
         # One sign-in attempt at a time: otherwise a burst of parallel guesses could all
         # pass the lock check before the first failure is counted.
         self._login_lock = threading.Lock()
@@ -220,6 +227,7 @@ class AuthService:
         device_name: str,
         ip: str = "-",
         origin: str = "",
+        web: bool = False,
     ) -> dict:
         key = username.strip().lower()
         with self._login_lock:
@@ -260,18 +268,46 @@ class AuthService:
                     "UPDATE users SET password_hash=? WHERE id=?",
                     (self.hasher.hash(self._prehash(password)), user["id"]),
                 )
-            return self._open_session(user["id"], device_name)
+            return self._open_session(user["id"], device_name, web=web)
 
-    def _open_session(self, user_id: int, device_name: str) -> dict:
+    def _open_session(self, user_id: int, device_name: str, web: bool = False) -> dict:
+        """Start a session. A web session also gets the idle and total time limits."""
         session_id = uuid.uuid4().hex
         refresh = secrets.token_urlsafe(32)
         now = utcnow()
+        clock = self.clock()
         self.db.run(
-            "INSERT INTO sessions(id, user_id, device_name, refresh_hash, created_at, last_used_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (session_id, user_id, (device_name or "Unknown device")[:80], _sha256(refresh), now, now),
+            "INSERT INTO sessions(id, user_id, device_name, refresh_hash, created_at, last_used_at, kind, active_at, expires_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (session_id, user_id, (device_name or "Unknown device")[:80], _sha256(refresh), now, now,
+             "web" if web else "app", clock if web else None, clock + self.web_max_seconds if web else None),
         )
         return self._tokens(user_id, session_id, refresh)
+
+    def _web_over(self, row, now: float) -> str | None:
+        """Why a web session has ended, or None while it is still good."""
+        if row["kind"] != "web":
+            return None
+        if row["expires_at"] is not None and now >= row["expires_at"]:
+            return SESSION_OVER
+        if row["active_at"] is not None and now - row["active_at"] >= self.web_idle_seconds + WEB_IDLE_GRACE:
+            return INACTIVE
+        return None
+
+    def web_info(self, session_id: str) -> dict:
+        """What the page needs to run its inactivity timer."""
+        row = self.db.one("SELECT expires_at FROM sessions WHERE id=?", (session_id,))
+        left = max(0, int((row["expires_at"] or 0) - self.clock())) if row else 0
+        return {"idle_timeout": self.web_idle_seconds, "session_expires_in": left}
+
+    def web_activity(self, ctx: "AuthContext") -> dict:
+        """You touched the page: the idle clock starts again. Only this (never background requests such
+        as the live-price refresh) keeps a web session open."""
+        self.db.run(
+            "UPDATE sessions SET active_at=? WHERE id=? AND kind='web' AND revoked_at IS NULL",
+            (self.clock(), ctx.session_id),
+        )
+        return self.web_info(ctx.session_id)
 
     # -- passkeys (Face ID) --------------------------------------------------
 
@@ -381,7 +417,7 @@ class AuthService:
             # A passkey sign-in also clears the streak towards a password lockout: it is a proven sign-in.
             self.db.run("UPDATE users SET failed_streak=0 WHERE id=?", (row["user_id"],))
             self._log("success", ip, origin, device="Web browser", known=True, method="passkey", user_id=row["user_id"])
-            return self._open_session(row["user_id"], "Web browser")
+            return self._open_session(row["user_id"], "Web browser", web=True)
 
     # -- sign-in log and hard lock ---------------------------------------------
 
@@ -470,6 +506,7 @@ class AuthService:
         digest = _sha256(refresh_token)
         now = self.clock()
         stolen = False
+        over = None
         with self.db.transaction():
             row = self.db.one(
                 "SELECT * FROM sessions WHERE refresh_hash=? OR prev_refresh_hash=?",
@@ -477,7 +514,10 @@ class AuthService:
             )
             if row is None or row["revoked_at"] is not None:
                 raise AuthError(401, INVALID)
-            if row["refresh_hash"] == digest:
+            over = self._web_over(row, now)
+            if over:
+                self.db.run("UPDATE sessions SET revoked_at=? WHERE id=?", (utcnow(), row["id"]))
+            elif row["refresh_hash"] == digest:
                 previous = digest
             elif now <= (row["prev_valid_until"] or 0):
                 # Retry of a rotation whose response was lost: hand out a fresh token.
@@ -488,13 +528,15 @@ class AuthService:
                 # transaction would roll the revoke back.
                 self.db.run("UPDATE sessions SET revoked_at=? WHERE id=?", (utcnow(), row["id"]))
                 stolen = True
-            if not stolen:
+            if not stolen and not over:
                 new_refresh = secrets.token_urlsafe(32)
                 self.db.run(
                     "UPDATE sessions SET refresh_hash=?, prev_refresh_hash=?, prev_valid_until=?, "
                     "last_used_at=? WHERE id=?",
                     (_sha256(new_refresh), previous, now + REFRESH_GRACE_SECONDS, utcnow(), row["id"]),
                 )
+        if over:
+            raise AuthError(401, over)
         if stolen:
             raise AuthError(401, INVALID)
         return self._tokens(row["user_id"], row["id"], new_refresh)
@@ -536,11 +578,15 @@ class AuthService:
         if claims.get("typ") != "access" or float(claims["exp"]) < self.clock() - 5:
             raise AuthError(401, "Invalid or missing credentials")
         row = self.db.one(
-            "SELECT revoked_at FROM sessions WHERE id=? AND user_id=?",
+            "SELECT revoked_at, kind, active_at, expires_at FROM sessions WHERE id=? AND user_id=?",
             (claims["sid"], int(claims["sub"])),
         )
         if row is None or row["revoked_at"] is not None:
             raise AuthError(401, "Invalid or missing credentials")
+        over = self._web_over(row, self.clock())
+        if over:
+            self.db.run("UPDATE sessions SET revoked_at=? WHERE id=?", (utcnow(), claims["sid"]))
+            raise AuthError(401, over)
         return AuthContext(user_id=int(claims["sub"]), session_id=claims["sid"])
 
     def revoke_refresh(self, refresh_token: str) -> None:
