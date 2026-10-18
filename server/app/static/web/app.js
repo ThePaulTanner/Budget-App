@@ -1108,7 +1108,7 @@
       const tone = Math.abs(change) < 0.005 ? "" : up === upIsGood ? "income" : "cf-bad";
       return el("div", { class: "muted cf-small", title: `${m0(prevValue)} from ${dayLabel(p.start)} to ${dayLabel(p.end)}` },
         el("span", { class: tone, text: `${up ? "▲" : "▼"} ${Math.abs(change * 100).toFixed(Math.abs(change) < 0.1 ? 1 : 0)}%` }),
-        dual(` vs ${shortDate(p.start)} – ${shortDate(p.end)}`, " vs before"));
+        dual(` vs ${shortDate(p.start)} – ${shortDate(p.end)}`, " vs prev."));
     }
     function renderTiles() {
       const t = data.totals, p = data.previous || {};
