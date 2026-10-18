@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, condecimal
 
 from . import backup as backup_module
+from . import passkeys
 from . import version as version_module
 from . import cashflow as cashflow_mod
 from . import merchants as merchants_mod
@@ -115,6 +116,22 @@ class WebLoginBody(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=1000)
     code: str = Field(min_length=1, max_length=64)
+
+
+class PasskeyAssertionBody(BaseModel):
+    handle: str = Field(min_length=1, max_length=100)
+    credential_id: str = Field(min_length=1, max_length=2048)
+    client_data: str = Field(min_length=1, max_length=8192)
+    authenticator_data: str = Field(min_length=1, max_length=8192)
+    signature: str = Field(min_length=1, max_length=8192)
+
+
+class PasskeyAddBody(BaseModel):
+    handle: str = Field(min_length=1, max_length=100)
+    name: str = Field(default="", max_length=100)
+    password: str = Field(min_length=1, max_length=1000)
+    client_data: str = Field(min_length=1, max_length=8192)
+    attestation: str = Field(min_length=1, max_length=65536)
 
 
 class HiddenBody(BaseModel):
@@ -472,6 +489,25 @@ def create_api_app(services: Services) -> FastAPI:
         require_same_site(request)
         ip = request.client.host if request.client else "-"
         return web_tokens(auth.login(body.username, body.password, body.code, "Web browser", ip, origin_of(request)))
+
+    @app.post("/web/passkey/options")
+    def web_passkey_options(request: Request):
+        require_same_site(request)
+        try:
+            return auth.passkey_login_options(request.headers.get("host", ""))
+        except passkeys.PasskeyError as exc:
+            raise AuthError(400, str(exc)) from None
+
+    @app.post("/web/passkey/login")
+    def web_passkey_login(body: PasskeyAssertionBody, request: Request):
+        require_same_site(request)
+        ip = request.client.host if request.client else "-"
+        return web_tokens(
+            auth.passkey_login(
+                body.handle, body.credential_id, body.client_data, body.authenticator_data, body.signature,
+                request.headers.get("host", ""), ip, origin_of(request),
+            )
+        )
 
     @app.post("/web/refresh")
     def web_refresh(request: Request):
@@ -1316,6 +1352,33 @@ def create_api_app(services: Services) -> FastAPI:
                 for r in rows
             ],
         }
+
+    @app.get("/api/passkeys")
+    def passkey_list(ctx: Auth):
+        """Your passkeys (Face ID sign-in), never anyone else's."""
+        return auth.passkeys_for(ctx)
+
+    @app.post("/api/passkeys/options")
+    def passkey_options(ctx: Auth, request: Request):
+        try:
+            return auth.passkey_register_options(ctx, request.headers.get("host", ""))
+        except passkeys.PasskeyError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.post("/api/passkeys", status_code=201)
+    def passkey_add(body: PasskeyAddBody, ctx: Auth, request: Request):
+        try:
+            return auth.passkey_register(
+                ctx, body.handle, body.name, body.password, body.client_data, body.attestation, request.headers.get("host", "")
+            )
+        except passkeys.PasskeyError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.delete("/api/passkeys/{passkey_id}", status_code=204)
+    def passkey_remove(passkey_id: int, ctx: Auth):
+        if not auth.remove_passkey(ctx, passkey_id):
+            raise HTTPException(404, "Passkey not found")
+        return Response(status_code=204)
 
     @app.get("/api/version")
     def version(ctx: Auth):

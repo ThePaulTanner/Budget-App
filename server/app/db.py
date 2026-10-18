@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA = """
 CREATE TABLE users (
@@ -35,6 +35,16 @@ CREATE TABLE recovery_codes (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   code_hash TEXT NOT NULL UNIQUE,
   used_at TEXT
+);
+CREATE TABLE passkeys (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key BLOB NOT NULL,
+  sign_count INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
 );
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
@@ -347,6 +357,20 @@ ALTER TABLE transactions ADD COLUMN transfer_pair_id TEXT;
     # More than one login: which login each sign-in attempt was for.
     10: """
 ALTER TABLE login_events ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+""",
+
+    # Passkeys: sign in with Face ID. Only the public key is kept.
+    11: """
+CREATE TABLE passkeys (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key BLOB NOT NULL,
+  sign_count INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
+);
 """}
 
 

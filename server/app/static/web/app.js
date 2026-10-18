@@ -502,15 +502,76 @@
     });
   }
 
+  // ---------------------------------------------------------------- passkeys (Face ID)
+
+  const b64url = {
+    encode: (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    decode: (text) => {
+      const padded = text.replace(/-/g, "+").replace(/_/g, "/");
+      return Uint8Array.from(atob(padded + "=".repeat((4 - (padded.length % 4)) % 4)), (c) => c.charCodeAt(0)).buffer;
+    },
+  };
+  const passkeysSupported = () => Boolean(window.PublicKeyCredential && navigator.credentials);
+
+  async function passkeySignIn() {
+    const asked = await plainFetch("/web/passkey/options", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } });
+    const options = await asked.json().catch(() => ({}));
+    if (!asked.ok) throw new Error(typeof options.detail === "string" ? options.detail : "Could not start the passkey sign-in.");
+    const key = options.publicKey;
+    let credential;
+    try {
+      credential = await navigator.credentials.get({ publicKey: {
+        challenge: b64url.decode(key.challenge), rpId: key.rpId, userVerification: key.userVerification, timeout: key.timeout, allowCredentials: [] } });
+    } catch (err) {
+      throw new Error(err.name === "NotAllowedError"
+        ? "Cancelled, or this device has no passkey for HomeFinance. Sign in with your password once, then add one in Settings \u2192 Security \u2192 Passkeys."
+        : `Passkey sign-in failed (${err.name}).`);
+    }
+    const reply = credential.response;
+    const response = await plainFetch("/web/passkey/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "HomeFinance" },
+      body: JSON.stringify({
+        handle: options.handle, credential_id: credential.id, client_data: b64url.encode(reply.clientDataJSON),
+        authenticator_data: b64url.encode(reply.authenticatorData), signature: b64url.encode(reply.signature) }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(response.status === 429 ? "Too many attempts. Wait a few minutes and try again." : (typeof data.detail === "string" ? data.detail : "Sign-in failed."));
+    }
+    return data;
+  }
+
+  async function addPasskey(name, password) {
+    const options = await api("/api/passkeys/options", { method: "POST" });
+    const key = options.publicKey;
+    let credential;
+    try {
+      credential = await navigator.credentials.create({ publicKey: {
+        rp: key.rp, user: { id: b64url.decode(key.user.id), name: key.user.name, displayName: key.user.displayName },
+        challenge: b64url.decode(key.challenge), pubKeyCredParams: key.pubKeyCredParams, authenticatorSelection: key.authenticatorSelection,
+        excludeCredentials: key.excludeCredentials.map((c) => ({ type: c.type, id: b64url.decode(c.id) })),
+        attestation: key.attestation, timeout: key.timeout } });
+    } catch (err) {
+      throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
+    }
+    return api("/api/passkeys", { method: "POST", body: {
+      handle: options.handle, name, password, client_data: b64url.encode(credential.response.clientDataJSON),
+      attestation: b64url.encode(credential.response.attestationObject) } });
+  }
+
+  const guessDevice = () => (/iPhone/.test(navigator.userAgent) ? "iPhone" : /iPad/.test(navigator.userAgent) ? "iPad"
+    : /Android/.test(navigator.userAgent) ? "Android phone" : /Macintosh/.test(navigator.userAgent) ? "Mac" : "This device");
+
   // ---------------------------------------------------------------- sign-in activity
 
   const LOGIN_RESULTS = {
     success: ["Signed in", false], bad_password: ["Wrong password", true], bad_code: ["Wrong authenticator code", true],
     unknown_user: ["Unknown username", true], rate_limited: ["Blocked: too many attempts", true],
     locked: ["Refused: sign-in is locked", true], lockout: ["Sign-in locked after too many failures", true],
-    unlocked: ["Unlocked from the NAS", false], login_removed: ["A login was removed", false],
+    bad_passkey: ["Passkey refused", true], unlocked: ["Unlocked from the NAS", false], login_removed: ["A login was removed", false],
   };
-  const FAILED = new Set(["bad_password", "bad_code", "unknown_user", "lockout"]);
+  const FAILED = new Set(["bad_password", "bad_code", "bad_passkey", "unknown_user", "lockout"]);
 
   function setAlert(log) {
     const node = $("alert");
@@ -2061,7 +2122,7 @@
   // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
   const SETTINGS_GROUPS = [
     ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
-    ["security", "Security", [["logins", "Logins"], ["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
+    ["security", "Security", [["logins", "Logins"], ["passkeys", "Passkeys"], ["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
     ["look", "Appearance", [["appearance", "Appearance"]]],
   ];
   const SETTINGS_TABS = SETTINGS_GROUPS.flatMap(([, , tabs]) => tabs);
@@ -2070,10 +2131,10 @@
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log, backups, logins, release] = await Promise.all([
+    const [items, sessions, rules, accounts, choices, log, backups, logins, release, passkeyList] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
       api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} })), api("/auth/users").catch(() => []),
-      api("/api/version").catch(() => null)]);
+      api("/api/version").catch(() => null), api("/api/passkeys").catch(() => [])]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -2115,6 +2176,31 @@
           catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
         } }))),
       el("div", { class: "actions" }, el("button", { type: "button", text: "Sign out", onclick: signOut })));
+
+    const passkeyName = el("input", { value: guessDevice(), maxlength: "60", "aria-label": "Name for this passkey" });
+    const passkeyPassword = el("input", { type: "password", autocomplete: "current-password", "aria-label": "Your password" });
+    const passkeyMessage = el("p", { class: "error", role: "alert" });
+    const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys (Face ID)" }),
+      el("p", { class: "muted", text: "Sign in with Face ID or your device's unlock instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
+      passkeyList.length === 0 && el("p", { class: "empty", text: "No passkeys yet." }),
+      passkeyList.map((p) => el("div", { class: "row" }, el("div", { class: "grow" },
+        el("strong", { text: p.name }),
+        el("div", { class: "muted", text: `Added ${ago(p.created_at)} \u00B7 ${p.last_used_at ? `last used ${ago(p.last_used_at)}` : "not used yet"}` })),
+        el("button", { type: "button", class: "danger", text: "Remove", onclick: async () => {
+          if (!(await confirmBox({ title: `Remove ${p.name}?`, intro: "That device will need your password and authenticator code to sign in.",
+            confirmText: "Remove", cancelText: "Cancel", danger: true }))) return;
+          try { await api(`/api/passkeys/${encodeURIComponent(p.id)}`, { method: "DELETE" }); reload(); }
+          catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+        } }))),
+      passkeysSupported()
+        ? el("div", { class: "actions passkey-add" }, el("label", {}, "Name", passkeyName), el("label", {}, "Your password (to confirm)", passkeyPassword),
+          el("button", { type: "button", class: "primary", text: "Add a passkey on this device", onclick: async () => {
+            passkeyMessage.textContent = "";
+            if (!passkeyPassword.value) { passkeyMessage.textContent = "Enter your password to confirm."; return; }
+            try { await addPasskey(passkeyName.value.trim() || guessDevice(), passkeyPassword.value); toast("Passkey added"); reload(); }
+            catch (err) { if (err instanceof SignedOut) showLogin(); else passkeyMessage.textContent = err.message; }
+          } }), passkeyMessage)
+        : el("p", { class: "muted", text: "This browser cannot make passkeys. Open HomeFinance in Safari or Chrome on your phone." }));
 
     const rulesCard = el("section", { class: "card" }, el("h2", { text: "Categorization rules" }),
       el("p", { class: "muted", text: "A rule recategorizes matching transactions. What you set by hand always wins, then rules, then your bank's category." }),
@@ -2358,7 +2444,7 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], devices: [devices], backups: [backupsCard], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], passkeys: [passkeysCard], devices: [devices], backups: [backupsCard], log: [activity] };
     const versionLine = el("p", { class: "muted version-line", text: release ? `HomeFinance version ${release.version}${release.build ? ` (build ${release.build})` : ""}` : "HomeFinance version unknown" });
     const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
     const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
@@ -2536,6 +2622,19 @@
     } catch (err) {
       $("login-message").textContent = err.message;
     } finally { button.disabled = false; }
+  });
+
+  const passkeyButton = $("passkey-login");
+  passkeyButton.hidden = !passkeysSupported();
+  passkeyButton.addEventListener("click", async () => {
+    passkeyButton.disabled = true;
+    $("login-message").textContent = "";
+    try {
+      takeTokens(await passkeySignIn());
+      showShell();
+    } catch (err) {
+      $("login-message").textContent = err.message;
+    } finally { passkeyButton.disabled = false; }
   });
 
   for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
