@@ -641,3 +641,21 @@ def test_an_old_history_that_is_not_refreshed_this_look_keeps_its_bars():
     result = service.lookup(positions)
     assert len(provider.history_calls) - calls == q.HISTORY_PER_LOOKUP  # only a few are refreshed this look
     assert all(live.bars for live in result.live.values())  # none lost its bars
+
+
+def test_a_429_from_one_yahoo_host_falls_back_to_the_other_and_sticks():
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.host.startswith("query1"):
+            return httpx.Response(429, text="Too Many Requests")
+        return httpx.Response(
+            200,
+            json={"chart": {"result": [{"meta": {"regularMarketPrice": 30.5, "regularMarketTime": 1_760_000_000, "currency": "CAD"}}], "error": None}},
+        )
+
+    provider = YahooProvider(httpx.Client(transport=httpx.MockTransport(handler)), spacing=0)
+    assert provider.quote("XIU.TO").price == Decimal("30.5")
+    assert provider.quote("XIU.TO").price == Decimal("30.5")
+    assert seen == ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query2.finance.yahoo.com"]
