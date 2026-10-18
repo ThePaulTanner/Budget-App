@@ -473,7 +473,9 @@ pre.code { margin: 0 0 10px; padding: 10px 12px; border-radius: var(--radius-sm)
 .cf-small .income { font-weight: 600; }
 .cf-card { transition: opacity .15s; }
 .cf-card.cf-loading { opacity: .55; }
-.cf-legend { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 2px 0 6px; }
+.cf-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin: 2px 0 4px; }
+.cf-range { margin: 0 0 6px; font-size: .88rem; }
+.cf-legend-label { font-size: .74rem; color: var(--muted-2); text-transform: uppercase; letter-spacing: .04em; margin-right: 2px; }
 .cf-chip { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 2px 0; font-size: .82rem; color: var(--muted); }
 .cf-chip[aria-pressed="false"] { opacity: .4; text-decoration: line-through; }
 .cf-plotwrap { position: relative; }
@@ -486,6 +488,7 @@ svg.cf-chart .cf-pending { opacity: .4; }
 svg.cf-chart .cf-dot { fill: var(--cf-ink); stroke: var(--surface); stroke-width: 2; }
 svg.cf-chart .cf-line { fill: none; stroke: var(--cf); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 svg.cf-chart .cf-end { fill: var(--cf); stroke: var(--surface); stroke-width: 2; }
+svg.cf-chart .cf-casing { fill: none; stroke: var(--surface); stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; opacity: .9; }
 svg.cf-chart .gl.cf-zero { stroke: var(--border-strong); }
 svg.cf-chart .cf-band { fill: var(--hover); }
 svg.cf-chart .cf-pin { fill: var(--accent-soft); }
@@ -493,8 +496,6 @@ svg.cf-chart .cf-drag { fill: var(--accent-soft); stroke: var(--accent); stroke-
 svg.cf-chart .cf-cross { stroke: var(--border-strong); stroke-width: 1; }
 svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
 .cf-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); pointer-events: none; }
-.cf-panel2 { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
-.cf-panel2 h3 { margin-top: 0; }
 .cf-notes { margin: 10px 0 0; font-size: .8rem; }
 .cf-tip { position: fixed; z-index: 50; pointer-events: none; width: 300px; max-width: calc(100vw - 16px); background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); padding: 12px 14px; font-size: .84rem; }
@@ -520,19 +521,71 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .cf-table .cf-total td { font-weight: 650; }
 @media (max-width: 1100px) { .cf-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
-  .cf-controls { flex-wrap: wrap; }
-  .cf-controls .seg.wide { flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; }
-  .cf-controls .seg.wide::-webkit-scrollbar { display: none; }
-  .cf-controls .seg.wide button { flex: none; }
-  /* four Spending tabs don't fit across a phone: show them as a 2 x 2 grid, all visible */
-  .subtabs .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
-  .subtabs .seg button { white-space: nowrap; }
-  .subtabs .seg button:nth-child(n + 3) { border-top: 1px solid var(--border); }
-  .subtabs .seg button:nth-child(odd) { border-left: 0; }
-  .cf-tiles { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 8px; margin-left: -4px; padding: 0 4px 4px; }
-  .cf-tile { flex: 0 0 46%; scroll-snap-align: start; padding: 10px 12px; }
-  .cf-tile strong { font-size: 1.15rem; }
-  .cf-tile .cf-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cf-tip { display: none !important; }
 }
 .version-line { margin: 16px 0 0; font-size: 0.85rem; text-align: center; }
+
+/* ---- phone: tighter spacing and a slightly smaller type scale ------------------------------------
+   Long labels have a short form (.lg / .sh): the short one shows on phones, the long one stays for
+   screen readers. Inputs stay at 16px so iOS doesn't zoom the page when one is focused. */
+.sh { display: none; }
+@media (max-width: 760px) {
+  :root, :root[data-density="compact"] { --gutter: 12px; --pad: 14px; --row-pad: 9px; --font: 15px; }
+  .lg { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sh { display: inline; }
+  input, select, textarea { font-size: 16px; }
+  .topbar { padding: 8px var(--gutter); }
+  h1 { font-size: 1.2rem; }
+  h2 { font-size: 1.02rem; }
+  .big { font-size: 1.85rem; }
+  .card { margin-bottom: 12px; border-radius: 14px; }
+  .grid { gap: 12px; margin-bottom: 12px; }
+  button { padding: .45rem .8rem; }
+  .seg button { padding: .32rem .7rem; white-space: nowrap; }
+  .toolbar { gap: 6px; margin-bottom: 10px; }
+  .actions { margin-top: 10px; }
+  .row { gap: 10px; }
+  .icon { width: 2rem; height: 2rem; }
+  .empty { padding: 18px 8px; }
+  .dayhead { margin: 12px 0 2px; }
+  /* Spending tabs: three equal buttons across the screen */
+  .subtabs { margin: 10px var(--gutter) 0; }
+  .subtabs .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
+  /* search on its own line, the two filters side by side under it */
+  .toolbar input[type="search"] { flex-basis: 100%; }
+  .toolbar select { flex: 1 1 calc(50% - 3px); }
+  .section-head { flex-wrap: wrap; gap: 4px 10px; }
+  .section-head .grow { flex: 1 1 auto; min-width: 6.5rem; }
+  .section-total { margin-left: auto; }
+  .section-icon { width: 34px; height: 34px; }
+
+  /* cash flow: controls in two rows that fit, tiles as a 3-column grid, a compact chart header */
+  .cf-controls { flex-wrap: wrap; gap: 6px; }
+  .cf-controls .seg.wide { flex: 1 1 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); overflow: visible; }
+  .cf-controls .seg { flex: 1 1 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .cf-controls .seg button { padding: .32rem .2rem; font-size: .9rem; text-align: center; }
+  .cf-controls > button { flex: none; }
+  .cf-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+  .cf-tile { grid-column: span 2; }
+  .cf-tile:nth-child(n + 4) { grid-column: span 3; }  /* three tiles, then two wider ones: no empty cell */
+  .cf-tile { padding: 8px 9px; border-radius: 12px; }
+  .cf-tile-label { font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-tile strong { font-size: 1rem; margin: 1px 0; }
+  .cf-tile .cf-small { font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-card { padding: 12px; }
+  .cf-card .card-head { position: relative; display: block; }
+  .cf-card .card-head h2 { padding-right: 7.5rem; }
+  .cf-card .card-head .actions { position: absolute; top: -2px; right: 0; }
+  .cf-range { font-size: .8rem; margin-bottom: 4px; }
+  .cf-legend { gap: 0 10px; margin: 0; }
+  .cf-legend-label { font-size: .66rem; }
+  .cf-chip { font-size: .76rem; gap: 4px; padding: 1px 0; }
+  .cf-plotwrap { margin: 2px -6px 0; }
+  .cf-notes { font-size: .74rem; margin-top: 6px; }
+  .cf-list .toolbar .seg { flex: 1 1 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .nw-head h3 { font-size: .72rem; }
+  /* tappable list rows: the grey detail line stays on one line (tapping opens the full details) */
+  .row.click .grow > .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .84rem; }
+  .seg.inv-periods { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
+  .seg.inv-periods button { padding: .32rem 0; text-align: center; }
+}
