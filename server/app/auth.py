@@ -37,6 +37,7 @@ from .db import Database, utcnow
 ACCESS_TTL_SECONDS = 15 * 60
 INACTIVE = "Signed out after a period of inactivity"
 SESSION_OVER = "This session reached its time limit. Sign in again."
+WEB_IDLE_GRACE = 15  # seconds the server allows beyond the page's own idle clock, for a slow network
 REFRESH_GRACE_SECONDS = 60
 MIN_PASSWORD_LENGTH = 12
 ISSUER = "HomeFinance"
@@ -289,7 +290,7 @@ class AuthService:
             return None
         if row["expires_at"] is not None and now >= row["expires_at"]:
             return SESSION_OVER
-        if row["active_at"] is not None and now - row["active_at"] >= self.web_idle_seconds:
+        if row["active_at"] is not None and now - row["active_at"] >= self.web_idle_seconds + WEB_IDLE_GRACE:
             return INACTIVE
         return None
 

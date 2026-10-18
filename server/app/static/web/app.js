@@ -521,6 +521,7 @@
   let lastActive = Date.now();
   let lastPing = 0;
   let idleTimer = null;
+  let pendingPing = null;
   let idleHold = false;  // true while Plaid's window is open (it is in another frame and cannot be seen touching the page)
 
   async function activityPing() {
@@ -534,19 +535,26 @@
     return response.ok;
   }
 
+  function reportActivity() {
+    clearTimeout(pendingPing);
+    pendingPing = null;
+    lastPing = Date.now();
+    activityPing().then((ok) => { if (!ok) idleSignOut(); }, () => {});
+  }
+
   function noteActivity() {
     const box = $("idle");
     if (box.open) return;  // once the box is up, only its buttons answer it
     const now = Date.now();
     lastActive = now;
-    if (now - lastPing > 60000) {
-      lastPing = now;
-      activityPing().then((ok) => { if (!ok) idleSignOut(); }, () => {});
-    }
+    if (now - lastPing > 60000) reportActivity();
+    else if (pendingPing === null) pendingPing = setTimeout(reportActivity, 60000 - (now - lastPing));  // the last tap of a burst is reported too
   }
 
   function stopIdleWatch() {
     clearInterval(idleTimer);
+    clearTimeout(pendingPing);
+    pendingPing = null;
     idleTimer = null;
     for (const name of ACTIVITY_EVENTS) document.removeEventListener(name, noteActivity, true);
     document.removeEventListener("visibilitychange", checkIdle);

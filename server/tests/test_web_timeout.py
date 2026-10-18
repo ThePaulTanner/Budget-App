@@ -12,6 +12,7 @@ from .conftest import PASSWORD
 
 WEB = {"X-Requested-With": "HomeFinance"}
 IDLE, LIMIT = 600, 8 * 3600
+GRACE = 15  # the server allows this much beyond the page's own idle clock
 
 
 @pytest.fixture
@@ -44,7 +45,7 @@ def test_sign_in_tells_the_page_the_limits_and_sets_a_session_cookie(web, login,
 def test_idle_web_session_is_refused_and_signed_out(web, login, clock):
     _, headers = web_login(web, login, clock)
     assert web.get("/api/version", headers=headers).status_code == 200
-    clock.now += IDLE - 5
+    clock.now += IDLE + GRACE - 5
     assert web.get("/api/version", headers=headers).status_code == 200
     clock.now += 10
     refused = web.get("/api/version", headers=headers)
@@ -54,7 +55,7 @@ def test_idle_web_session_is_refused_and_signed_out(web, login, clock):
 
 def test_idle_session_cannot_be_renewed_with_its_cookie(web, login, clock):
     web_login(web, login, clock)
-    clock.now += IDLE + 1
+    clock.now += IDLE + GRACE + 1
     first, _ = renewed(web)
     assert first.status_code == 401 and "inactivity" in first.json()["detail"]
     assert renewed(web)[0].status_code == 401  # and it stays over
@@ -63,7 +64,7 @@ def test_idle_session_cannot_be_renewed_with_its_cookie(web, login, clock):
 def test_activity_keeps_it_open_but_background_requests_do_not(web, login, clock):
     _, headers = web_login(web, login, clock)
     for _ in range(3):  # polling for live prices (token renewals and requests) is not "being there"
-        clock.now += IDLE // 3
+        clock.now += IDLE // 2
         response, headers = renewed(web)
         if response.status_code == 401:
             break
