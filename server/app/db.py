@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA = """
 CREATE TABLE users (
@@ -55,7 +55,10 @@ CREATE TABLE sessions (
   prev_valid_until REAL,
   created_at TEXT NOT NULL,
   last_used_at TEXT NOT NULL,
-  revoked_at TEXT
+  revoked_at TEXT,
+  kind TEXT NOT NULL DEFAULT 'app',
+  active_at REAL,
+  expires_at REAL
 );
 CREATE TABLE items (
   id TEXT PRIMARY KEY,
@@ -371,6 +374,17 @@ CREATE TABLE passkeys (
   created_at TEXT NOT NULL,
   last_used_at TEXT
 );
+""",
+
+    # Web sessions time out: `active_at` is when you last touched the page, `expires_at` the hard
+    # limit. Browsers already signed in (they held a 30-day cookie) are signed out once, so the new
+    # rules apply from the next sign-in.
+    12: """
+ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'app';
+ALTER TABLE sessions ADD COLUMN active_at REAL;
+ALTER TABLE sessions ADD COLUMN expires_at REAL;
+UPDATE sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  WHERE device_name = 'Web browser' AND revoked_at IS NULL;
 """}
 
 

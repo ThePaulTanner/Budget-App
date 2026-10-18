@@ -160,6 +160,8 @@ The Investments screen values each position at a near-real-time price and shows 
 | `PUBLIC_WEBHOOK_URL` | empty | Where Plaid sends "new data" messages |
 | `SYNC_INTERVAL_MINUTES` | `60` | Backup sync timer (webhooks do the real work) |
 | `LIVE_QUOTES` | `true` | Live prices for investment positions from Yahoo Finance (only ticker symbols are sent). `false` turns it off |
+| `WEB_IDLE_MINUTES` | `10` | The web app signs you out after this many minutes without you touching it (2 to 60), with a "Still there?" box for the last minute. Like `MAX_FAILED_LOGINS`, only read if your `docker-compose.yml` passes it through |
+| `WEB_MAX_HOURS` | `8` | The most a web sign-in lasts in total, however busy you are (1 to 24) |
 | `MAX_FAILED_LOGINS` | `10` | Failed sign-ins in a row before new sign-ins are locked (3 to 100). It is only read if your `docker-compose.yml` passes it through, as the repo copy does |
 | `TZ` | `America/Toronto` | Decides what "today" and "this month" mean |
 | `HF_MASTER_KEY_FILE` | `/run/secrets/hf_master_key` | Path to the master key |

@@ -184,6 +184,8 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
         CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
           totp_secret BLOB NOT NULL, totp_last_step INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
         INSERT INTO users(username, password_hash, totp_secret, created_at) VALUES ('paul', 'h', x'00', 't');
+        CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, device_name TEXT NOT NULL, refresh_hash TEXT NOT NULL,
+          prev_refresh_hash TEXT, prev_valid_until REAL, created_at TEXT NOT NULL, last_used_at TEXT NOT NULL, revoked_at TEXT);
         CREATE TABLE holdings (account_id TEXT, security_id TEXT, ticker TEXT);
         CREATE TABLE transactions (id TEXT PRIMARY KEY, name TEXT);
         CREATE TABLE items (id TEXT PRIMARY KEY, institution TEXT);
@@ -196,7 +198,7 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 12
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 13
     assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
     tx_columns = [c[1] for c in db.query("PRAGMA table_info(transactions)")]
     assert {"merchant_id", "cashflow_override", "transfer_pair_id"} <= set(tx_columns)

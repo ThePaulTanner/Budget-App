@@ -130,6 +130,9 @@
   let token = null;
   let tokenExpiry = 0;
   let renewing = null;
+  let idleSeconds = 600;  // the server tells the page its real limit with every sign-in
+  let sessionEnds = Infinity;
+  let signOutReason = "";
   class SignedOut extends Error {}
   class HttpError extends Error {
     constructor(status, message) { super(message); this.status = status; }
@@ -146,11 +149,18 @@
   function takeTokens(data) {
     token = data.access_token;
     tokenExpiry = Date.now() + Math.max(data.expires_in - 30, 5) * 1000;
+    if (data.idle_timeout) idleSeconds = data.idle_timeout;
+    if (data.session_expires_in !== undefined) sessionEnds = Date.now() + data.session_expires_in * 1000;
   }
 
   async function renew() {
     const response = await plainFetch("/web/refresh", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } });
-    if (response.status === 401) { token = null; return false; }
+    if (response.status === 401) {
+      const answer = await response.json().catch(() => ({}));
+      signOutReason = /inactivity|time limit/.test(answer.detail || "") ? answer.detail : "";  // the server says why, when it was a timeout
+      token = null;
+      return false;
+    }
     if (!response.ok) throw new Error(`Could not sign in (${response.status})`);
     takeTokens(await response.json());
     return true;
@@ -500,6 +510,93 @@
       toast(err.message, true);
       return undefined;
     });
+  }
+
+  // ---------------------------------------------------------------- inactivity timeout
+
+  // Like a banking site: with no tap, key or scroll for the server's idle limit you are signed out, with a
+  // "Still there?" box for the last minute. The server enforces the same limits, so this is only the courtesy.
+  const IDLE_WARNING_SECONDS = 60;
+  const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart", "scroll"];
+  let lastActive = Date.now();
+  let lastPing = 0;
+  let idleTimer = null;
+  let idleHold = false;  // true while Plaid's window is open (it is in another frame and cannot be seen touching the page)
+
+  async function activityPing() {
+    if (!token || Date.now() >= tokenExpiry) { if (!(await renewOnce())) return false; }
+    const send = () => plainFetch("/web/activity", { method: "POST", headers: { Authorization: `Bearer ${token}`, "X-Requested-With": "HomeFinance" } });
+    let response = await send();
+    if (response.status === 401) {
+      if (!(await renewOnce())) return false;
+      response = await send();
+    }
+    return response.ok;
+  }
+
+  function noteActivity() {
+    const box = $("idle");
+    if (box.open) return;  // once the box is up, only its buttons answer it
+    const now = Date.now();
+    lastActive = now;
+    if (now - lastPing > 60000) {
+      lastPing = now;
+      activityPing().then((ok) => { if (!ok) idleSignOut(); }, () => {});
+    }
+  }
+
+  function stopIdleWatch() {
+    clearInterval(idleTimer);
+    idleTimer = null;
+    for (const name of ACTIVITY_EVENTS) document.removeEventListener(name, noteActivity, true);
+    document.removeEventListener("visibilitychange", checkIdle);
+    const box = $("idle");
+    if (box.open) box.close();
+  }
+
+  function startIdleWatch() {
+    stopIdleWatch();
+    lastActive = lastPing = Date.now();
+    for (const name of ACTIVITY_EVENTS) document.addEventListener(name, noteActivity, { capture: true, passive: true });
+    document.addEventListener("visibilitychange", checkIdle);
+    idleTimer = setInterval(checkIdle, 1000);
+  }
+
+  async function idleSignOut(reason = "You were signed out after a period of inactivity. Sign in again.") {
+    if (idleTimer === null) return;  // already signed out
+    stopIdleWatch();
+    try { await plainFetch("/web/logout", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } }); } catch (_) { /* the server expires it too */ }
+    budgetMonth = null;
+    showLogin(reason);
+  }
+
+  function checkIdle() {
+    if (idleTimer === null) return;
+    if (Date.now() >= sessionEnds) { idleSignOut("This session reached its time limit. Sign in again."); return; }
+    if (idleHold) lastActive = Date.now();
+    const left = idleSeconds - (Date.now() - lastActive) / 1000;
+    if (left <= 0) { idleSignOut(); return; }
+    if (left > IDLE_WARNING_SECONDS) return;
+    const box = $("idle");
+    if (!box.open) {
+      const count = el("span", { class: "idle-count", id: "idle-count" });
+      box.replaceChildren(el("div", { class: "idle" },
+        el("h2", { id: "idle-title", text: "Still there?" }),
+        el("p", {}, "You will be signed out in ", count, " seconds because there has been no activity."),
+        el("div", { class: "actions" },
+          el("button", { type: "button", class: "primary", text: "Stay signed in", onclick: async () => {
+            let ok = false;
+            try { ok = await activityPing(); } catch (_) { /* treated as signed out below */ }
+            if (!ok) { idleSignOut(); return; }
+            lastActive = lastPing = Date.now();
+            box.close();
+          } }),
+          el("button", { type: "button", class: "secondary", text: "Sign out now", onclick: () => idleSignOut("Signed out.") }))));
+      box.oncancel = (event) => event.preventDefault();  // Escape does not count as an answer
+      box.showModal();
+    }
+    const counter = $("idle-count");
+    if (counter) counter.textContent = String(Math.ceil(left));
   }
 
   // ---------------------------------------------------------------- passkeys (Face ID)
@@ -2074,9 +2171,11 @@
       if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
       return;
     }
+    idleHold = true;
     window.Plaid.create({
       token: linkToken,
       onSuccess: async (publicToken) => {
+        idleHold = false;
         try {
           if (item) {
             await api("/api/link/complete", { method: "POST", body: { item_id: item.id } });
@@ -2091,7 +2190,7 @@
           if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
         }
       },
-      onExit: (err) => { if (err) toast(err.display_message || err.error_message || "Linking was cancelled.", true); },
+      onExit: (err) => { idleHold = false; if (err) toast(err.display_message || err.error_message || "Linking was cancelled.", true); },
     }).open();
   }
 
@@ -2566,6 +2665,9 @@
   }
 
   function showLogin(message = "") {
+    message ||= signOutReason;
+    signOutReason = "";
+    stopIdleWatch();
     token = null;
     closeSheet();
     $("shell").hidden = true;
@@ -2581,6 +2683,7 @@
   function showShell() {
     $("login").hidden = true;
     $("shell").hidden = false;
+    startIdleWatch();
     showEnvironment();
     route();
   }
