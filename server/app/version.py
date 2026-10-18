@@ -6,7 +6,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-VERSION = (Path(__file__).with_name("VERSION").read_text().strip()) or "unknown"
+
+def _read() -> str:
+    try:
+        return Path(__file__).with_name("VERSION").read_text().strip() or "unknown"
+    except OSError:  # a cosmetic field must never stop the server starting
+        return "unknown"
+
+
+VERSION = _read()
 
 
 def build() -> str | None:
