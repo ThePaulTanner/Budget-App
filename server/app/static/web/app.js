@@ -634,6 +634,14 @@
     },
   };
   const passkeysSupported = () => Boolean(window.PublicKeyCredential && navigator.credentials);
+  // Browsers do not let a page ask whether a passkey exists, so this browser remembers that one was added or used
+  // here (see theme.js). The Face ID button leads the sign-in page only then; it is forgotten when your list is empty.
+  const rememberPasskey = (yes) => window.HFTheme.set({ passkey: yes ? "yes" : "no" });
+  function showPasskeyFirst() {
+    const on = passkeysSupported() && window.HFTheme.get().passkey === "yes";
+    $("passkey-first").hidden = !on;
+    document.querySelector("#login-form").classList.toggle("passkey-first", on);
+  }
 
   async function passkeySignIn() {
     const asked = await plainFetch("/web/passkey/options", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } });
@@ -661,6 +669,7 @@
     if (!response.ok) {
       throw new Error(response.status === 429 ? "Too many attempts. Wait a few minutes and try again." : (typeof data.detail === "string" ? data.detail : "Sign-in failed."));
     }
+    rememberPasskey(true);
     return data;
   }
 
@@ -677,9 +686,11 @@
     } catch (err) {
       throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
     }
-    return api("/api/passkeys", { method: "POST", body: {
+    const added = await api("/api/passkeys", { method: "POST", body: {
       handle: options.handle, name, password, client_data: b64url.encode(credential.response.clientDataJSON),
       attestation: b64url.encode(credential.response.attestationObject) } });
+    rememberPasskey(true);
+    return added;
   }
 
   const guessDevice = () => (/iPhone/.test(navigator.userAgent) ? "iPhone" : /iPad/.test(navigator.userAgent) ? "iPad"
@@ -2302,6 +2313,7 @@
         } }))),
       el("div", { class: "actions" }, el("button", { type: "button", text: "Sign out", onclick: signOut })));
 
+    if (passkeyList.length === 0) rememberPasskey(false);  // nothing registered, so nothing on this device either
     const passkeyName = el("input", { value: guessDevice(), maxlength: "60", "aria-label": "Name for this passkey" });
     const passkeyPassword = el("input", { type: "password", autocomplete: "current-password", "aria-label": "Your password" });
     const passkeyMessage = el("p", { class: "error", role: "alert" });
@@ -2694,6 +2706,7 @@
     message ||= signOutReason;
     signOutReason = "";
     stopIdleWatch();
+    showPasskeyFirst();
     token = null;
     closeSheet();
     $("shell").hidden = true;
@@ -2754,7 +2767,7 @@
   });
 
   const passkeyButton = $("passkey-login");
-  passkeyButton.hidden = !passkeysSupported();
+  showPasskeyFirst();
   passkeyButton.addEventListener("click", async () => {
     passkeyButton.disabled = true;
     $("login-message").textContent = "";

@@ -1,13 +1,14 @@
 // Applies the saved colour scheme before the page paints, so there is no flash.
-// This browser keeps three harmless preferences and nothing else: mode, accent colour
-// and density. Storage can be blocked (private windows), so every access is guarded.
+// This browser keeps four harmless notes and nothing else: mode, accent colour, density,
+// and whether a passkey was added here (so the sign-in page can offer Face ID first). Storage can be blocked (private windows), so every access is guarded.
 (() => {
   "use strict";
   const MODES = ["system", "light", "dark"];
   const ACCENTS = ["blue", "teal", "green", "purple", "orange", "rose"];
   const DENSITIES = ["comfortable", "compact"];
-  const KEYS = { mode: "hf-mode", accent: "hf-accent", density: "hf-density" };
-  const ALLOWED = { mode: MODES, accent: ACCENTS, density: DENSITIES };
+  const PASSKEY = ["no", "yes"];
+  const KEYS = { mode: "hf-mode", accent: "hf-accent", density: "hf-density", passkey: "hf-passkey" };
+  const ALLOWED = { mode: MODES, accent: ACCENTS, density: DENSITIES, passkey: PASSKEY };
 
   const read = (part, fallback) => {
     try {
@@ -21,7 +22,7 @@
     try { localStorage.setItem(KEYS[part], value); } catch (_) { /* the choice still applies until the page closes */ }
   };
 
-  const state = { mode: read("mode", "system"), accent: read("accent", "blue"), density: read("density", "comfortable") };
+  const state = { mode: read("mode", "system"), accent: read("accent", "blue"), density: read("density", "comfortable"), passkey: read("passkey", "no") };
 
   function apply() {
     const root = document.documentElement;

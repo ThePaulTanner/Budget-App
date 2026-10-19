@@ -127,10 +127,10 @@ def test_the_script_never_uses_innerhtml_and_loads_only_plaids_link_script():
     assert "plaid" not in html.lower()  # never loaded at start-up
 
 
-def test_theme_script_only_keeps_three_harmless_choices():
+def test_theme_script_only_keeps_four_harmless_notes():
     js = (WEB_DIR / "theme.js").read_text()
     assert js.count("localStorage") == 2  # one guarded read, one guarded write
-    for key in ('"hf-mode"', '"hf-accent"', '"hf-density"'):
+    for key in ('"hf-mode"', '"hf-accent"', '"hf-density"', '"hf-passkey"'):
         assert key in js
     for bad in ("fetch(", "XMLHttpRequest", "innerHTML", "eval(", "http://", "https://", "document.cookie"):
         assert bad not in js, bad

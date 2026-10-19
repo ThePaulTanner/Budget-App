@@ -540,7 +540,8 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .cf-tip { display: none !important; }
 }
 .version-line { margin: 16px 0 0; font-size: 0.85rem; text-align: center; }
-.passkey-btn { margin-top: 10px; }
+.or-line { margin: 12px 0 2px; text-align: center; font-size: .85rem; }
+.login-card.passkey-first #password-submit { background: transparent; color: var(--text); border: 1px solid var(--border-strong); }
 .passkey-add { align-items: flex-end; flex-wrap: wrap; }
 
 /* Touch screens: no double-tap zoom, and inputs at 16px so iPhones do not zoom in when you tap one. */
