@@ -38,12 +38,15 @@
       <svg class="logo" width="44" height="44" aria-hidden="true"><use href="#i-logo"/></svg>
       <h1>HomeFinance</h1>
       <p class="muted">Sign in to your private finance dashboard.</p>
+      <div id="passkey-first" hidden>
+        <button type="button" id="passkey-login" class="primary wide">Sign in with Face ID</button>
+        <p class="or-line muted">or use your password and code</p>
+      </div>
       <label>Username <input name="username" autocomplete="username" required></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
       <label>Authenticator code or recovery code
         <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
-      <button type="submit" class="primary wide">Sign in</button>
-      <button type="button" id="passkey-login" class="wide passkey-btn" hidden>Sign in with Face ID (passkey)</button>
+      <button type="submit" class="primary wide" id="password-submit">Sign in</button>
       <p id="login-message" class="error" role="alert"></p>
     </form>
   </section>

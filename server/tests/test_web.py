@@ -127,10 +127,10 @@ def test_the_script_never_uses_innerhtml_and_loads_only_plaids_link_script():
     assert "plaid" not in html.lower()  # never loaded at start-up
 
 
-def test_theme_script_only_keeps_three_harmless_choices():
+def test_theme_script_only_keeps_four_harmless_notes():
     js = (WEB_DIR / "theme.js").read_text()
     assert js.count("localStorage") == 2  # one guarded read, one guarded write
-    for key in ('"hf-mode"', '"hf-accent"', '"hf-density"'):
+    for key in ('"hf-mode"', '"hf-accent"', '"hf-density"', '"hf-passkey"'):
         assert key in js
     for bad in ("fetch(", "XMLHttpRequest", "innerHTML", "eval(", "http://", "https://", "document.cookie"):
         assert bad not in js, bad
@@ -161,3 +161,12 @@ def test_every_page_has_the_logo_as_its_icon(web):
 def test_stand_alone_bank_page_links_to_the_app():
     html = (WEB_DIR.parent / "index.html").read_text()
     assert 'href="/app"' in html  # the bare address must lead somewhere other than the bank list
+
+
+def test_phone_layout_turns_zoom_off_and_inputs_do_not_trigger_it():
+    from pathlib import Path
+
+    web = Path(__file__).resolve().parents[1] / "app/static/web"
+    script, css = (web / "app.js").read_text(), (web / "app.css").read_text()
+    assert "(max-width: 760px) and (pointer: coarse)" in script and "user-scalable=no" in script
+    assert "touch-action: manipulation" in css and "input, select, textarea { font-size: 16px; }" in css
