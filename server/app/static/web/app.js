@@ -570,6 +570,8 @@
     document.removeEventListener("visibilitychange", checkIdle);
     const box = $("idle");
     if (box.open) box.close();
+    const setup = $("passkey-setup");
+    if (setup.open) setup.close();  // its close handler drops the password it was holding
   }
 
   function startIdleWatch() {
@@ -640,19 +642,67 @@
   function showPasskeyFirst() {
     const on = passkeysSupported() && window.HFTheme.get().passkey === "yes";
     $("passkey-first").hidden = !on;
+    $("password-passkey-submit").hidden = !(passkeysSupported() && !on);
     document.querySelector("#login-form").classList.toggle("passkey-first", on);
+    if (on) prefetchLoginOptions().catch(() => {});  // ready before the tap
+  }
+  // A failed prefetch is silent on purpose: if the server is down the error shows when you tap.
+  setInterval(() => { if (!$("login").hidden && !$("passkey-first").hidden) prefetchLoginOptions().catch(() => {}); }, 30000);
+
+  // After signing in with all three details, offer to make the passkey on the spot. The password just typed is
+  // used once for it (adding a passkey asks for it) and then dropped; it is never stored.
+  function offerPasskeySetup(password) {
+    const box = $("passkey-setup");
+    let pending = password;
+    const message = el("p", { class: "error", role: "alert" });
+    const close = () => { pending = ""; if (box.open) box.close(); };
+    box.addEventListener("close", () => { pending = ""; }, { once: true });  // also when something else closes it (sign-out)
+    prefetchRegisterOptions().catch(() => {});  // so the tap goes straight to Face ID
+    box.replaceChildren(el("div", { class: "setup" },
+      el("h2", { id: "passkey-setup-title", text: "Set up Face ID?" }),
+      el("p", {}, "Create a passkey on this device. Next time one look signs you in, with no password or code."),
+      el("div", { class: "actions" },
+        el("button", { type: "button", class: "primary", text: "Create passkey", onclick: async (event) => {
+          message.textContent = "";
+          event.target.disabled = true;
+          try { await addPasskey(guessDevice(), pending); toast("Face ID is set up"); close(); }
+          catch (err) { message.textContent = err.message; event.target.disabled = false; }
+        } }),
+        el("button", { type: "button", class: "secondary", text: "Not now", onclick: close })),
+      message));
+    box.oncancel = close;
+    box.showModal();
   }
 
-  async function passkeySignIn() {
+  // Safari only lets a page ask for Face ID right after your tap. So the one-time challenge is fetched ahead of
+  // time (fresh within 90 s, the server keeps it for two minutes) and the tap goes straight to Face ID.
+  function cached(slot, fetcher) {
+    if (slot.value && Date.now() - slot.value.at < 90000) return slot.value.promise;
+    const promise = fetcher();
+    slot.value = { at: Date.now(), promise };
+    promise.catch(() => { if (slot.value?.promise === promise) slot.value = null; });
+    return promise;
+  }
+  const loginSlot = { value: null };
+  const registerSlot = { value: null };
+  const prefetchLoginOptions = () => cached(loginSlot, async () => {
     const asked = await plainFetch("/web/passkey/options", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } });
-    const options = await asked.json().catch(() => ({}));
-    if (!asked.ok) throw new Error(typeof options.detail === "string" ? options.detail : "Could not start the passkey sign-in.");
+    const answer = await asked.json().catch(() => ({}));
+    if (!asked.ok) throw new Error(typeof answer.detail === "string" ? answer.detail : "Could not start the passkey sign-in.");
+    return answer;
+  });
+  const prefetchRegisterOptions = () => cached(registerSlot, () => api("/api/passkeys/options", { method: "POST" }));
+
+  async function passkeySignIn() {
+    const options = await prefetchLoginOptions();
+    loginSlot.value = null;  // a challenge works once
     const key = options.publicKey;
     let credential;
     try {
       credential = await navigator.credentials.get({ publicKey: {
         challenge: b64url.decode(key.challenge), rpId: key.rpId, userVerification: key.userVerification, timeout: key.timeout, allowCredentials: [] } });
     } catch (err) {
+      prefetchLoginOptions().catch(() => {});  // a fresh challenge is ready, so the next tap goes straight to Face ID
       throw new Error(err.name === "NotAllowedError"
         ? "Cancelled, or this device has no passkey for HomeFinance. Sign in with your password once, then add one in Settings \u2192 Security \u2192 Passkeys."
         : `Passkey sign-in failed (${err.name}).`);
@@ -674,7 +724,8 @@
   }
 
   async function addPasskey(name, password) {
-    const options = await api("/api/passkeys/options", { method: "POST" });
+    const options = await prefetchRegisterOptions();
+    registerSlot.value = null;
     const key = options.publicKey;
     let credential;
     try {
@@ -684,6 +735,7 @@
         excludeCredentials: key.excludeCredentials.map((c) => ({ type: c.type, id: b64url.decode(c.id) })),
         attestation: key.attestation, timeout: key.timeout } });
     } catch (err) {
+      prefetchRegisterOptions().catch(() => {});  // ready for the next try
       throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
     }
     const added = await api("/api/passkeys", { method: "POST", body: {
@@ -2316,6 +2368,7 @@
     if (passkeyList.length === 0) rememberPasskey(false);  // nothing registered, so nothing on this device either
     const passkeyName = el("input", { value: guessDevice(), maxlength: "60", "aria-label": "Name for this passkey" });
     const passkeyPassword = el("input", { type: "password", autocomplete: "current-password", "aria-label": "Your password" });
+    passkeyPassword.addEventListener("focus", () => { if (passkeysSupported()) prefetchRegisterOptions().catch(() => {}); });  // ready by the time you tap
     const passkeyMessage = el("p", { class: "error", role: "alert" });
     const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys (Face ID)" }),
       el("p", { class: "muted", text: "Sign in with Face ID or your device's unlock instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
@@ -2743,14 +2796,16 @@
   $("login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.target);
-    const button = event.target.querySelector("button");
-    button.disabled = true;
+    const buttons = event.target.querySelectorAll("button");
+    const setUp = event.submitter?.id === "password-passkey-submit";  // "Sign in and set up Face ID"
+    const password = form.get("password");
+    for (const button of buttons) button.disabled = true;
     $("login-message").textContent = "";
     try {
       const response = await plainFetch("/web/login", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Requested-With": "HomeFinance" },
-        body: JSON.stringify({ username: form.get("username"), password: form.get("password"), code: form.get("code") }),
+        body: JSON.stringify({ username: form.get("username"), password, code: form.get("code") }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -2761,9 +2816,10 @@
       takeTokens(data);
       event.target.reset();
       showShell();
+      if (setUp) offerPasskeySetup(password);
     } catch (err) {
       $("login-message").textContent = err.message;
-    } finally { button.disabled = false; }
+    } finally { for (const button of buttons) button.disabled = false; }
   });
 
   const passkeyButton = $("passkey-login");

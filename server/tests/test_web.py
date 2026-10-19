@@ -170,3 +170,9 @@ def test_phone_layout_turns_zoom_off_and_inputs_do_not_trigger_it():
     script, css = (web / "app.js").read_text(), (web / "app.css").read_text()
     assert "(max-width: 760px) and (pointer: coarse)" in script and "user-scalable=no" in script
     assert "touch-action: manipulation" in css and "input, select, textarea { font-size: 16px; }" in css
+
+
+def test_sign_in_page_has_the_face_id_controls_the_script_relies_on():
+    html = (WEB_DIR / "index.html").read_text()
+    for needed in ('id="passkey-first"', 'id="passkey-login"', 'id="password-submit"', 'id="password-passkey-submit"', 'id="passkey-setup"'):
+        assert needed in html, needed
