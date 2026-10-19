@@ -182,3 +182,8 @@ def test_there_is_one_compact_size_and_no_density_choice():
     for name in ("app.js", "app.css", "theme.js"):
         assert "density" not in (WEB_DIR / name).read_text().lower(), name
     assert "--font: 15px" in (WEB_DIR / "app.css").read_text()
+
+
+def test_script_understands_that_invalidstateerror_means_a_passkey_already_exists_here():
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'err.name === "InvalidStateError"' in js and "class PasskeyExists" in js

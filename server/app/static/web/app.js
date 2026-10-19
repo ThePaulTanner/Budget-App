@@ -666,7 +666,11 @@
           message.textContent = "";
           event.target.disabled = true;
           try { await addPasskey(guessDevice(), pending); toast("Face ID is set up"); close(); }
-          catch (err) { message.textContent = err.message; event.target.disabled = false; }
+          catch (err) {
+            if (err instanceof PasskeyExists) { toast("This device already has a passkey. Face ID sign-in is ready."); close(); return; }
+            message.textContent = err.message;
+            event.target.disabled = false;
+          }
         } }),
         el("button", { type: "button", class: "secondary", text: "Not now", onclick: close })),
       message));
@@ -723,6 +727,12 @@
     return data;
   }
 
+  // The browser says InvalidStateError when this device already holds a passkey the server knows about (we list those
+  // so a second one is not made). So one exists here: remember that, and the sign-in page will lead with Face ID.
+  class PasskeyExists extends Error {
+    constructor() { super("This device already has a passkey for HomeFinance, so Face ID sign-in is ready. Sign out and tap Sign in with Face ID."); }
+  }
+
   async function addPasskey(name, password) {
     const options = await prefetchRegisterOptions();
     registerSlot.value = null;
@@ -736,6 +746,7 @@
         attestation: key.attestation, timeout: key.timeout } });
     } catch (err) {
       prefetchRegisterOptions().catch(() => {});  // ready for the next try
+      if (err.name === "InvalidStateError") { rememberPasskey(true); throw new PasskeyExists(); }
       throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
     }
     const added = await api("/api/passkeys", { method: "POST", body: {
