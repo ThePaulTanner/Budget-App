@@ -47,6 +47,7 @@
       <label>Authenticator code or recovery code
         <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
       <button type="submit" class="primary wide" id="password-submit">Sign in</button>
+      <button type="submit" class="secondary wide" id="password-passkey-submit" hidden>Sign in and set up Face ID</button>
       <p id="login-message" class="error" role="alert"></p>
     </form>
   </section>
@@ -99,6 +100,7 @@
   <dialog id="sheet"></dialog>
   <dialog id="confirm" aria-labelledby="confirm-title"></dialog>
   <dialog id="idle" aria-labelledby="idle-title"></dialog>
+  <dialog id="passkey-setup" aria-labelledby="passkey-setup-title"></dialog>
   <p id="toast" role="status" aria-live="polite" hidden></p>
   <div id="cover" class="cover" hidden>HomeFinance</div>
   <script src="/static/web/app.js"></script>
