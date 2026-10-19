@@ -2068,7 +2068,7 @@
           onclick: () => { merchTab = key; show(); } })));
     function show() {
       for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
-      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar sticky-tabs" }, tabs), merchTab === "needs" ? todoCard : masterCard);
       if (merchTab === "merchants") draw();
     }
     show();
@@ -2656,7 +2656,7 @@
         onclick: () => choose(lastTab[key]) })));
       tabBar.replaceChildren(...groupTabs.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label, onclick: () => choose(key) })));
       tabBar.hidden = groupTabs.length < 2;
-      view().replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar, ...sections[settingsTab], versionLine);
+      view().replaceChildren(el("div", { class: "sticky-tabs" }, el("div", { class: "toolbar" }, groupBar), tabBar), ...sections[settingsTab], versionLine);
     }
     show();
   }
@@ -2681,12 +2681,26 @@
   // The tab bar lives outside the page content, so each tab can redraw itself without losing it.
   function renderSubtabs(name) {
     const bar = $("subtabs");
-    if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); return; }
+    if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); measureBars(); return; }
     bar.replaceChildren(el("div", { class: "seg", role: "group", "aria-label": "Spending sections" },
       SPENDING_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === spendingTab), text: label,
         onclick: () => { location.hash = `#/spending?tab=${key}`; } }))));
     bar.hidden = false;
+    measureBars();
   }
+
+  // The sticky tab bars sit just under the top bar (and under the Spending tabs), so their heights are measured, not guessed.
+  function measureBars() {
+    const root = document.documentElement.style;
+    root.setProperty("--topbar-h", `${document.querySelector(".topbar").offsetHeight}px`);
+    root.setProperty("--subtabs-h", `${$("subtabs").hidden ? 0 : $("subtabs").offsetHeight}px`);
+  }
+  if (window.ResizeObserver) {
+    const watcher = new ResizeObserver(measureBars);
+    watcher.observe(document.querySelector(".topbar"));
+    watcher.observe($("subtabs"));
+  }
+  window.addEventListener("resize", measureBars);
 
   const PAGES = {
     overview: ["Overview", "Net worth, spending and credit card payments"],

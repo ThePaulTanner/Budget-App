@@ -187,3 +187,9 @@ def test_there_is_one_compact_size_and_no_density_choice():
 def test_script_understands_that_invalidstateerror_means_a_passkey_already_exists_here():
     js = (WEB_DIR / "app.js").read_text()
     assert 'err.name === "InvalidStateError"' in js and "class PasskeyExists" in js
+
+
+def test_page_tabs_are_sticky_and_their_heights_are_measured():
+    css, js = (WEB_DIR / "app.css").read_text(), (WEB_DIR / "app.js").read_text()
+    assert ".subtabs { position: sticky;" in css and ".sticky-tabs { position: sticky;" in css
+    assert "--topbar-h" in js and "sticky-tabs" in js
