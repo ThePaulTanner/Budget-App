@@ -666,7 +666,11 @@
           message.textContent = "";
           event.target.disabled = true;
           try { await addPasskey(guessDevice(), pending); toast("Face ID is set up"); close(); }
-          catch (err) { message.textContent = err.message; event.target.disabled = false; }
+          catch (err) {
+            if (err instanceof PasskeyExists) { toast("This device already has a passkey. Face ID sign-in is ready."); close(); return; }
+            message.textContent = err.message;
+            event.target.disabled = false;
+          }
         } }),
         el("button", { type: "button", class: "secondary", text: "Not now", onclick: close })),
       message));
@@ -723,6 +727,12 @@
     return data;
   }
 
+  // The browser says InvalidStateError when this device already holds a passkey the server knows about (we list those
+  // so a second one is not made). So one exists here: remember that, and the sign-in page will lead with Face ID.
+  class PasskeyExists extends Error {
+    constructor() { super("This device already has a passkey for HomeFinance, so Face ID sign-in is ready. Sign out and tap Sign in with Face ID."); }
+  }
+
   async function addPasskey(name, password) {
     const options = await prefetchRegisterOptions();
     registerSlot.value = null;
@@ -736,6 +746,7 @@
         attestation: key.attestation, timeout: key.timeout } });
     } catch (err) {
       prefetchRegisterOptions().catch(() => {});  // ready for the next try
+      if (err.name === "InvalidStateError") { rememberPasskey(true); throw new PasskeyExists(); }
       throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
     }
     const added = await api("/api/passkeys", { method: "POST", body: {
@@ -2057,7 +2068,7 @@
           onclick: () => { merchTab = key; show(); } })));
     function show() {
       for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
-      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar sticky-tabs" }, tabs), merchTab === "needs" ? todoCard : masterCard);
       if (merchTab === "merchants") draw();
     }
     show();
@@ -2645,7 +2656,7 @@
         onclick: () => choose(lastTab[key]) })));
       tabBar.replaceChildren(...groupTabs.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label, onclick: () => choose(key) })));
       tabBar.hidden = groupTabs.length < 2;
-      view().replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar, ...sections[settingsTab], versionLine);
+      view().replaceChildren(el("div", { class: "sticky-tabs" }, el("div", { class: "toolbar" }, groupBar), tabBar), ...sections[settingsTab], versionLine);
     }
     show();
   }
@@ -2670,12 +2681,26 @@
   // The tab bar lives outside the page content, so each tab can redraw itself without losing it.
   function renderSubtabs(name) {
     const bar = $("subtabs");
-    if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); return; }
+    if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); measureBars(); return; }
     bar.replaceChildren(el("div", { class: "seg", role: "group", "aria-label": "Spending sections" },
       SPENDING_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === spendingTab), text: label,
         onclick: () => { location.hash = `#/spending?tab=${key}`; } }))));
     bar.hidden = false;
+    measureBars();
   }
+
+  // The sticky tab bars sit just under the top bar (and under the Spending tabs), so their heights are measured, not guessed.
+  function measureBars() {
+    const root = document.documentElement.style;
+    root.setProperty("--topbar-h", `${document.querySelector(".topbar").offsetHeight}px`);
+    root.setProperty("--subtabs-h", `${$("subtabs").hidden ? 0 : $("subtabs").offsetHeight}px`);
+  }
+  if (window.ResizeObserver) {
+    const watcher = new ResizeObserver(measureBars);
+    watcher.observe(document.querySelector(".topbar"));
+    watcher.observe($("subtabs"));
+  }
+  window.addEventListener("resize", measureBars);
 
   const PAGES = {
     overview: ["Overview", "Net worth, spending and credit card payments"],
