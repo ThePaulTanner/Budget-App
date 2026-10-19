@@ -10,7 +10,7 @@
   --amber-bg: #fef3c7; --amber-text: #78350f;
   --bar: #e2e8f0; --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 4px 16px rgba(15, 23, 42, .05);
   --radius: 16px; --radius-sm: 10px;
-  --pad: 20px; --gutter: 24px; --row-pad: 12px; --font: 16px;
+  --pad: 14px; --gutter: 18px; --row-pad: 7px; --font: 15px;
   --side-w: 248px;
 }
 @media (prefers-color-scheme: dark) {
@@ -56,8 +56,6 @@
 :root[data-theme="dark"][data-accent="orange"] { --accent: #fb923c; --accent-text: #0b1220; }
 :root[data-theme="dark"][data-accent="rose"] { --accent: #fb7185; --accent-text: #0b1220; }
 :root { --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent); --chart: var(--accent); }
-
-:root[data-density="compact"] { --pad: 14px; --gutter: 18px; --row-pad: 7px; --font: 15px; }
 
 /* ---- base ---------------------------------------------------------------- */
 * { box-sizing: border-box; }
@@ -255,7 +253,6 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   .side-foot button { padding: .5rem; }
 }
 @media (max-width: 860px) {
-  :root { --gutter: 14px; --pad: 16px; }
   .app { display: block; }
   .sidebar { position: fixed; z-index: 30; inset: auto 0 0 0; height: auto; flex-direction: row; padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); gap: 0; border-right: 0; border-top: 1px solid var(--border); box-shadow: 0 -4px 20px rgba(0, 0, 0, .08); }
   .brand-row, .side-foot { display: none; }

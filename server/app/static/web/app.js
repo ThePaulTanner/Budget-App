@@ -2283,7 +2283,7 @@
     }).open();
   }
 
-  // Colour scheme, accent and density. Kept in this browser only (see theme.js).
+  // Colour scheme and accent. Kept in this browser only (see theme.js).
   function appearanceCard() {
     const card = el("section", { class: "card" });
     const paint = () => {
@@ -2299,9 +2299,7 @@
         el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Accent colour" }), el("div", { class: "muted", text: `Currently ${t.accent}.` })),
           el("div", { class: "swatches", role: "group", "aria-label": "Accent colour" },
             window.HFTheme.ACCENTS.map((accent) => el("button", { type: "button", class: "swatch", "data-accent": accent, title: accent,
-              "aria-label": accent, "aria-pressed": String(t.accent === accent), onclick: () => choose("accent", accent) })))),
-        el("div", { class: "setting" }, el("div", {}, el("strong", { text: "Density" }), el("div", { class: "muted", text: "Compact fits more on screen." })),
-          segment("density", [["comfortable", "Comfortable"], ["compact", "Compact"]])));
+              "aria-label": accent, "aria-pressed": String(t.accent === accent), onclick: () => choose("accent", accent) })))));
     };
     paint();
     return card;
