@@ -127,10 +127,10 @@ def test_the_script_never_uses_innerhtml_and_loads_only_plaids_link_script():
     assert "plaid" not in html.lower()  # never loaded at start-up
 
 
-def test_theme_script_only_keeps_four_harmless_notes():
+def test_theme_script_only_keeps_three_harmless_notes():
     js = (WEB_DIR / "theme.js").read_text()
     assert js.count("localStorage") == 2  # one guarded read, one guarded write
-    for key in ('"hf-mode"', '"hf-accent"', '"hf-density"', '"hf-passkey"'):
+    for key in ('"hf-mode"', '"hf-accent"', '"hf-passkey"'):
         assert key in js
     for bad in ("fetch(", "XMLHttpRequest", "innerHTML", "eval(", "http://", "https://", "document.cookie"):
         assert bad not in js, bad
@@ -176,3 +176,9 @@ def test_sign_in_page_has_the_face_id_controls_the_script_relies_on():
     html = (WEB_DIR / "index.html").read_text()
     for needed in ('id="passkey-first"', 'id="passkey-login"', 'id="password-submit"', 'id="password-passkey-submit"', 'id="passkey-setup"'):
         assert needed in html, needed
+
+
+def test_there_is_one_compact_size_and_no_density_choice():
+    for name in ("app.js", "app.css", "theme.js"):
+        assert "density" not in (WEB_DIR / name).read_text().lower(), name
+    assert "--font: 15px" in (WEB_DIR / "app.css").read_text()
