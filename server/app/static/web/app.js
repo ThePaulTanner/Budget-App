@@ -570,6 +570,8 @@
     document.removeEventListener("visibilitychange", checkIdle);
     const box = $("idle");
     if (box.open) box.close();
+    const setup = $("passkey-setup");
+    if (setup.open) setup.close();  // its close handler drops the password it was holding
   }
 
   function startIdleWatch() {
@@ -644,6 +646,7 @@
     document.querySelector("#login-form").classList.toggle("passkey-first", on);
     if (on) prefetchLoginOptions().catch(() => {});  // ready before the tap
   }
+  // A failed prefetch is silent on purpose: if the server is down the error shows when you tap.
   setInterval(() => { if (!$("login").hidden && !$("passkey-first").hidden) prefetchLoginOptions().catch(() => {}); }, 30000);
 
   // After signing in with all three details, offer to make the passkey on the spot. The password just typed is
@@ -653,6 +656,7 @@
     let pending = password;
     const message = el("p", { class: "error", role: "alert" });
     const close = () => { pending = ""; if (box.open) box.close(); };
+    box.addEventListener("close", () => { pending = ""; }, { once: true });  // also when something else closes it (sign-out)
     prefetchRegisterOptions().catch(() => {});  // so the tap goes straight to Face ID
     box.replaceChildren(el("div", { class: "setup" },
       el("h2", { id: "passkey-setup-title", text: "Set up Face ID?" }),
@@ -698,6 +702,7 @@
       credential = await navigator.credentials.get({ publicKey: {
         challenge: b64url.decode(key.challenge), rpId: key.rpId, userVerification: key.userVerification, timeout: key.timeout, allowCredentials: [] } });
     } catch (err) {
+      prefetchLoginOptions().catch(() => {});  // a fresh challenge is ready, so the next tap goes straight to Face ID
       throw new Error(err.name === "NotAllowedError"
         ? "Cancelled, or this device has no passkey for HomeFinance. Sign in with your password once, then add one in Settings \u2192 Security \u2192 Passkeys."
         : `Passkey sign-in failed (${err.name}).`);
@@ -730,6 +735,7 @@
         excludeCredentials: key.excludeCredentials.map((c) => ({ type: c.type, id: b64url.decode(c.id) })),
         attestation: key.attestation, timeout: key.timeout } });
     } catch (err) {
+      prefetchRegisterOptions().catch(() => {});  // ready for the next try
       throw new Error(err.name === "NotAllowedError" ? "Cancelled, or this device already has a passkey for HomeFinance." : `Could not make a passkey (${err.name}).`);
     }
     const added = await api("/api/passkeys", { method: "POST", body: {
