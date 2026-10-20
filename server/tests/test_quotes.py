@@ -659,3 +659,50 @@ def test_a_429_from_one_yahoo_host_falls_back_to_the_other_and_sticks():
     assert provider.quote("XIU.TO").price == Decimal("30.5")
     assert provider.quote("XIU.TO").price == Decimal("30.5")
     assert seen == ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query2.finance.yahoo.com"]
+
+
+def test_double_429_message_says_where_and_what_yahoo_said():
+    def handler(request):
+        return httpx.Response(429, text="Edge: Too Many Requests\n")
+
+    with pytest.raises(QuoteError) as caught:
+        mocked(handler).quote("XIU.TO")
+    text = str(caught.value)
+    assert "429" in text and "too many requests" in text
+    assert "query1 and query2" in text and "plain connection" in text and "Edge: Too Many Requests" in text
+
+
+def test_default_connection_looks_like_a_browser_when_curl_cffi_is_there(monkeypatch):
+    pytest.importorskip("curl_cffi")
+    provider = q.YahooProvider()
+    assert provider.connection == "browser-style connection" and provider._browser is True
+    monkeypatch.setattr(q, "curl_requests", None)  # not installed, or its native part will not load
+    fallback = q.YahooProvider()
+    assert fallback.connection == "plain connection" and fallback._browser is False
+
+
+def test_a_browser_connection_does_not_send_its_own_user_agent():
+    sent = []
+
+    class Spy:
+        def get(self, url, params=None, headers=None):
+            sent.append(dict(headers or {}))
+            return httpx.Response(200, json={"chart": {"result": [{"meta": {"regularMarketPrice": 30.5, "regularMarketTime": 1_760_000_000, "currency": "CAD"}}], "error": None}})
+
+    provider = q.YahooProvider(Spy(), spacing=0)
+    provider._browser = True  # what the default connection sets
+    provider.quote("XIU.TO")
+    assert "User-Agent" not in sent[0]
+    provider._browser = False
+    provider.quote("XIU.TO")
+    assert "User-Agent" in sent[1]
+
+
+def test_a_curl_connection_error_becomes_a_quiet_unavailable():
+    class Broken:
+        def get(self, url, params=None, headers=None):
+            raise q.CurlError("could not connect")
+
+    with pytest.raises(QuoteError) as caught:
+        q.YahooProvider(Broken(), spacing=0).quote("XIU.TO")
+    assert caught.value.kind == "unavailable" and "could not reach Yahoo Finance" in str(caught.value)
