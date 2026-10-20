@@ -94,6 +94,27 @@ def _currency(obj: dict[str, Any], fallback: str) -> str:
     return obj.get("iso_currency_code") or obj.get("unofficial_currency_code") or fallback
 
 
+# Markets whose listings trade in one currency. Used only when a bank gives no currency for a holding
+# and Plaid gives none for the security either.
+MARKET_CURRENCY = {
+    "XNAS": "USD", "XNYS": "USD", "ARCX": "USD", "XASE": "USD", "BATS": "USD", "IEXG": "USD", "XNMS": "USD", "XNCM": "USD",
+    "XTSE": "CAD", "XTSX": "CAD", "NEOE": "CAD", "XCNQ": "CAD",
+}
+
+
+def holding_currency(holding: dict[str, Any], security: dict[str, Any], base: str) -> str:
+    """The currency of a position. The bank's own code wins. Some banks send none (along with no price or
+    value), and then the base currency would be a guess that is wrong for a US-listed ETF held in a
+    Canadian account, so use the security's currency, then its market, and only then the base."""
+    explicit = holding.get("iso_currency_code") or holding.get("unofficial_currency_code")
+    if explicit:
+        return explicit
+    own = security.get("iso_currency_code") or security.get("unofficial_currency_code")
+    if own:
+        return own
+    return MARKET_CURRENCY.get((security.get("market_identifier_code") or "").upper(), base)
+
+
 # -- accounts ----------------------------------------------------------------
 
 
@@ -259,7 +280,7 @@ def sync_holdings(db: Database, plaid: PlaidClient, token: str, item_id: str, ba
                     as_text(to_dec(h.get("institution_price"))),
                     as_text(to_dec(h.get("institution_value"))),
                     as_text(to_dec(h.get("cost_basis"))),
-                    _currency(h, base),
+                    holding_currency(h, sec, base),
                     now,
                 ),
             )
