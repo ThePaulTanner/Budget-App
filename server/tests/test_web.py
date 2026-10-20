@@ -217,3 +217,8 @@ def test_reconnect_notice_is_a_count_on_the_cog_not_a_banner():
     assert 'id="banner"' not in html and 'id="alert"' not in html and "Reconnect it in Settings" not in js
     assert "renderNotices" in js
     assert 'id="menu-count"' in html and "tab=banks" in js
+
+
+def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'if (user && $("passkey-first").hidden) user.focus();' in js

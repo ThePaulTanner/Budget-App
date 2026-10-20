@@ -2820,8 +2820,10 @@
     $("login-message").textContent = message;
     view().replaceChildren();
     notices.banks = []; notices.signin = null; renderNotices();
+    // With Face ID offered, focus nothing: focusing the username makes Chrome pop up its saved
+    // passwords straight away, on top of the Face ID button.
     const user = document.querySelector("#login-form [name=username]");
-    if (user) user.focus();
+    if (user && $("passkey-first").hidden) user.focus();
   }
 
   function showShell() {
