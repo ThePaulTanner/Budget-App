@@ -128,7 +128,11 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 /* ---- sign-in ----------------------------------------------------------------- */
 .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: radial-gradient(900px 500px at 50% -10%, var(--accent-soft), transparent 70%), var(--bg); }
 .login-card { background: var(--surface); padding: 32px 28px; border-radius: 20px; width: min(420px, 100%); border: 1px solid var(--border); box-shadow: var(--shadow); }
-.login-card h1 { margin: 10px 0 16px; }
+.login-title { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
+.login-title .logo { width: 40px; height: 40px; }
+.login-card h1 { margin: 0; }
+.login-notice { margin: -4px 0 14px; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: .92rem; }
+.login-notice:empty { display: none; }
 /* Two boxes: the three details and Sign in in the inner one; that box and the Face ID button in the outer one. */
 .login-card .error:empty { display: none; }
 .login-outer { border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px; background: var(--surface-2); }
