@@ -156,10 +156,6 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .topbar .muted { margin: 2px 0 0; }
 .top-actions { display: flex; gap: 8px; }
 main { width: 100%; max-width: 1120px; margin: 0 auto; padding: var(--gutter); flex: 1; }
-.banner { margin: 14px var(--gutter) 0; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--amber-bg); color: var(--amber-text); font-weight: 550; }
-.banner a { color: inherit; font-weight: 700; }
-.banner.danger { background: color-mix(in srgb, var(--red) 14%, var(--surface)); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); }
-.banner.danger a { color: var(--red); }
 
 /* ---- cards, grids, rows ------------------------------------------------------------- */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--pad); margin-bottom: 16px; }
