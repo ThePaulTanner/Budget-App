@@ -90,9 +90,7 @@ Use a tab bar with five tabs.
 **1. Overview**
 - A large net-worth figure, with assets, liabilities and investments beneath it.
 - A Swift Charts line chart of net worth with a 1M / 3M / 1Y / All picker (`days` = 30 / 90 / 365 / 3650).
-- "Spent this month" against total budgeted.
-- Over-budget chips.
-- A reconnect banner, shown when needed.
+- A reconnect banner, shown when needed. (The web app shows a count on the Settings cog instead.)
 - "Last synced X ago".
 - An accounts list grouped by type: Cash, Credit, Investments, Loans. Each row shows institution, name, mask (••1234) and balance. Show available credit for cards.
 - Tapping an account opens its transactions.
@@ -103,6 +101,7 @@ Use a tab bar with five tabs.
 - Tapping a row opens a detail sheet where the category can be changed (picker plus custom entry, and "Reset to automatic", which falls back to the matching rule and then Plaid's category). After a change, offer "Always categorize *IGA* as Groceries?": call `POST /api/rules/preview` to show how many transactions it would change, then `POST /api/rules`. A small badge shows whether a category came from a rule, a manual change or Plaid. A Rules screen (from Settings) lists, edits and deletes rules.
 
 **3. Budgets**
+- (The web app's Spending page opens on a "This month" tab: "Spent this month" against total budgeted, the over-budget chips and the top categories. This used to be on the Overview.)
 - A month switcher (‹ October 2026 ›).
 - Each budget is a row with a progress bar. Its colour changes at 80% and again at 100%.
 - Show spent and limit, and remaining or over.

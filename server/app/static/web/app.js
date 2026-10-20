@@ -846,9 +846,8 @@
   }
 
   async function viewOverview(id) {
-    const [summary, dues, log, spending] = await Promise.all([
-      api(scoped("/api/summary")), api(scoped("/api/payments-due")).catch(() => null), api("/auth/login-log?limit=100").catch(() => null),
-      api(scoped("/api/spending")).catch(() => ({ categories: [] }))]);  // no month = the current one, same as the summary
+    const [summary, dues, log] = await Promise.all([
+      api(scoped("/api/summary")), api(scoped("/api/payments-due")).catch(() => null), api("/auth/login-log?limit=100").catch(() => null)]);
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -877,6 +876,19 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       chartBox);
 
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard), paymentsSummary(dues));
+    drawChart();
+  }
+
+  // The Spending page's first tab: this month's spending against the budgets, and the top categories.
+  async function viewSpendingSummary(id) {
+    const [summary, spending] = await Promise.all([
+      api(scoped("/api/summary")),
+      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 }))]);  // no month = the current one, same as the summary
+    if (id !== navId) return;
+    baseCurrency = summary.base_currency;
+    const worth = summary.net_worth.find((n) => n.currency === baseCurrency) || summary.net_worth[0];
+    const cur = worth ? worth.currency : baseCurrency;
     const budgeted = summary.budgeted_this_month;
     const pct = budgeted > 0 ? (summary.spent_this_month / budgeted) * 100 : 0;
     const spendCard = el("section", { class: "card" },
@@ -894,8 +906,7 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/spending?tab=budgets", text: "See budgets and trends" }))]);
 
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard, spendCard), paymentsSummary(dues));
-    drawChart();
+    view().replaceChildren(viewerNote(), spendCard);
   }
 
   // ---------------------------------------------------------------- Transactions
@@ -2682,14 +2693,15 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with four tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
+  // Spending is one page with five tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
   const SPENDING_TABS = [
+    ["summary", "This month", viewSpendingSummary, "This month against your budgets"],
     ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
     ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
     ["cashflow", "Cash flow", viewCashflow, "Income and expenses over time"],
   ];
-  let spendingTab = "transactions";
+  let spendingTab = "summary";
   const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
   function viewSpending(id, params) {
     const [, , run, subtitle] = SPENDING_TABS.find(([key]) => key === spendingTab);
@@ -2704,6 +2716,8 @@
       SPENDING_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === spendingTab), text: label,
         onclick: () => { location.hash = `#/spending?tab=${key}`; } }))));
     bar.hidden = false;
+    const active = bar.querySelector("[aria-pressed=true]");
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: "nearest", inline: "center" });
     measureBars();
   }
 
@@ -2721,9 +2735,9 @@
   window.addEventListener("resize", measureBars);
 
   const PAGES = {
-    overview: ["Overview", "Net worth, spending and credit card payments"],
+    overview: ["Overview", "Net worth and credit card payments"],
     accounts: ["Accounts", "Balances by bank and account"],
-    spending: ["Spending", "Transactions, merchants, budgets and cash flow"],
+    spending: ["Spending", "This month, transactions, merchants, budgets and cash flow"],
     money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],

@@ -590,3 +590,8 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .login-outer .wide { min-height: 54px; font-size: 1.05rem; border-radius: 14px; }
   .login-card .error { margin: 12px 4px 0; }
 }
+
+/* The Spending tabs stay on one row; on a narrow screen the row scrolls sideways. */
+#subtabs .seg { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+#subtabs .seg::-webkit-scrollbar { display: none; }
+#subtabs .seg button { flex: 1 0 auto; white-space: nowrap; }
