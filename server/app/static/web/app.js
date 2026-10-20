@@ -1888,7 +1888,7 @@
           const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
           const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
           const c = changeText(h.changes[invPeriod], h.currency);
-          const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price");
+          const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price") + (h.live_note ? ` \u2014 no live price: ${h.live_note}` : "");
           return el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => openPosition(h),
             onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },

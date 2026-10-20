@@ -16,7 +16,7 @@ import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Callable, Iterable, Protocol
@@ -298,6 +298,7 @@ class Lookup:
     live: dict[Wanted, Live]
     unavailable: str | None  # why Yahoo could not be used, if it could not
     stale: bool  # some prices come from the cache because a refresh failed
+    why: dict[Wanted, str] = field(default_factory=dict)  # why a position has no live price
 
 
 class QuoteService:
@@ -306,6 +307,7 @@ class QuoteService:
         self.clock = clock
         self._lock = threading.Lock()
         self._symbols: dict[Wanted, tuple[float, str | None]] = {}
+        self._why: dict[Wanted, str] = {}
         self._quotes: dict[str, tuple[float, Quote]] = {}
         self._bars: dict[str, tuple[float, Bars]] = {}
         self._cooldown_until = 0.0
@@ -335,21 +337,29 @@ class QuoteService:
             return  # looked for it recently and it does not exist
         symbol = known[1] if known is not None else None  # a found symbol never changes
         if symbol is None:
+            reasons = []
             for candidate in candidates(wanted.ticker, wanted.mic, wanted.currency):
                 try:
                     quote = self.provider.quote(candidate)
                 except QuoteError as exc:
                     if exc.kind == "unavailable":
                         raise
+                    reasons.append(f"Yahoo has no {candidate}")
                     continue
                 if not quote.currency or quote.currency.upper() != wanted.currency.upper():
-                    continue  # another currency, or none stated so it cannot be checked: no FX guessing
+                    # another currency, or none stated so it cannot be checked: no FX guessing
+                    reasons.append(f"{candidate} is priced in {quote.currency or 'an unknown currency'} on Yahoo, but your bank holds it in {wanted.currency}")
+                    continue
                 symbol = candidate
                 with self._lock:
                     self._quotes[symbol] = (now, quote)
                 break
             with self._lock:
                 self._symbols[wanted] = (now, symbol)
+                if symbol is None:
+                    self._why[wanted] = "; ".join(reasons) or "no symbol to look up"
+                else:
+                    self._why.pop(wanted, None)
             if symbol is None:
                 return
         with self._lock:
@@ -403,9 +413,12 @@ class QuoteService:
                 else:
                     self._failures = 0
         live: dict[Wanted, Live] = {}
+        why: dict[Wanted, str] = {}
         stale = False
         with self._lock:
             for w in unique:
+                if w in self._why:
+                    why[w] = self._why[w]
                 symbol = (self._symbols.get(w) or (0.0, None))[1]
                 cached = self._quotes.get(symbol) if symbol else None
                 if symbol is None or cached is None:
@@ -413,4 +426,4 @@ class QuoteService:
                 if not self._quote_fresh(symbol, self.clock()):
                     stale = True
                 live[w] = Live(symbol, cached[1], (self._bars.get(symbol) or (0.0, []))[1])
-        return Lookup(live=live, unavailable=problem, stale=stale)
+        return Lookup(live=live, unavailable=problem, stale=stale, why=why)

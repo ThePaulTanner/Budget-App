@@ -1249,6 +1249,7 @@ def create_api_app(services: Services) -> FastAPI:
                     "currency": r["currency"],
                     "live": live is not None,
                     "symbol": live.symbol if live is not None else None,
+                    "live_note": found.why.get(wanted[r["security_id"]]) if found is not None and live is None and r["security_id"] in wanted else None,
                     "price_time": datetime.fromtimestamp(live.quote.time, UTC).isoformat().replace("+00:00", "Z") if live is not None else None,
                     "market_open": live is not None and now_epoch - live.quote.time <= FRESH_SECONDS,
                     "open": num(live.quote.open) if live is not None else None,

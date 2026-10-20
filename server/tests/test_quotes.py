@@ -706,3 +706,13 @@ def test_a_curl_connection_error_becomes_a_quiet_unavailable():
     with pytest.raises(QuoteError) as caught:
         q.YahooProvider(Broken(), spacing=0).quote("XIU.TO")
     assert caught.value.kind == "unavailable" and "could not reach Yahoo Finance" in str(caught.value)
+
+
+def test_a_position_without_a_price_says_why():
+    provider = FakeProvider(known={"VEQT.TO"})
+    provider.currency = "USD"
+    w = wanted()
+    result = QuoteService(provider, Clock()).lookup([w])
+    assert "priced in USD" in result.why[w] and "holds it in" in result.why[w]
+    missing = QuoteService(FakeProvider(known=()), Clock()).lookup([w])
+    assert missing.why[w].startswith("Yahoo has no")
