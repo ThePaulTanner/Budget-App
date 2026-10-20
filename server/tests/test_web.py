@@ -193,3 +193,12 @@ def test_page_tabs_are_sticky_and_their_heights_are_measured():
     css, js = (WEB_DIR / "app.css").read_text(), (WEB_DIR / "app.js").read_text()
     assert ".subtabs { position: sticky;" in css and ".sticky-tabs { position: sticky;" in css
     assert "--topbar-h" in js and "sticky-tabs" in js
+
+
+def test_sign_in_page_layout_two_boxes_and_face_id_below_sign_in():
+    html = (WEB_DIR / "index.html").read_text()
+    assert "Sign in to your private finance dashboard" not in html and "or use your password and code" not in html
+    outer, inner = html.index('class="login-outer"'), html.index('class="login-inner"')
+    sign_in, face = html.index('id="password-submit"'), html.index('id="passkey-login"')
+    assert outer < inner < sign_in < face  # the Face ID button follows the Sign in button, outside the inner box
+    assert html.index("</div>", sign_in) < face
