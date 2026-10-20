@@ -822,9 +822,12 @@
     // what to pay and by when. The minimum payment lives on the Money Management page.
     const toPay = (c) => {
       if (c.status === "nothing_owed" || c.status === "paid") return null;  // the pill already says so
-      if (c.statement_balance == null || c.due_date == null) return "No due date from your bank";
-      const when = c.days_until_due < 0 ? `was due ${shortDate(c.due_date)}` : `by ${shortDate(c.due_date)}`;
-      return `Pay ${money(c.statement_balance, c.currency)} ${when}`;
+      if (c.due_date == null) return data.dues_available ? "No due date from your bank" : null;  // else the note below says so
+      const date = shortDate(c.due_date), past = c.days_until_due < 0;
+      if (c.status === "unknown") return `Was due ${date}, may have been paid`;
+      if (c.statement_balance == null) return past ? `Was due ${date}` : `Due ${date}`;
+      const amount = money(c.statement_balance, c.currency);
+      return past ? `${amount} was due ${date}` : `Pay ${amount} by ${date}`;
     };
     return el("section", { class: "card" },
       el("div", { class: "section-head" },
