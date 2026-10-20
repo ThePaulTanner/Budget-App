@@ -35,8 +35,17 @@ from .crypto import Keys, seal, unseal
 from .db import Database, utcnow
 
 ACCESS_TTL_SECONDS = 15 * 60
-INACTIVE = "Signed out after a period of inactivity"
-SESSION_OVER = "This session reached its time limit. Sign in again."
+
+
+def span(seconds: int) -> str:
+    """'10 minutes', '1 hour', '8 hours' for the sign-in page's sign-out notice."""
+    if seconds % 3600 == 0:
+        hours = seconds // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    minutes = max(1, round(seconds / 60))
+    return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
 WEB_IDLE_GRACE = 15  # seconds the server allows beyond the page's own idle clock, for a slow network
 REFRESH_GRACE_SECONDS = 60
 MIN_PASSWORD_LENGTH = 12
@@ -289,16 +298,16 @@ class AuthService:
         if row["kind"] != "web":
             return None
         if row["expires_at"] is not None and now >= row["expires_at"]:
-            return SESSION_OVER
+            return f"You were signed out after reaching the {span(self.web_max_seconds)} time limit for a session"
         if row["active_at"] is not None and now - row["active_at"] >= self.web_idle_seconds + WEB_IDLE_GRACE:
-            return INACTIVE
+            return f"You were signed out after {span(self.web_idle_seconds)} of inactivity"
         return None
 
     def web_info(self, session_id: str) -> dict:
         """What the page needs to run its inactivity timer."""
         row = self.db.one("SELECT expires_at FROM sessions WHERE id=?", (session_id,))
         left = max(0, int((row["expires_at"] or 0) - self.clock())) if row else 0
-        return {"idle_timeout": self.web_idle_seconds, "session_expires_in": left}
+        return {"idle_timeout": self.web_idle_seconds, "session_max": self.web_max_seconds, "session_expires_in": left}
 
     def web_activity(self, ctx: "AuthContext") -> dict:
         """You touched the page: the idle clock starts again. Only this (never background requests such

@@ -133,3 +133,11 @@ def test_upgrade_signs_out_old_browser_sessions_once(tmp_path):
     rows = {r["id"]: r for r in upgraded.query("SELECT id, revoked_at, kind FROM sessions")}
     assert rows["w"]["revoked_at"] is not None and rows["p"]["revoked_at"] is None and rows["p"]["kind"] == "app"
     upgraded.close()
+
+
+def test_sign_out_notices_state_the_period_and_never_say_sign_in_again():
+    from app.auth import span
+    assert span(600) == "10 minutes" and span(3600) == "1 hour" and span(8 * 3600) == "8 hours" and span(120) == "2 minutes"
+    from pathlib import Path
+    web = Path(__file__).resolve().parents[1] / "app" / "static" / "web"
+    assert "Sign in again" not in (web / "app.js").read_text() and 'id="login-notice"' in (web / "index.html").read_text()

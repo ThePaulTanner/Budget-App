@@ -136,6 +136,7 @@
   let token = null;
   let tokenExpiry = 0;
   let renewing = null;
+  let sessionMax = 8 * 3600;  // likewise
   let idleSeconds = 600;  // the server tells the page its real limit with every sign-in
   let sessionEnds = Infinity;
   let signOutReason = "";
@@ -156,6 +157,7 @@
     token = data.access_token;
     tokenExpiry = Date.now() + Math.max(data.expires_in - 30, 5) * 1000;
     if (data.idle_timeout) idleSeconds = data.idle_timeout;
+    if (data.session_max) sessionMax = data.session_max;
     if (data.session_expires_in !== undefined) sessionEnds = Date.now() + data.session_expires_in * 1000;
   }
 
@@ -583,6 +585,13 @@
     if (setup.open) setup.close();  // its close handler drops the password it was holding
   }
 
+  // 600 -> "10 minutes", 3600 -> "1 hour", the same wording the server uses.
+  function spanText(seconds) {
+    if (seconds % 3600 === 0) { const h = seconds / 3600; return `${h} hour${h === 1 ? "" : "s"}`; }
+    const m = Math.max(1, Math.round(seconds / 60));
+    return `${m} minute${m === 1 ? "" : "s"}`;
+  }
+
   function startIdleWatch() {
     stopIdleWatch();
     lastActive = lastPing = Date.now();
@@ -596,12 +605,12 @@
     stopIdleWatch();
     try { await plainFetch("/web/logout", { method: "POST", headers: { "X-Requested-With": "HomeFinance" } }); } catch (_) { /* the server expires it too */ }
     budgetMonth = null;
-    showLogin(reason || signOutReason || "You were signed out after a period of inactivity. Sign in again.");  // the server's own reason wins
+    showLogin(reason || signOutReason || `You were signed out after ${spanText(idleSeconds)} of inactivity`);  // the server's own reason wins
   }
 
   function checkIdle() {
     if (idleTimer === null) return;
-    if (Date.now() >= sessionEnds) { idleSignOut("This session reached its time limit. Sign in again."); return; }
+    if (Date.now() >= sessionEnds) { idleSignOut(`You were signed out after reaching the ${spanText(sessionMax)} time limit for a session`); return; }
     if (idleHold) {
       lastActive = Date.now();
       if (Date.now() - lastPing > 60000) reportActivity();  // the server's clock has to hear about it too
@@ -1888,7 +1897,7 @@
           const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
           const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
           const c = changeText(h.changes[invPeriod], h.currency);
-          const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price");
+          const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price") + (h.live_note ? ` \u2014 no live price: ${h.live_note}` : "");
           return el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => openPosition(h),
             onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },
@@ -2817,11 +2826,15 @@
     closeSheet();
     $("shell").hidden = true;
     $("login").hidden = false;
-    $("login-message").textContent = message;
+    const timedOut = /inactivity|time limit/.test(message);
+    $("login-notice").textContent = timedOut ? message : "";
+    $("login-message").textContent = timedOut ? "" : message;
     view().replaceChildren();
     notices.banks = []; notices.signin = null; renderNotices();
+    // With Face ID offered, focus nothing: focusing the username makes Chrome pop up its saved
+    // passwords straight away, on top of the Face ID button.
     const user = document.querySelector("#login-form [name=username]");
-    if (user) user.focus();
+    if (user && $("passkey-first").hidden) user.focus();
   }
 
   function showShell() {

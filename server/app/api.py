@@ -329,6 +329,17 @@ def rule_json(row: Any) -> dict[str, Any]:
     }
 
 
+def ineligible_note(row) -> str | None:
+    """Why a held security is not looked up for a live price at all."""
+    if (row["type"] or "").lower() == "cash":
+        return None  # cash has no price to look up
+    if not row["ticker"]:
+        return "the bank gives no ticker for it"
+    if (row["type"] or "").lower() not in LIVE_TYPES:
+        return f"the bank lists it as type '{row['type'] or 'unknown'}', which is not priced live"
+    return None
+
+
 def create_api_app(services: Services) -> FastAPI:
     db, auth, settings = services.db, services.auth, services.settings
     base = settings.base_currency
@@ -1249,6 +1260,9 @@ def create_api_app(services: Services) -> FastAPI:
                     "currency": r["currency"],
                     "live": live is not None,
                     "symbol": live.symbol if live is not None else None,
+                    "live_note": (
+                        found.why.get(wanted[r["security_id"]]) if found is not None and r["security_id"] in wanted
+                        else None if live is not None or found is None else ineligible_note(r)),
                     "price_time": datetime.fromtimestamp(live.quote.time, UTC).isoformat().replace("+00:00", "Z") if live is not None else None,
                     "market_open": live is not None and now_epoch - live.quote.time <= FRESH_SECONDS,
                     "open": num(live.quote.open) if live is not None else None,

@@ -35,8 +35,11 @@
 
   <section id="login" class="login" hidden>
     <form id="login-form" class="login-card" autocomplete="on">
-      <svg class="logo" width="44" height="44" aria-hidden="true"><use href="#i-logo"/></svg>
-      <h1>HomeFinance</h1>
+      <div class="login-title">
+        <svg class="logo" width="44" height="44" aria-hidden="true"><use href="#i-logo"/></svg>
+        <h1>HomeFinance</h1>
+      </div>
+      <p id="login-notice" class="login-notice" role="status"></p>
       <div class="login-outer">
         <div class="login-inner">
           <label>Username <input name="username" autocomplete="username" required></label>
