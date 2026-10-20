@@ -572,3 +572,26 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .row.holding .amount { flex: 1 1 100%; text-align: left; }
   .inv-note { font-size: .85rem; }
 }
+
+/* Phone sign-in: no empty margin. The three boxes (the card, the box inside it, and the box of details
+   inside that) fill the whole screen, with bigger fields and buttons to tap. */
+@media (max-width: 600px) {
+  .login { display: block; padding: 0; background: var(--surface); }
+  .login-card { display: flex; flex-direction: column; width: 100%; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none;
+    padding: calc(env(safe-area-inset-top) + 22px) 14px calc(env(safe-area-inset-bottom) + 14px); }
+  .login-title { margin-bottom: 14px; padding: 0 4px; }
+  .login-title .logo { width: 44px; height: 44px; }
+  .login-card h1 { font-size: 1.6rem; }
+  .login-outer { flex: 1 1 auto; display: flex; flex-direction: column; padding: 14px; border-radius: 18px; }
+  .login-inner { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-evenly; gap: 14px; padding: 22px 18px; border-radius: 14px; }
+  .login-inner label { margin: 0; }
+  .login-inner label { font-size: .95rem; font-weight: 600; }
+  .login-inner input { min-height: 58px; margin-top: 6px; font-size: 1.1rem; }
+  .login-outer .wide { min-height: 54px; font-size: 1.05rem; border-radius: 14px; }
+  .login-card .error { margin: 12px 4px 0; }
+}
+
+/* The Spending tabs stay on one row; on a narrow screen the row scrolls sideways. */
+#subtabs .seg { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+#subtabs .seg::-webkit-scrollbar { display: none; }
+#subtabs .seg button { flex: 1 0 auto; white-space: nowrap; }

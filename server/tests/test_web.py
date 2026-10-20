@@ -227,3 +227,15 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
 def test_phone_positions_get_the_full_row_for_their_name():
     css = (WEB_DIR / "app.css").read_text()
     assert ".row.holding .grow { flex: 1 1 100%; }" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
+
+
+def test_phone_sign_in_fills_the_screen():
+    css = (WEB_DIR / "app.css").read_text()
+    assert "min-height: 100dvh" in css and ".login-outer { flex: 1 1 auto;" in css and ".login-inner { flex: 1 1 auto;" in css
+
+
+def test_spending_summary_lives_on_the_spending_page_not_the_overview():
+    js = (WEB_DIR / "app.js").read_text()
+    overview = js[js.index("async function viewOverview"):js.index("async function viewSpendingSummary")]
+    assert "Top categories" not in overview and "Spent in" not in overview
+    assert '["summary", "This month", viewSpendingSummary' in js
