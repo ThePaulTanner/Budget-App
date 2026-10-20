@@ -724,3 +724,19 @@ def test_ineligible_positions_say_why():
     assert "'derivative'" in ineligible_note({"ticker": "TQQQ", "type": "derivative"})
     assert ineligible_note({"ticker": "TQQQ", "type": "ETF"}) is None
     assert ineligible_note({"ticker": None, "type": "cash"}) is None
+
+
+def test_tqqq_labelled_cad_with_no_bank_price_gets_a_usd_live_price(live, services):
+    client, auth, provider = live
+    provider.known, provider.currency = {"TQQQ"}, "USD"
+    services.db.run(
+        "INSERT INTO holdings(account_id, security_id, name, ticker, mic, type, quantity, price, value, cost_basis, "
+        "currency, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("acc_tfsa", "sec_tqqq", "ProShares UltraPro QQQ", "TQQQ", "XNAS", "etf", "21.1279", None, None, None,
+         "CAD", "2026-10-02T00:00:00Z"),
+    )
+    body = client.get("/api/holdings/live", headers=auth).json()
+    tqqq = next(h for h in body["holdings"] if h["ticker"] == "TQQQ")
+    assert tqqq["live"] is True and tqqq["currency"] == "USD" and tqqq["live_note"] is None
+    assert tqqq["value"] == round(21.1279 * 47.85, 2)
+    assert body["totals"]["USD"]["value"] == tqqq["value"]

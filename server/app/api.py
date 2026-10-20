@@ -344,7 +344,8 @@ def effective_currency(row) -> str:
     """The currency to treat a position as being in. A bank that sends no price and no value for a
     position gives nothing to check its currency label against (some banks label everything with the
     account's currency), so a position on a market with one currency, such as Nasdaq, is taken to be
-    in that currency."""
+    in that currency. It is applied when a position is read, not stored: once a bank does send a price,
+    the bank's label is checkable again and is used as it is."""
     price, value = bank_price_and_value(row)
     if price is None and value is None:
         implied = MARKET_CURRENCY.get((row["mic"] or "").upper())
