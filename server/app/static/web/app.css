@@ -156,10 +156,6 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .topbar .muted { margin: 2px 0 0; }
 .top-actions { display: flex; gap: 8px; }
 main { width: 100%; max-width: 1120px; margin: 0 auto; padding: var(--gutter); flex: 1; }
-.banner { margin: 14px var(--gutter) 0; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--amber-bg); color: var(--amber-text); font-weight: 550; }
-.banner a { color: inherit; font-weight: 700; }
-.banner.danger { background: color-mix(in srgb, var(--red) 14%, var(--surface)); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); }
-.banner.danger a { color: var(--red); }
 
 /* ---- cards, grids, rows ------------------------------------------------------------- */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--pad); margin-bottom: 16px; }
@@ -222,6 +218,9 @@ svg.chart .gl { stroke: var(--border); stroke-width: 1; }
 
 /* ---- dialogs, toast, privacy cover ------------------------------------------------------- */
 dialog { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+dialog#sheet[open] { display: flex; flex-direction: column; overflow: hidden; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
+dialog#sheet .sheet-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; -webkit-overflow-scrolling: touch; }
+dialog#sheet > .actions { flex: 0 0 auto; padding-top: 12px; margin-top: 0; border-top: 1px solid var(--border); }
 dialog#confirm, dialog#idle, dialog#passkey-setup { width: min(460px, calc(100vw - 24px)); }
 dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .confirm, .idle, .setup { text-align: center; }
@@ -288,6 +287,9 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 
 /* header menu: Settings, Sign out */
 .menu { position: relative; }
+.icon-btn { position: relative; }
+.count-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: #b91c1c; color: #fff; font-size: .72rem; font-weight: 700; line-height: 18px; text-align: center; box-sizing: border-box; }
+.count-badge.inline { position: static; margin-left: auto; }
 .icon-btn.current { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .menu-list { position: absolute; right: 0; top: calc(100% + 8px); min-width: 190px; padding: 6px; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); z-index: 50; }
 .menu-list a, .menu-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: .55rem .7rem; border: 0; border-radius: 9px; background: transparent; color: var(--text); text-decoration: none; font: inherit; text-align: left; cursor: pointer; }

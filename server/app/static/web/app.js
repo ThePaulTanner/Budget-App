@@ -483,7 +483,16 @@
 
   function openSheet(...content) {
     const sheet = $("sheet");
-    sheet.replaceChildren(...content.flat(Infinity).filter((node) => node != null && node !== false));
+    const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
+    // A trailing button row (Close, Save...) is pinned under the scrolling part, so on a phone it
+    // never has to be scrolled to.
+    const last = nodes[nodes.length - 1];
+    if (nodes.length > 1 && last.classList && last.classList.contains("actions")) {
+      nodes.pop();
+      sheet.replaceChildren(el("div", { class: "sheet-body" }, ...nodes), last);
+    } else {
+      sheet.replaceChildren(...nodes);
+    }
     if (!sheet.open) sheet.showModal();
     return sheet;
   }
@@ -767,16 +776,16 @@
     locked: ["Refused: sign-in is locked", true], lockout: ["Sign-in locked after too many failures", true],
     bad_passkey: ["Passkey refused", true], unlocked: ["Unlocked from the NAS", false], login_removed: ["A login was removed", false],
   };
+  const notices = { banks: [], signin: null };  // what the cog counts
   const FAILED = new Set(["bad_password", "bad_code", "bad_passkey", "unknown_user", "lockout"]);
 
+  // Failed sign-in attempts are one of the things the cog's count reports (see renderNotices).
   function setAlert(log) {
-    const node = $("alert");
     const recent = log ? log.events.filter((e) => FAILED.has(e.result) && Date.now() - new Date(e.at).getTime() < 864e5).length : 0;
-    if (!log || (!log.locked && recent === 0)) { node.hidden = true; return; }
-    node.replaceChildren(
-      log.locked ? "New sign-ins are locked after too many failed attempts. " : `${recent} failed sign-in attempt${recent === 1 ? "" : "s"} in the last 24 hours. `,
-      el("a", { href: "#/settings?tab=log", text: "See the sign-in activity" }));
-    node.hidden = false;
+    notices.signin = !log || (!log.locked && recent === 0) ? null
+      : log.locked ? "New sign-ins are locked after too many failed attempts"
+      : `${recent} failed sign-in attempt${recent === 1 ? "" : "s"} in the last 24 hours`;
+    renderNotices();
   }
 
   // ---------------------------------------------------------------- Overview
@@ -2712,11 +2721,15 @@
   };
   const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
-  // The reconnect banner comes from the banks list, on every screen.
+  const menuButton = $("menu-button");
+  const menuList = $("menu-list");
+
+  // The reconnect count comes from the banks list, on every screen.
   async function refreshStatus() {
     try {
       const items = await api("/api/items");
       setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
+      setAlert(await api("/auth/login-log?limit=100").catch(() => null));
     } catch (err) {
       if (err instanceof SignedOut) showLogin();
     }
@@ -2737,12 +2750,29 @@
     } catch (_) { /* the badge is only a convenience */ }
   }
 
+  // Everything that needs attention shows as one count on the cog (and on its Settings entry)
+  // instead of a banner across the top: banks to reconnect, and failed sign-in attempts.
   function setBanner(institutions) {
-    const banner = $("banner");
-    if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
-    banner.replaceChildren(`${institutions.join(", ")} needs to be reconnected. `,
-      el("a", { href: "#/settings?tab=banks", text: "Reconnect it in Settings" }));
-    banner.hidden = false;
+    notices.banks = institutions || [];
+    renderNotices();
+  }
+
+  function renderNotices() {
+    const reasons = [];
+    if (notices.banks.length) reasons.push(`${notices.banks.join(", ")} ${notices.banks.length === 1 ? "needs" : "need"} to be reconnected`);
+    if (notices.signin) reasons.push(notices.signin);
+    const count = notices.banks.length + (notices.signin ? 1 : 0);
+    const text = reasons.join(". ");
+    for (const id of ["menu-count", "menu-item-count"]) {
+      const badge = $(id);
+      badge.hidden = count === 0;
+      badge.textContent = String(count);
+      badge.title = text;
+    }
+    menuButton.title = count ? `Settings and sign out \u2014 ${text}` : "Settings and sign out";
+    menuButton.setAttribute("aria-label", count ? `Settings and sign out. ${text}` : "Settings and sign out");
+    $("menu-list").querySelector("[data-tab=settings]").setAttribute("href",
+      notices.banks.length ? "#/settings?tab=banks" : notices.signin ? "#/settings?tab=log" : "#/settings");
   }
 
   async function route() {
@@ -2789,8 +2819,7 @@
     $("login").hidden = false;
     $("login-message").textContent = message;
     view().replaceChildren();
-    $("banner").hidden = true;
-    $("alert").hidden = true;
+    notices.banks = []; notices.signin = null; renderNotices();
     const user = document.querySelector("#login-form [name=username]");
     if (user) user.focus();
   }
@@ -2860,8 +2889,6 @@
 
   for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
   // The cog opens a small menu: Settings and Sign out.
-  const menuButton = $("menu-button");
-  const menuList = $("menu-list");
   function setMenu(open) {
     menuList.hidden = !open;
     menuButton.setAttribute("aria-expanded", String(open));

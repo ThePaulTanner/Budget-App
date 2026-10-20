@@ -84,16 +84,14 @@
           <label id="viewer-wrap" class="viewer" hidden><span class="sr">Whose money</span><select id="viewer" aria-label="Whose money to show"></select></label>
           <button type="button" class="icon-btn refresh-btn phone-only" title="Reload this page's data (does not sync banks)" aria-label="Reload this page's data"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-refresh"/></svg></button>
           <div class="menu" id="account-menu">
-            <button id="menu-button" type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-list" title="Settings and sign out" aria-label="Settings and sign out"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg></button>
+            <button id="menu-button" type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="menu-list" title="Settings and sign out" aria-label="Settings and sign out"><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg><span id="menu-count" class="count-badge" hidden></span></button>
             <div id="menu-list" class="menu-list" role="menu" aria-label="Settings and sign out" hidden>
-              <a role="menuitem" href="#/settings" data-tab="settings"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-gear"/></svg><span>Settings</span></a>
+              <a role="menuitem" href="#/settings" data-tab="settings"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-gear"/></svg><span>Settings</span><span id="menu-item-count" class="count-badge inline" hidden></span></a>
               <button role="menuitem" type="button" id="signout"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-logout"/></svg><span>Sign out</span></button>
             </div>
           </div>
         </div>
       </header>
-      <p id="banner" class="banner" hidden></p>
-      <p id="alert" class="banner danger" hidden></p>
       <div id="subtabs" class="subtabs" hidden></div>
       <main id="view" aria-live="polite"></main>
     </div>
