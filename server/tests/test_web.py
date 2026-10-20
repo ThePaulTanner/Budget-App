@@ -222,3 +222,8 @@ def test_reconnect_notice_is_a_count_on_the_cog_not_a_banner():
 def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     js = (WEB_DIR / "app.js").read_text()
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
+
+
+def test_phone_positions_get_the_full_row_for_their_name():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".row.holding .grow { flex: 1 1 100%; }" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()

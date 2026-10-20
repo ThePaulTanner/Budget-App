@@ -1877,8 +1877,8 @@
                 : el("div", { class: "muted", text: "No change available for this period yet." }));
           }),
         el("div", { class: "toolbar" }, seg),
-        el("p", { class: status.message || !status.enabled ? "error" : "muted", text: statusLine }),
-        el("p", { class: "muted", text: "Changes assume you held today's quantity for the whole period, so a position bought recently shows what it would have done, not what you earned." }));
+        el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }),
+        el("p", { class: "muted inv-note", text: "Changes assume you held today's quantity for the whole period, so a position bought recently shows what it would have done, not what you earned." }));
 
       const byAccount = new Map();
       for (const h of data.holdings) {
@@ -1898,7 +1898,7 @@
           const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
           const c = changeText(h.changes[invPeriod], h.currency);
           const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price") + (h.live_note ? ` \u2014 no live price: ${h.live_note}` : "");
-          return el("div", { class: "row click", role: "button", tabindex: 0, onclick: () => openPosition(h),
+          return el("div", { class: "row click holding", role: "button", tabindex: 0, onclick: () => openPosition(h),
             onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },
               el("strong", { text: h.ticker || h.name }), h.live && h.market_open && el("span", { class: "badge", text: "Live" }),

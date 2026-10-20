@@ -564,3 +564,11 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   html { touch-action: manipulation; }
   input, select, textarea { font-size: 16px; }
 }
+
+/* Phone: a position's name gets the full row, its figures sit under it, and the long notes are smaller. */
+@media (max-width: 600px) {
+  .row.holding { flex-wrap: wrap; row-gap: 4px; }
+  .row.holding .grow { flex: 1 1 100%; }
+  .row.holding .amount { flex: 1 1 100%; text-align: left; }
+  .inv-note { font-size: .85rem; }
+}
