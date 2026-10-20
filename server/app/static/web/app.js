@@ -483,7 +483,16 @@
 
   function openSheet(...content) {
     const sheet = $("sheet");
-    sheet.replaceChildren(...content.flat(Infinity).filter((node) => node != null && node !== false));
+    const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
+    // A trailing button row (Close, Save...) is pinned under the scrolling part, so on a phone it
+    // never has to be scrolled to.
+    const last = nodes[nodes.length - 1];
+    if (nodes.length > 1 && last.classList && last.classList.contains("actions")) {
+      nodes.pop();
+      sheet.replaceChildren(el("div", { class: "sheet-body" }, ...nodes), last);
+    } else {
+      sheet.replaceChildren(...nodes);
+    }
     if (!sheet.open) sheet.showModal();
     return sheet;
   }

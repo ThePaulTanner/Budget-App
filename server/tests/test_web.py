@@ -202,3 +202,10 @@ def test_sign_in_page_layout_two_boxes_and_face_id_below_sign_in():
     sign_in, face = html.index('id="password-submit"'), html.index('id="passkey-login"')
     assert outer < inner < sign_in < face  # the Face ID button follows the Sign in button, outside the inner box
     assert html.index("</div>", sign_in) < face
+
+
+def test_sheet_buttons_stay_pinned_below_the_scrolling_part():
+    js = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    assert "sheet-body" in js
+    assert "dialog#sheet .sheet-body" in css and "overflow-y: auto" in css
