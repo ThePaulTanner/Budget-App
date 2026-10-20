@@ -99,7 +99,8 @@ def test_upgrading_the_database_keeps_a_copy_first(tmp_path):
     old.run("INSERT INTO budgets(category, monthly_limit) VALUES ('FOOD', '100')")
     for column in ("kind", "active_at", "expires_at"):
         old.run(f"ALTER TABLE sessions DROP COLUMN {column}")  # what the last layout change added
-    old.run("PRAGMA user_version = 12")  # looks like the previous release
+    old.run("ALTER TABLE networth DROP COLUMN estimated")  # and the one before it
+    old.run("PRAGMA user_version = 12")  # looks like an older release
     old.close()
     upgraded = Database(path, key)  # the migrations run on open
     copies = list_backups(upgraded)

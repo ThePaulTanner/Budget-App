@@ -44,6 +44,7 @@ QUOTE_TTL = 120.0  # while the market is moving (Yahoo is up to 15 minutes behin
 CLOSED_QUOTE_TTL = 600.0  # the last price is older than FRESH_SECONDS: nothing is changing
 HISTORY_TTL = 6 * 3600.0  # daily closes only change once a day
 HISTORY_PER_LOOKUP = 3  # new price histories fetched per look, so a first load trickles in instead of bursting
+LONG_TTL = 12 * 3600.0  # past closes do not change, so a long history is kept for hours
 UNKNOWN_TTL = 3600.0  # remember that a ticker was not found, so it is not retried every minute
 COOLDOWN = 300.0  # after Yahoo throttles or fails, leave it alone for this long
 MAX_COOLDOWN = 1800.0  # repeated failures double the rest, up to this
@@ -84,7 +85,7 @@ Bars = list[tuple[date, Decimal]]  # daily closes, oldest first
 class Provider(Protocol):
     def quote(self, symbol: str) -> Quote: ...
 
-    def history(self, symbol: str) -> Bars: ...
+    def history(self, symbol: str, range_: str = "1y") -> Bars: ...
 
 
 def _dec(value: Any) -> Decimal | None:
@@ -203,8 +204,8 @@ class YahooProvider:
             previous_close=_dec(meta.get("chartPreviousClose")) or _dec(meta.get("previousClose")),
         )
 
-    def history(self, symbol: str) -> Bars:
-        result = self._chart(symbol, "1y")
+    def history(self, symbol: str, range_: str = "1y") -> Bars:
+        result = self._chart(symbol, range_)
         offset = int(result["meta"].get("gmtoffset") or 0)
         closes = ((result.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
         bars: Bars = []
@@ -310,9 +311,49 @@ class QuoteService:
         self._why: dict[Wanted, str] = {}
         self._quotes: dict[str, tuple[float, Quote]] = {}
         self._bars: dict[str, tuple[float, Bars]] = {}
+        self._long: dict[tuple[str, str], tuple[float, Bars]] = {}
         self._cooldown_until = 0.0
         self._failures = 0  # in a row: each one doubles the rest, a success resets it
         self._last_error: str | None = None
+
+    def long_closes(self, symbol: str, range_: str) -> Bars:
+        """Daily closes over a long span (net worth history). Kept for hours, since past closes do not change."""
+        key = (symbol, range_)
+        now = self.clock()
+        with self._lock:
+            cached = self._long.get(key)
+        if cached is not None and now - cached[0] < LONG_TTL:
+            return cached[1]
+        bars = self.provider.history(symbol, range_)
+        with self._lock:
+            self._long[key] = (now, bars)
+        return bars
+
+    def daily_closes(self, wanted: Wanted, range_: str) -> Bars:
+        """Daily closes for a position's security, found the way live prices are. Empty if Yahoo has no
+        symbol for it in the position's currency. A Yahoo that cannot be reached raises QuoteError."""
+        now = self.clock()
+        with self._lock:
+            known = self._symbols.get(wanted)
+        symbol = known[1] if known is not None else None
+        if symbol is None:
+            if known is not None and now - known[0] < UNKNOWN_TTL:
+                return []
+            for candidate in candidates(wanted.ticker, wanted.mic, wanted.currency):
+                try:
+                    quote = self.provider.quote(candidate)
+                except QuoteError as exc:
+                    if exc.kind == "unavailable":
+                        raise
+                    continue
+                if quote.currency and quote.currency.upper() == wanted.currency.upper():
+                    symbol = candidate
+                    break
+            with self._lock:
+                self._symbols[wanted] = (now, symbol)
+            if symbol is None:
+                return []
+        return self.long_closes(symbol, range_)
 
     def _quote_fresh(self, symbol: str, now: float) -> bool:
         cached = self._quotes.get(symbol)

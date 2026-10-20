@@ -256,3 +256,9 @@ def test_overview_cards_show_what_is_owed_so_rows_add_up_to_the_total():
     summary = js[js.index("function paymentsSummary"):js.index("// Every account and its balance")]
     assert "money(c.current_balance, c.currency)" in summary and "Balance owed" in summary
     assert "c.statement_balance ?? c.current_balance" not in summary
+
+def test_net_worth_chart_fades_the_estimated_days_and_says_so():
+    js = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    assert "r.estimated" in js and "estimates, worked back from your transactions" in js
+    assert ".chart .line.estimated" in css

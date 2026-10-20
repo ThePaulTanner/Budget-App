@@ -42,6 +42,7 @@ def build_services(
         plaid = PlaidClient(
             settings.plaid_client_id, settings.plaid_secret, settings.plaid_url
         )
+    market = quotes if quotes is not None else (QuoteService(YahooProvider()) if settings.live_quotes else None)
     return Services(
         settings=settings,
         keys=keys,
@@ -54,7 +55,7 @@ def build_services(
             web_max_seconds=settings.web_max_hours * 3600,
         ),
         plaid=plaid,
-        sync=SyncManager(db, keys, plaid, settings),
+        sync=SyncManager(db, keys, plaid, settings, quotes=market),
         backups=BackupScheduler(db),
-        quotes=quotes if quotes is not None else (QuoteService(YahooProvider()) if settings.live_quotes else None),
+        quotes=market,
     )

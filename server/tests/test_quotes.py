@@ -67,7 +67,7 @@ class FakeProvider:
             raise QuoteError("unknown", "symbol not found")
         return live_quote(symbol, self.price, self.currency)
 
-    def history(self, symbol):
+    def history(self, symbol, range_="1y"):
         self.history_calls.append(symbol)
         if self.fail is not None:
             raise self.fail

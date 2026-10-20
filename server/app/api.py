@@ -41,7 +41,8 @@ from .rules import (
     parent_category,
     split_category,
 )
-from .sync import MARKET_CURRENCY, PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
+from .positions import bank_price_and_value, effective_currency
+from .sync import PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
 from .transfers import match_transfers
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -298,25 +299,6 @@ def account_json(row: Any, institution: str | None, owner_ids: list[int] | None 
     }
 
 
-def bank_price_and_value(row: Any) -> tuple[Decimal | None, Decimal | None]:
-    """The bank's (price, value) for a holding, with anything unusable treated as missing.
-    Some banks send 0 as the price or value of a position they cannot price. That is not a real
-    $0, and would show the position as worthless. Each is judged on its own: a missing price
-    stays missing, and a missing value is worked out from the quantity and a good price."""
-    price = None if row["price"] is None else Decimal(row["price"])
-    value = None if row["value"] is None else Decimal(row["value"])
-    quantity = None if row["quantity"] is None else Decimal(row["quantity"])
-    if quantity is None or quantity <= 0:
-        return price, value
-    if price is not None and price <= 0:
-        price = None
-    if value is not None and value <= 0:
-        value = None
-    if value is None and price is not None:
-        value = (quantity * price).quantize(Decimal("0.01"), ROUND_HALF_UP)
-    return price, value
-
-
 def rule_json(row: Any) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -338,20 +320,6 @@ def ineligible_note(row) -> str | None:
     if (row["type"] or "").lower() not in LIVE_TYPES:
         return f"the bank lists it as type '{row['type'] or 'unknown'}', which is not priced live"
     return None
-
-
-def effective_currency(row) -> str:
-    """The currency to treat a position as being in. A bank that sends no price and no value for a
-    position gives nothing to check its currency label against (some banks label everything with the
-    account's currency), so a position on a market with one currency, such as Nasdaq, is taken to be
-    in that currency. It is applied when a position is read, not stored: once a bank does send a price,
-    the bank's label is checkable again and is used as it is."""
-    price, value = bank_price_and_value(row)
-    if price is None and value is None:
-        implied = MARKET_CURRENCY.get((row["mic"] or "").upper())
-        if implied:
-            return implied
-    return row["currency"]
 
 
 def create_api_app(services: Services) -> FastAPI:
@@ -1473,6 +1441,7 @@ def create_api_app(services: Services) -> FastAPI:
                 "liabilities": num(r["liabilities"]),
                 "investments": num(r["investments"]),
                 "net_worth": num(r["net_worth"]),
+                "estimated": bool(r["estimated"]),
             }
             for r in rows
         ]
@@ -1512,7 +1481,7 @@ def create_api_app(services: Services) -> FastAPI:
     @app.post("/api/sync")
     def sync(ctx: Auth):
         try:
-            return services.sync.sync_items(blocking=False)
+            return services.sync.sync_items(blocking=False, force_history=True)
         except SyncBusy:
             raise HTTPException(409, "A sync is already running") from None
         except PlaidNotConfigured:
