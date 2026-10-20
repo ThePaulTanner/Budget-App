@@ -115,7 +115,6 @@ class YahooProvider:
         self._next_slot = 0.0
         self._host = 0  # index into YAHOO_HOSTS of the one that last worked
         self.connection = "browser-style connection" if self._browser else "plain connection"
-        self._last_reply = ""  # what Yahoo said the last time it refused, for the message shown to you
 
     def _pace(self) -> None:
         """Hand out request slots at least `spacing` seconds apart, whichever thread asks."""
@@ -128,8 +127,9 @@ class YahooProvider:
         if slot > now:
             time.sleep(slot - now)
 
-    def _get(self, symbol: str, range_: str) -> Any:
-        """Ask one host, and on a 429 ask the other once; remember the one that answered."""
+    def _get(self, symbol: str, range_: str) -> tuple[Any, str]:
+        """Ask one host, and on a 429 ask the other once; remember the one that answered. Returns the response and,
+        when both refused, what they said (kept per call, so threads cannot swap each other's text)."""
         response: Any = None
         refused: list[str] = []
         for step in range(len(YAHOO_HOSTS)):
@@ -148,14 +148,14 @@ class YahooProvider:
                 raise QuoteError("unavailable", f"could not reach Yahoo Finance ({type(exc).__name__})") from None
             if response.status_code != 429:
                 self._host = index
-                return response
+                return response, ""
             refused.append(YAHOO_HOSTS[index].split(".")[0])
         reply = "".join(ch for ch in str(getattr(response, "text", ""))[:80] if ch.isprintable()).strip()
-        self._last_reply = f" on {' and '.join(refused)} ({self.connection}); Yahoo said: {reply!r}" if reply else f" on {' and '.join(refused)} ({self.connection})"
-        return response
+        said = f"; Yahoo said: {reply!r}" if reply else ""
+        return response, f" on {' and '.join(refused)} ({self.connection}){said}"
 
     def _chart(self, symbol: str, range_: str) -> dict[str, Any]:
-        response = self._get(symbol, range_)
+        response, refusal = self._get(symbol, range_)
         if response.status_code == 404:
             raise QuoteError("unknown", "symbol not found")
         if response.status_code == 429:
@@ -164,7 +164,7 @@ class YahooProvider:
             except ValueError:
                 asked = float("nan")
             wait = min(asked, MAX_COOLDOWN) if math.isfinite(asked) and asked > 0 else None  # "nan", "-5" and dates are ignored
-            raise QuoteError("unavailable", f"Yahoo Finance answered 429 (too many requests){self._last_reply}", retry_after=wait)
+            raise QuoteError("unavailable", f"Yahoo Finance answered 429 (too many requests){refusal}", retry_after=wait)
         if response.status_code != 200:
             raise QuoteError("unavailable", f"Yahoo Finance answered {response.status_code}")
         try:

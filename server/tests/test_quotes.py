@@ -673,6 +673,7 @@ def test_double_429_message_says_where_and_what_yahoo_said():
 
 
 def test_default_connection_looks_like_a_browser_when_curl_cffi_is_there(monkeypatch):
+    pytest.importorskip("curl_cffi")
     provider = q.YahooProvider()
     assert provider.connection == "browser-style connection" and provider._browser is True
     monkeypatch.setattr(q, "curl_requests", None)  # not installed, or its native part will not load
@@ -695,3 +696,13 @@ def test_a_browser_connection_does_not_send_its_own_user_agent():
     provider._browser = False
     provider.quote("XIU.TO")
     assert "User-Agent" in sent[1]
+
+
+def test_a_curl_connection_error_becomes_a_quiet_unavailable():
+    class Broken:
+        def get(self, url, params=None, headers=None):
+            raise q.CurlError("could not connect")
+
+    with pytest.raises(QuoteError) as caught:
+        q.YahooProvider(Broken(), spacing=0).quote("XIU.TO")
+    assert caught.value.kind == "unavailable" and "could not reach Yahoo Finance" in str(caught.value)
