@@ -2721,7 +2721,10 @@
   };
   const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
 
-  // The reconnect banner comes from the banks list, on every screen.
+  const menuButton = $("menu-button");
+  const menuList = $("menu-list");
+
+  // The reconnect count comes from the banks list, on every screen.
   async function refreshStatus() {
     try {
       const items = await api("/api/items");
@@ -2746,12 +2749,20 @@
     } catch (_) { /* the badge is only a convenience */ }
   }
 
+  // Banks that need reconnecting show as a count on the cog (and on its Settings entry), which
+  // opens the banks tab. There is no banner across the top.
   function setBanner(institutions) {
-    const banner = $("banner");
-    if (!institutions || institutions.length === 0) { banner.hidden = true; return; }
-    banner.replaceChildren(`${institutions.join(", ")} needs to be reconnected. `,
-      el("a", { href: "#/settings?tab=banks", text: "Reconnect it in Settings" }));
-    banner.hidden = false;
+    const count = institutions ? institutions.length : 0;
+    const names = count ? `${institutions.join(", ")} ${count === 1 ? "needs" : "need"} to be reconnected` : "";
+    for (const id of ["menu-count", "menu-item-count"]) {
+      const badge = $(id);
+      badge.hidden = count === 0;
+      badge.textContent = String(count);
+      badge.title = names;
+    }
+    menuButton.title = count ? `Settings and sign out \u2014 ${names}` : "Settings and sign out";
+    menuButton.setAttribute("aria-label", count ? `Settings and sign out. ${names}` : "Settings and sign out");
+    $("menu-list").querySelector("[data-tab=settings]").setAttribute("href", count ? "#/settings?tab=banks" : "#/settings");
   }
 
   async function route() {
@@ -2798,7 +2809,7 @@
     $("login").hidden = false;
     $("login-message").textContent = message;
     view().replaceChildren();
-    $("banner").hidden = true;
+    setBanner([]);
     $("alert").hidden = true;
     const user = document.querySelector("#login-form [name=username]");
     if (user) user.focus();
@@ -2869,8 +2880,6 @@
 
   for (const button of document.querySelectorAll(".refresh-btn")) button.addEventListener("click", route);
   // The cog opens a small menu: Settings and Sign out.
-  const menuButton = $("menu-button");
-  const menuList = $("menu-list");
   function setMenu(open) {
     menuList.hidden = !open;
     menuButton.setAttribute("aria-expanded", String(open));

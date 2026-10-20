@@ -209,3 +209,10 @@ def test_sheet_buttons_stay_pinned_below_the_scrolling_part():
     css = (WEB_DIR / "app.css").read_text()
     assert "sheet-body" in js
     assert "dialog#sheet .sheet-body" in css and "overflow-y: auto" in css
+
+
+def test_reconnect_notice_is_a_count_on_the_cog_not_a_banner():
+    html = (WEB_DIR / "index.html").read_text()
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'id="banner"' not in html and "Reconnect it in Settings" not in js
+    assert 'id="menu-count"' in html and "tab=banks" in js
