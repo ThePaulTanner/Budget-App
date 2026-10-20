@@ -20,6 +20,9 @@ class FakeQuotes:
     def __init__(self, bars=None, fx=None, fail=None):
         self.bars, self.fx, self.fail = bars or {}, fx or {}, fail
 
+    def resting(self):
+        return False
+
     def daily_closes(self, wanted, range_):
         if self.fail:
             raise self.fail
@@ -179,10 +182,14 @@ def test_a_sync_rebuilds_history_at_most_every_few_hours_unless_you_press_sync_n
     plaid.accounts, plaid.pages = ACCOUNTS, [page()]
     calls = []
     monkeypatch.setattr("app.history.rebuild_networth_history", lambda db, quotes: calls.append(1) or 0)
-    services.sync.sync_items(blocking=True)
-    services.sync.sync_items(blocking=True)
+    def sync(**kwargs):
+        services.sync.sync_items(blocking=True, **kwargs)
+        services.sync._history_thread.join()  # it runs in the background
+
+    sync()
+    sync()
     assert len(calls) == 1  # the second sync is within the few hours
-    services.sync.sync_items(blocking=True, force_history=True)
+    sync(force_history=True)
     assert len(calls) == 2
 
 
@@ -197,4 +204,57 @@ def test_a_failure_while_rebuilding_history_never_fails_the_sync(services, plaid
 
     monkeypatch.setattr("app.history.rebuild_networth_history", boom)
     results = services.sync.sync_items(blocking=True)
+    services.sync._history_thread.join()
     assert results[0]["ok"] is True
+
+
+def test_a_failed_rebuild_is_retried_soon_not_in_six_hours(services, plaid, monkeypatch):
+    import time
+
+    from tests.test_sync import ACCOUNTS, add_item, page
+
+    add_item(services)
+    plaid.accounts, plaid.pages = ACCOUNTS, [page()]
+
+    def waiting(db, quotes):
+        raise Unavailable("Yahoo is resting")
+
+    monkeypatch.setattr("app.history.rebuild_networth_history", waiting)
+    services.sync.sync_items(blocking=True)
+    services.sync._history_thread.join()
+    assert 0 < services.sync._history_next - time.time() <= 15 * 60 + 1
+
+
+def test_the_rebuild_does_not_ask_yahoo_while_live_prices_are_resting(db):
+    account(db, "chq", "depository", 1000)
+    tx(db, "t1", "chq", "2026-10-08", 100)
+
+    class Resting(FakeQuotes):
+        def resting(self):
+            return True
+
+    with pytest.raises(Unavailable):
+        rebuild_networth_history(db, Resting(), today=TODAY)
+
+
+def test_a_reconstruction_far_from_the_banks_balance_is_left_unscaled(db):
+    account(db, "inv", "investment", 5000)  # the bank says 5000, the positions at Yahoo's prices come to 490
+    db.run(
+        "INSERT INTO holdings(account_id, security_id, name, ticker, mic, type, quantity, price, value, currency, updated_at) "
+        "VALUES ('inv','sec_a','AAA','AAA','XTSE','etf','10','50','5000','CAD','x')"
+    )
+    db.run(
+        "INSERT INTO investment_transactions(id, account_id, security_id, date, name, type, quantity, amount, currency, updated_at) "
+        "VALUES ('b1','inv','sec_a','2026-10-06','Buy','buy','5','200','CAD','x')"
+    )
+    closes = bars([(f"2026-10-{n:02d}", 40 + n - 1) for n in range(1, 11)])
+    rebuild_networth_history(db, FakeQuotes(bars={"AAA": closes}), today=TODAY)
+    assert Decimal(row(db, "2026-10-05")["investments"]) == Decimal("220.00")  # 5 x 44, not scaled up by 10
+
+
+def test_a_person_with_no_accounts_gets_no_history_and_nothing_breaks(db):
+    account(db, "chq", "depository", 1000)
+    tx(db, "t1", "chq", "2026-10-08", 100)
+    db.run("INSERT INTO people(id, name, created_at) VALUES (1,'Sam','x')")
+    rebuild_networth_history(db, None, today=TODAY)
+    assert row(db, "2026-10-07") is not None and row(db, "2026-10-07", person=1) is None

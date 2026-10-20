@@ -316,6 +316,10 @@ class QuoteService:
         self._failures = 0  # in a row: each one doubles the rest, a success resets it
         self._last_error: str | None = None
 
+    def resting(self) -> bool:
+        """True while live prices are being given a rest after an error, so other work should not ask Yahoo either."""
+        return self.clock() < self._cooldown_until
+
     def long_closes(self, symbol: str, range_: str) -> Bars:
         """Daily closes over a long span (net worth history). Kept for hours, since past closes do not change."""
         key = (symbol, range_)

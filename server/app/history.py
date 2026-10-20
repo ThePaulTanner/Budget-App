@@ -100,6 +100,10 @@ def investment_series(
         "SELECT security_id, date, type, quantity, amount FROM investment_transactions WHERE account_id=?", (account["id"],)
     )
     cash_flow = _after_sums(_sum_by_date([(t["date"], Decimal(t["amount"])) for t in txns]), days)
+    by_security: dict[str, list[tuple[str, Decimal]]] = defaultdict(list)
+    for t in txns:
+        if t["quantity"]:
+            by_security[t["security_id"]].append((t["date"], Decimal(t["quantity"])))
     account_currency = account["currency"]
     fx_cache: dict[str, Closes | None] = {}
 
@@ -128,10 +132,7 @@ def investment_series(
             amounts = {day: quantity_now + cash_flow[day] for day in days}  # cash is one unit = one dollar
             closes = None
         else:
-            moved = _after_sums(
-                _sum_by_date([(t["date"], Decimal(t["quantity"])) for t in txns if t["security_id"] == h["security_id"] and t["quantity"]]),
-                days,
-            )
+            moved = _after_sums(_sum_by_date(by_security.get(h["security_id"], [])), days)
             amounts = {day: quantity_now - moved[day] for day in days}
             closes = None
             if quotes is not None and h["ticker"]:
@@ -158,6 +159,7 @@ def investment_series(
         k = bank_today / total[today]
         if SCALE_LIMITS[0] <= k <= SCALE_LIMITS[1]:
             return {day: value * k for day, value in total.items()}
+        log.info("Net worth history for an investment account is %.0f%% of the bank's balance today; left unscaled", k * 100)
     return total
 
 
@@ -166,6 +168,8 @@ def rebuild_networth_history(db: Database, quotes: QuoteService | None, today: d
 
     Raises Unavailable when prices cannot be had now; nothing is changed then, so the last good estimate stays."""
     today = today or date.fromisoformat(today_str())
+    if quotes is not None and quotes.resting():
+        raise Unavailable("market data is resting after an error")
     accounts = [a for a in db.query("SELECT id, type, currency, current_balance FROM accounts WHERE hidden=0") if a["current_balance"] is not None]
     if not accounts:
         return 0
