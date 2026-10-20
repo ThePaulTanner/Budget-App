@@ -242,7 +242,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .confirm-mark.danger { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
 .confirm-mark { width: 52px; height: 52px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem; font-weight: 800; background: var(--amber-bg); color: var(--amber-text); }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 18px; border-radius: 99px; z-index: 40; max-width: 90vw; box-shadow: var(--shadow); }
-#toast.error { background: #b91c1c; color: #fff; }
+#toast.error { background: var(--red); color: #fff; }
 .cover { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: grid; place-items: center; font-size: 1.6rem; font-weight: 700; }
 
 #tabs .lbl-short { display: none; }
