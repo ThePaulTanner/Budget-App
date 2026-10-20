@@ -357,7 +357,7 @@ class QuoteService:
             with self._lock:
                 self._symbols[wanted] = (now, symbol)
                 if symbol is None:
-                    self._why[wanted] = "; ".join(reasons) or "no symbol to look up"
+                    self._why[wanted] = ("; ".join(reasons) or "no symbol to look up") + f" (bank says: market {wanted.mic or 'not given'}, {wanted.currency})"
                 else:
                     self._why.pop(wanted, None)
             if symbol is None:

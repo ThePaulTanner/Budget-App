@@ -715,4 +715,12 @@ def test_a_position_without_a_price_says_why():
     result = QuoteService(provider, Clock()).lookup([w])
     assert "priced in USD" in result.why[w] and "holds it in" in result.why[w]
     missing = QuoteService(FakeProvider(known=()), Clock()).lookup([w])
-    assert missing.why[w].startswith("Yahoo has no")
+    assert missing.why[w].startswith("Yahoo has no") and "bank says: market" in missing.why[w]
+
+
+def test_ineligible_positions_say_why():
+    from app.api import ineligible_note
+    assert "no ticker" in ineligible_note({"ticker": None, "type": "etf"})
+    assert "'derivative'" in ineligible_note({"ticker": "TQQQ", "type": "derivative"})
+    assert ineligible_note({"ticker": "TQQQ", "type": "ETF"}) is None
+    assert ineligible_note({"ticker": None, "type": "cash"}) is None
