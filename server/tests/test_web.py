@@ -244,3 +244,8 @@ def test_spending_summary_lives_on_the_spending_page_not_the_overview():
 def test_phone_filters_sit_two_to_a_line_under_the_search_box():
     css = (WEB_DIR / "app.css").read_text()
     assert ".toolbar select { flex-basis: calc(50% - 8px); }" in css
+
+
+def test_desktop_spending_tabs_and_positions_are_tidy():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".row.holding .amount { display: flex;" in css
