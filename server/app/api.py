@@ -41,7 +41,7 @@ from .rules import (
     parent_category,
     split_category,
 )
-from .sync import PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
+from .sync import MARKET_CURRENCY, PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
 from .transfers import match_transfers
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -338,6 +338,20 @@ def ineligible_note(row) -> str | None:
     if (row["type"] or "").lower() not in LIVE_TYPES:
         return f"the bank lists it as type '{row['type'] or 'unknown'}', which is not priced live"
     return None
+
+
+def effective_currency(row) -> str:
+    """The currency to treat a position as being in. A bank that sends no price and no value for a
+    position gives nothing to check its currency label against (some banks label everything with the
+    account's currency), so a position on a market with one currency, such as Nasdaq, is taken to be
+    in that currency. It is applied when a position is read, not stored: once a bank does send a price,
+    the bank's label is checkable again and is used as it is."""
+    price, value = bank_price_and_value(row)
+    if price is None and value is None:
+        implied = MARKET_CURRENCY.get((row["mic"] or "").upper())
+        if implied:
+            return implied
+    return row["currency"]
 
 
 def create_api_app(services: Services) -> FastAPI:
@@ -1174,8 +1188,9 @@ def create_api_app(services: Services) -> FastAPI:
         for r in rows:
             price, value = bank_price_and_value(r)
             cost = Decimal(r["cost_basis"]) if r["cost_basis"] is not None else None
+            cur = effective_currency(r)
             if value is not None:
-                totals[r["currency"]] = totals.get(r["currency"], Decimal(0)) + value
+                totals[cur] = totals.get(cur, Decimal(0)) + value
             out.append(
                 {
                     "account_id": r["account_id"],
@@ -1190,7 +1205,7 @@ def create_api_app(services: Services) -> FastAPI:
                     "value": num(value),
                     "cost_basis": num(cost),
                     "gain": num(value - cost) if value is not None and cost is not None else None,
-                    "currency": r["currency"],
+                    "currency": cur,
                 }
             )
         return {"totals": {c: num(v) for c, v in sorted(totals.items())}, "holdings": out}
@@ -1210,7 +1225,7 @@ def create_api_app(services: Services) -> FastAPI:
         )
         service = services.quotes
         wanted = {
-            r["security_id"]: Wanted(r["ticker"], r["mic"], r["currency"])
+            r["security_id"]: Wanted(r["ticker"], r["mic"], effective_currency(r))
             for r in rows
             if r["ticker"] and (r["type"] or "").lower() in LIVE_TYPES and r["quantity"] is not None
         }
@@ -1219,6 +1234,7 @@ def create_api_app(services: Services) -> FastAPI:
         cent, pct = Decimal("0.01"), Decimal("0.01")
         out, totals = [], {}
         for r in rows:
+            cur = effective_currency(r)
             qty = Decimal(r["quantity"]) if r["quantity"] is not None else None
             price, plaid_value = bank_price_and_value(r)
             cost = Decimal(r["cost_basis"]) if r["cost_basis"] is not None else None
@@ -1234,15 +1250,18 @@ def create_api_app(services: Services) -> FastAPI:
                             "percent": ((price / ref - 1) * 100).quantize(pct, ROUND_HALF_UP),
                             "_then": qty * ref,
                         }
-            bucket = totals.setdefault(r["currency"], {"value": Decimal(0), "periods": {p: [Decimal(0), Decimal(0), 0] for p in PERIODS}})
-            if value is not None:
-                bucket["value"] += value
-            for period, change in changes.items():
-                if change is not None:
-                    acc = bucket["periods"][period]
-                    acc[0] += change["amount"]
-                    acc[1] += change["_then"]
-                    acc[2] += 1
+            # A position whose currency was changed by effective_currency and that has no value yet starts no total
+            # of its own, so no empty USD total appears. Any other position keeps its (possibly zero) total.
+            if value is not None or cur == r["currency"]:
+                bucket = totals.setdefault(cur, {"value": Decimal(0), "periods": {p: [Decimal(0), Decimal(0), 0] for p in PERIODS}})
+                if value is not None:
+                    bucket["value"] += value
+                for period, change in changes.items():
+                    if change is not None:
+                        acc = bucket["periods"][period]
+                        acc[0] += change["amount"]
+                        acc[1] += change["_then"]
+                        acc[2] += 1
             out.append(
                 {
                     "account_id": r["account_id"],
@@ -1257,7 +1276,7 @@ def create_api_app(services: Services) -> FastAPI:
                     "value": num(value),
                     "cost_basis": num(cost),
                     "gain": num(value - cost) if value is not None and cost is not None else None,
-                    "currency": r["currency"],
+                    "currency": cur,
                     "live": live is not None,
                     "symbol": live.symbol if live is not None else None,
                     "live_note": (
