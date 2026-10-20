@@ -107,7 +107,7 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .checkline { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 6px 0; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
 .toolbar input, .toolbar select { width: auto; flex: 1 1 160px; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
-@media (max-width: 600px) { .toolbar input, .toolbar select { flex-basis: 100%; } }
+@media (max-width: 600px) { .toolbar input { flex-basis: 100%; } .toolbar select { flex-basis: calc(50% - 8px); } }  /* search on its own line, filters two to a line */
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
 .seg.wide { max-width: 100%; overflow-x: auto; }
@@ -595,3 +595,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 #subtabs .seg { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
 #subtabs .seg::-webkit-scrollbar { display: none; }
 #subtabs .seg button { flex: 1 0 auto; white-space: nowrap; }
+
+/* Phone: smaller table headings so a heading like "Statement balance" doesn't crowd the figures. */
+@media (max-width: 600px) { .money-table th { font-size: .66rem; letter-spacing: .02em; } }
