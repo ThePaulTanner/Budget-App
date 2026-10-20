@@ -249,3 +249,10 @@ def test_phone_filters_sit_two_to_a_line_under_the_search_box():
 def test_desktop_spending_tabs_and_positions_are_tidy():
     css = (WEB_DIR / "app.css").read_text()
     assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".row.holding .amount { display: flex;" in css
+
+
+def test_overview_cards_show_what_is_owed_so_rows_add_up_to_the_total():
+    js = (WEB_DIR / "app.js").read_text()
+    summary = js[js.index("function paymentsSummary"):js.index("// Every account and its balance")]
+    assert "money(c.current_balance, c.currency)" in summary and "Balance owed" in summary
+    assert "c.statement_balance ?? c.current_balance" not in summary

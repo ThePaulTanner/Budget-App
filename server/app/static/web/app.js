@@ -805,27 +805,33 @@
   function paymentsSummary(data) {
     if (!data || data.cards.length === 0) return document.createDocumentFragment();  // nothing to show, and nothing printed
     const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    // One line per card: what is owed now on the right (these add up to "Balance owed" above), and on the left
+    // what to pay and by when. The minimum payment lives on the Money Management page.
+    const toPay = (c) => {
+      if (c.status === "nothing_owed" || c.status === "paid") return null;  // the pill already says so
+      if (c.statement_balance == null || c.due_date == null) return "No due date from your bank";
+      const when = c.days_until_due < 0 ? `was due ${shortDate(c.due_date)}` : `by ${shortDate(c.due_date)}`;
+      return `Pay ${money(c.statement_balance, c.currency)} ${when}`;
+    };
     return el("section", { class: "card" },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg("i-card", 22)),
-        el("div", { class: "grow" }, el("h2", { text: "Credit card payments" }),
+        el("div", { class: "grow" }, el("h2", { text: "Credit cards" }),
           el("div", { class: "muted", text: `${data.cards.length} card${data.cards.length === 1 ? "" : "s"}` })),
         el("a", { href: "#/money", text: "Details" })),
       Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
-        stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
-        stat("Minimum payments", money(t.minimum_due, cur)),
-        stat("Total owed on cards", money(t.owed, cur)))),
+        stat(`Balance owed (${cur})`, money(t.owed, cur)),
+        stat("Statements to pay", money(t.statement_due, cur)))),
       data.cards.map((c) => {
         const [label, tone] = DUE_PILLS[c.status];
         return el("a", { class: "row click", href: "#/money" },
           el("div", { class: "grow" },
             el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
               el("span", { class: `pill ${tone}`, text: label })),
-            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
-          el("div", { class: "amount" }, money(c.statement_balance ?? c.current_balance, c.currency),
-            el("div", { class: "muted", text: c.minimum_payment != null ? `minimum ${money(c.minimum_payment, c.currency)}` : c.statement_balance == null ? "balance" : "statement" })));
+            toPay(c) && el("div", { class: c.status === "overdue" ? "error" : "muted", text: toPay(c) })),
+          el("div", { class: "amount" }, money(c.current_balance, c.currency)));
       }),
-      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet, so these are the balances now." }));
+      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet." }));
   }
 
   // Every account and its balance, by kind, with each bank's logo.
