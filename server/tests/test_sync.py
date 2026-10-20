@@ -288,3 +288,6 @@ def test_a_us_listing_the_bank_cannot_price_is_shown_in_usd_even_if_labelled_cad
     assert by_ticker["TQQQ"]["currency"] == "USD" and by_ticker["VEQT"]["currency"] == "CAD"
     live = {h["ticker"]: h for h in client.get("/api/holdings/live", headers=auth).json()["holdings"]}
     assert live["TQQQ"]["currency"] == "USD" and live["VEQT"]["currency"] == "CAD"
+    # the unpriced position starts no USD total of its own
+    assert list(client.get("/api/holdings/live", headers=auth).json()["totals"]) == ["CAD"]
+    assert client.get("/api/holdings", headers=auth).json()["totals"] == {"CAD": 470.0}

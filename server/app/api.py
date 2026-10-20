@@ -1249,15 +1249,18 @@ def create_api_app(services: Services) -> FastAPI:
                             "percent": ((price / ref - 1) * 100).quantize(pct, ROUND_HALF_UP),
                             "_then": qty * ref,
                         }
-            bucket = totals.setdefault(cur, {"value": Decimal(0), "periods": {p: [Decimal(0), Decimal(0), 0] for p in PERIODS}})
-            if value is not None:
-                bucket["value"] += value
-            for period, change in changes.items():
-                if change is not None:
-                    acc = bucket["periods"][period]
-                    acc[0] += change["amount"]
-                    acc[1] += change["_then"]
-                    acc[2] += 1
+            # A position whose currency was changed by effective_currency and that has no value yet starts no total
+            # of its own, so no empty USD total appears. Any other position keeps its (possibly zero) total.
+            if value is not None or cur == r["currency"]:
+                bucket = totals.setdefault(cur, {"value": Decimal(0), "periods": {p: [Decimal(0), Decimal(0), 0] for p in PERIODS}})
+                if value is not None:
+                    bucket["value"] += value
+                for period, change in changes.items():
+                    if change is not None:
+                        acc = bucket["periods"][period]
+                        acc[0] += change["amount"]
+                        acc[1] += change["_then"]
+                        acc[2] += 1
             out.append(
                 {
                     "account_id": r["account_id"],
