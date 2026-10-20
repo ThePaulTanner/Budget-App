@@ -284,6 +284,7 @@ def test_a_us_listing_the_bank_cannot_price_is_shown_in_usd_even_if_labelled_cad
       {"account_id":"acc_tfsa","security_id":"s2","quantity":10,"institution_price":47.0,
        "institution_value":470.0,"cost_basis":null,"iso_currency_code":"CAD"}]}""")
     run(services, item)
+    services.quotes = None  # no live prices here: the test must not depend on reaching Yahoo
     by_ticker = {h["ticker"]: h for h in client.get("/api/holdings", headers=auth).json()["holdings"]}
     assert by_ticker["TQQQ"]["currency"] == "USD" and by_ticker["VEQT"]["currency"] == "CAD"
     live = {h["ticker"]: h for h in client.get("/api/holdings/live", headers=auth).json()["holdings"]}
