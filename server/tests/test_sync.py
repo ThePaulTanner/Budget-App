@@ -269,3 +269,22 @@ def test_a_us_etf_with_no_bank_currency_is_not_labelled_in_the_base_currency(ser
     run(services, item)
     row = services.db.one("SELECT currency FROM holdings WHERE ticker='TQQQ'")
     assert row["currency"] == "USD"
+
+
+def test_a_us_listing_the_bank_cannot_price_is_shown_in_usd_even_if_labelled_cad(services, plaid, client, auth):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page()]
+    plaid.holdings = pj("""{"accounts":[],"securities":[
+      {"security_id":"s1","name":"ProShares UltraPro QQQ","ticker_symbol":"TQQQ","type":"etf","market_identifier_code":"XNAS"},
+      {"security_id":"s2","name":"Vanguard All-Equity ETF Portfolio","ticker_symbol":"VEQT","type":"etf","market_identifier_code":"XTSE"}],
+     "holdings":[
+      {"account_id":"acc_tfsa","security_id":"s1","quantity":21.1279,"institution_price":null,
+       "institution_value":null,"cost_basis":null,"iso_currency_code":"CAD"},
+      {"account_id":"acc_tfsa","security_id":"s2","quantity":10,"institution_price":47.0,
+       "institution_value":470.0,"cost_basis":null,"iso_currency_code":"CAD"}]}""")
+    run(services, item)
+    by_ticker = {h["ticker"]: h for h in client.get("/api/holdings", headers=auth).json()["holdings"]}
+    assert by_ticker["TQQQ"]["currency"] == "USD" and by_ticker["VEQT"]["currency"] == "CAD"
+    live = {h["ticker"]: h for h in client.get("/api/holdings/live", headers=auth).json()["holdings"]}
+    assert live["TQQQ"]["currency"] == "USD" and live["VEQT"]["currency"] == "CAD"
