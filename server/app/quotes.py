@@ -23,6 +23,15 @@ from typing import Any, Callable, Iterable, Protocol
 
 import httpx
 
+try:  # Yahoo throttles plain Python connections; this one looks like Chrome's. Optional: httpx is the fallback.
+    from curl_cffi import requests as curl_requests
+    from curl_cffi.requests.exceptions import RequestException as CurlError
+except Exception:  # not installed, or its native part will not load here
+    curl_requests = None
+
+    class CurlError(Exception):  # never raised; keeps the except clause below valid
+        pass
+
 log = logging.getLogger("homefinance.quotes")
 
 YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")  # throttled separately: try the other when one answers 429
@@ -92,12 +101,21 @@ def _day(epoch: float, gmt_offset: int) -> date:
 
 
 class YahooProvider:
-    def __init__(self, client: httpx.Client | None = None, spacing: float = REQUEST_SPACING) -> None:
-        self._client = client or httpx.Client(timeout=8.0)
+    def __init__(self, client: Any | None = None, spacing: float = REQUEST_SPACING) -> None:
+        self._browser = client is None and curl_requests is not None
+        if client is not None:
+            self._client = client
+        elif curl_requests is not None:
+            self._client = curl_requests.Session(impersonate="chrome", timeout=8.0)
+        else:
+            self._client = httpx.Client(timeout=8.0)
         self._spacing = spacing
         self._pace_lock = threading.Lock()
+        self._io_lock = threading.Lock()  # one request at a time: the shared connection is not for parallel use
         self._next_slot = 0.0
         self._host = 0  # index into YAHOO_HOSTS of the one that last worked
+        self.connection = "browser-style connection" if self._browser else "plain connection"
+        self._last_reply = ""  # what Yahoo said the last time it refused, for the message shown to you
 
     def _pace(self) -> None:
         """Hand out request slots at least `spacing` seconds apart, whichever thread asks."""
@@ -110,24 +128,30 @@ class YahooProvider:
         if slot > now:
             time.sleep(slot - now)
 
-    def _get(self, symbol: str, range_: str) -> httpx.Response:
+    def _get(self, symbol: str, range_: str) -> Any:
         """Ask one host, and on a 429 ask the other once; remember the one that answered."""
-        response: httpx.Response | None = None
+        response: Any = None
+        refused: list[str] = []
         for step in range(len(YAHOO_HOSTS)):
             index = (self._host + step) % len(YAHOO_HOSTS)
             self._pace()
+            # A Chrome-like connection brings its own matching headers; a plain one needs a browser's User-Agent.
+            headers = {"Accept": "application/json"} if self._browser else {"User-Agent": USER_AGENT, "Accept": "application/json"}
             try:
-                response = self._client.get(
-                    YAHOO_CHART.format(host=YAHOO_HOSTS[index], symbol=symbol),
-                    params={"range": range_, "interval": "1d"},
-                    headers={"User-Agent": USER_AGENT, "Accept": "application/json"},  # the default one is throttled
-                )
-            except httpx.HTTPError as exc:
+                with self._io_lock:
+                    response = self._client.get(
+                        YAHOO_CHART.format(host=YAHOO_HOSTS[index], symbol=symbol),
+                        params={"range": range_, "interval": "1d"},
+                        headers=headers,
+                    )
+            except (httpx.HTTPError, CurlError) as exc:
                 raise QuoteError("unavailable", f"could not reach Yahoo Finance ({type(exc).__name__})") from None
             if response.status_code != 429:
                 self._host = index
                 return response
-        assert response is not None
+            refused.append(YAHOO_HOSTS[index].split(".")[0])
+        reply = "".join(ch for ch in str(getattr(response, "text", ""))[:80] if ch.isprintable()).strip()
+        self._last_reply = f" on {' and '.join(refused)} ({self.connection}); Yahoo said: {reply!r}" if reply else f" on {' and '.join(refused)} ({self.connection})"
         return response
 
     def _chart(self, symbol: str, range_: str) -> dict[str, Any]:
@@ -140,7 +164,7 @@ class YahooProvider:
             except ValueError:
                 asked = float("nan")
             wait = min(asked, MAX_COOLDOWN) if math.isfinite(asked) and asked > 0 else None  # "nan", "-5" and dates are ignored
-            raise QuoteError("unavailable", "Yahoo Finance answered 429 (too many requests)", retry_after=wait)
+            raise QuoteError("unavailable", f"Yahoo Finance answered 429 (too many requests){self._last_reply}", retry_after=wait)
         if response.status_code != 200:
             raise QuoteError("unavailable", f"Yahoo Finance answered {response.status_code}")
         try:
