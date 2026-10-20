@@ -247,3 +247,25 @@ def test_concurrent_manual_syncs_do_not_overlap(services, plaid):
     finally:
         gate.set()
         worker.join(5)
+
+
+def test_holding_currency_prefers_the_banks_then_the_security_then_its_market():
+    from app.sync import holding_currency
+    assert holding_currency({"iso_currency_code": "CAD"}, {"iso_currency_code": "USD"}, "CAD") == "CAD"
+    assert holding_currency({}, {"iso_currency_code": "USD"}, "CAD") == "USD"
+    assert holding_currency({}, {"market_identifier_code": "XNAS"}, "CAD") == "USD"
+    assert holding_currency({}, {"market_identifier_code": "XTSE"}, "USD") == "CAD"
+    assert holding_currency({}, {}, "CAD") == "CAD"
+
+
+def test_a_us_etf_with_no_bank_currency_is_not_labelled_in_the_base_currency(services, plaid, client, auth):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page()]
+    plaid.holdings = pj("""{"accounts":[],"securities":[
+      {"security_id":"s1","name":"ProShares UltraPro QQQ","ticker_symbol":"TQQQ","type":"etf","market_identifier_code":"XNAS"}],
+     "holdings":[{"account_id":"acc_tfsa","security_id":"s1","quantity":28.1695,"institution_price":null,
+       "institution_value":null,"cost_basis":null,"iso_currency_code":null}]}""")
+    run(services, item)
+    row = services.db.one("SELECT currency FROM holdings WHERE ticker='TQQQ'")
+    assert row["currency"] == "USD"
