@@ -284,3 +284,11 @@ def test_accounts_on_a_phone_are_one_line_with_only_the_banks_logo():
     tail = css[css.index("Accounts on a phone: one line per account"):]
     assert ".bank-grouped .bank-cell strong { position: absolute;" in tail and "white-space: nowrap" in tail
     assert 'title: a.institution' in (WEB_DIR / "app.js").read_text()
+
+
+def test_top_title_is_always_the_app_name_and_overview_cards_have_no_count():
+    app = (WEB_DIR / "app.js").read_text()
+    html = (WEB_DIR / "index.html").read_text()
+    assert '<h1 id="page-title">HomeFinance</h1>' in html
+    assert '$("page-title").textContent' not in app
+    assert 'data.cards.length === 1 ? "" : "s"' not in app

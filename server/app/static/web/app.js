@@ -835,8 +835,7 @@
     return el("section", { class: "card" },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg("i-card", 22)),
-        el("div", { class: "grow" }, el("h2", { text: "Credit cards" }),
-          el("div", { class: "muted", text: `${data.cards.length} card${data.cards.length === 1 ? "" : "s"}` })),
+        el("div", { class: "grow" }, el("h2", { text: "Credit cards" })),
         el("a", { href: "#/money", text: "Details" })),
       Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
         stat(`Balance owed (${cur})`, money(t.owed, cur)),
@@ -2856,7 +2855,6 @@
     }
     menuButton.classList.toggle("current", name === "settings");
     const [title, subtitle] = PAGES[name];
-    $("page-title").textContent = title;
     $("page-sub").textContent = subtitle;
     document.title = `${title} \u00B7 HomeFinance`;
     const id = ++navId;
