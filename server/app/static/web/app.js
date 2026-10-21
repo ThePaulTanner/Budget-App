@@ -2123,7 +2123,12 @@
           onclick: () => { merchTab = key; show(); } })));
     function show() {
       for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
-      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar sticky-tabs" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      // The Merchants pages sit in the reserved bar, under the Spending tabs, outside the part of the page that scrolls.
+      const bar = $("subtabs");
+      for (const old of bar.querySelectorAll(".merch-tabs")) old.remove();
+      bar.append(el("div", { class: "toolbar merch-tabs" }, tabs));
+      measureBars();
+      view().replaceChildren(viewerNote(true), merchTab === "needs" ? todoCard : masterCard);
       if (merchTab === "merchants") draw();
     }
     show();

@@ -191,8 +191,8 @@ def test_script_understands_that_invalidstateerror_means_a_passkey_already_exist
 
 def test_page_tabs_are_sticky_and_their_heights_are_measured():
     css, js = (WEB_DIR / "app.css").read_text(), (WEB_DIR / "app.js").read_text()
-    assert ".subtabs { position: sticky;" in css and ".sticky-tabs { position: sticky;" in css
-    assert "--topbar-h" in js and "sticky-tabs" in js
+    assert ".subtabs { position: sticky;" in css
+    assert "--topbar-h" in js and "measureBars" in js
 
 
 def test_sign_in_page_layout_two_boxes_and_face_id_below_sign_in():
@@ -302,3 +302,9 @@ def test_banks_are_logos_alone_and_overview_cards_have_no_status_pill():
     assert "bankLogo(" in summary and "pill" not in summary
     assert ".money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute;" in css
     assert 'class: "bank-cell", title: name' in app
+
+
+def test_merchants_tabs_live_in_the_fixed_bar_not_the_scrolling_page():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'bar.append(el("div", { class: "toolbar merch-tabs" }, tabs))' in app
+    assert 'el("div", { class: "toolbar sticky-tabs" }, tabs)' not in app

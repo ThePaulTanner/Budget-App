@@ -339,10 +339,6 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 /* sub-tabs under the page title (Spending) */
 /* Page tabs stay put while the page scrolls: the Spending tabs under the top bar, and a page's own tabs under those. */
 .subtabs { position: sticky; top: var(--topbar-h, 64px); z-index: 9; margin: 0; padding: 12px var(--gutter) 8px; background: var(--bg); }
-.sticky-tabs { position: sticky; top: calc(var(--topbar-h, 64px) + var(--subtabs-h, 0px)); z-index: 8; background: var(--bg); margin: 0 calc(var(--gutter) * -1) 12px; padding: 10px var(--gutter) 0; }
-.sticky-tabs.toolbar { padding-bottom: 8px; }
-.sticky-tabs .toolbar { margin-bottom: 10px; }
-.sticky-tabs .tabs-sub { margin: 0; }
 .subtabs .seg { max-width: 100%; }
 
 .stack { display: grid; gap: 16px; align-content: start; }
@@ -633,3 +629,5 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .money-table .col-bankname, .bank-grouped .col-bankname { width: 44px; min-width: 44px; padding: 0 6px; text-align: center; }
 .row-logo { flex: none; display: flex; }
+
+.subtabs .merch-tabs { margin-top: 8px; }
