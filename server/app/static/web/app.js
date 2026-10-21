@@ -2764,6 +2764,18 @@
   }
   window.addEventListener("resize", measureBars);
 
+  // On a phone the page choice (Overview, Accounts, ...) sits at the top, inside the top bar, so it stays put
+  // and never competes with the browser's own bottom toolbar. On a larger screen it is the side bar's menu.
+  const tabsNav = $("tabs");
+  const phoneQuery = window.matchMedia("(max-width: 860px)");
+  function placeTabs() {
+    if (phoneQuery.matches) document.querySelector(".topbar").append(tabsNav);
+    else document.querySelector(".sidebar").insertBefore(tabsNav, document.querySelector(".side-foot"));
+    measureBars();
+  }
+  phoneQuery.addEventListener("change", placeTabs);
+  placeTabs();
+
   const PAGES = {
     overview: ["Overview", "Net worth and credit card payments"],
     accounts: ["Accounts", "Balances by bank and account"],
