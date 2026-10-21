@@ -89,7 +89,7 @@ Use a tab bar with five tabs.
 
 **1. Overview**
 - A large net-worth figure, with assets, liabilities and investments beneath it.
-- A Swift Charts line chart of net worth with a 1M / 3M / 1Y / All picker (`days` = 30 / 90 / 365 / 3650).
+- A Swift Charts line chart of net worth with a 1M / 3M / YTD / All picker (`days` = 30 / 90 / days back to the end of last year / 3650).
 - A reconnect banner, shown when needed. (The web app shows a count on the Settings cog instead.)
 - "Last synced X ago".
 - An accounts list grouped by type: Cash, Credit, Investments, Loans. Each row shows institution, name, mask (••1234) and balance. Show available credit for cards.

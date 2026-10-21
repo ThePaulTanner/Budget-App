@@ -812,7 +812,10 @@
 
   // ---------------------------------------------------------------- Overview
 
-  let nwDays = 365;
+  let nwRange = "YTD";  // which of the chart ranges is chosen
+  // Days back to the end of last year, so a year-to-date chart always has a starting point.
+  const ytdDays = () => Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / 864e5) + 1;
+  const NW_RANGES = [["1M", () => 30], ["3M", () => 90], ["YTD", ytdDays], ["All", () => 3650]];
 
   // The Overview's credit card payments: what to pay, the minimum, and when, for every card.
   function paymentsSummary(data) {
@@ -880,16 +883,15 @@
     const chartBox = el("div");
     const drawChart = async () => {
       try {
-        const rows = await api(scoped(`/api/networth?days=${nwDays}&currency=${encodeURIComponent(cur)}`));
+        const rows = await api(scoped(`/api/networth?days=${NW_RANGES.find(([label]) => label === nwRange)[1]()}&currency=${encodeURIComponent(cur)}`));
         if (id === navId) // The last point is today's figures, the same ones shown above, so the two never disagree.
         if (worth && rows.length) rows[rows.length - 1] = { ...rows[rows.length - 1], net_worth: worth.net_worth, assets: worth.assets, liabilities: worth.liabilities, investments: worth.investments };
         chartBox.replaceChildren(netWorthChart(rows, cur));
       } catch (err) { if (err instanceof SignedOut) showLogin(); else chartBox.replaceChildren(el("p", { class: "error", text: err.message })); }
     };
-    const ranges = [["1M", 30], ["3M", 90], ["1Y", 365], ["All", 3650]];
     const seg = el("div", { class: "seg compact", role: "group", "aria-label": "Chart range" });
-    const paint = () => seg.replaceChildren(...ranges.map(([label, days]) =>
-      el("button", { type: "button", "aria-pressed": String(days === nwDays), text: label, onclick: () => { nwDays = days; paint(); drawChart(); } })));
+    const paint = () => seg.replaceChildren(...NW_RANGES.map(([label]) =>
+      el("button", { type: "button", "aria-pressed": String(label === nwRange), text: label, onclick: () => { nwRange = label; paint(); drawChart(); } })));
     paint();
 
     const netCard = el("section", { class: "card" },
@@ -2707,7 +2709,12 @@
         onclick: () => choose(lastTab[key]) })));
       tabBar.replaceChildren(...groupTabs.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === settingsTab), text: label, onclick: () => choose(key) })));
       tabBar.hidden = groupTabs.length < 2;
-      view().replaceChildren(el("div", { class: "sticky-tabs" }, el("div", { class: "toolbar" }, groupBar), tabBar), ...sections[settingsTab], versionLine);
+      // The tabs live in the reserved bar under the top bar, outside the part of the page that scrolls.
+      const bar = $("subtabs");
+      bar.replaceChildren(el("div", { class: "toolbar" }, groupBar), tabBar);
+      bar.hidden = false;
+      measureBars();
+      view().replaceChildren(...sections[settingsTab], versionLine);
     }
     show();
   }
@@ -2733,6 +2740,7 @@
   // The tab bar lives outside the page content, so each tab can redraw itself without losing it.
   function renderSubtabs(name) {
     const bar = $("subtabs");
+    // Settings fills the bar itself once its data has loaded.
     if (name !== "spending") { bar.hidden = true; bar.replaceChildren(); measureBars(); return; }
     bar.replaceChildren(el("div", { class: "seg", role: "group", "aria-label": "Spending sections" },
       SPENDING_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === spendingTab), text: label,

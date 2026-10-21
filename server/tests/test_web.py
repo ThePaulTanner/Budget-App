@@ -262,3 +262,10 @@ def test_net_worth_chart_fades_the_estimated_days_and_says_so():
     css = (WEB_DIR / "app.css").read_text()
     assert "r.estimated" in js and "estimates, worked back from your transactions" in js
     assert ".chart .line.estimated" in css
+
+
+def test_net_worth_ranges_are_1m_3m_ytd_all_and_settings_tabs_use_the_reserved_bar():
+    js = (WEB_DIR / "app.js").read_text()
+    assert '["YTD", ytdDays]' in js and '["1Y", ' not in js[js.index("NW_RANGES"):js.index("NW_RANGES") + 200]
+    settings = js[js.index("function show() {\n      const [groupKey"):]
+    assert '$("subtabs")' in settings[:900] and "sticky-tabs" not in settings[:900]
