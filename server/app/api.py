@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, condecimal
 
 from . import backup as backup_module
@@ -365,7 +366,15 @@ def create_api_app(services: Services) -> FastAPI:
         path = request.url.path
         if path == "/app" or path.startswith(("/api/", "/auth/", "/web/")):
             response.headers["Cache-Control"] = "no-store"
+        elif path.startswith("/static/web/") and response.status_code == 200:
+            # The page asks for these as ?v=<release>, so a given address never changes: keep it for a year and
+            # skip the round trip. Without ?v= the browser re-checks (a cheap 304 while the file is unchanged).
+            versioned = "v" in request.query_params
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable" if versioned else "no-cache"
         return response
+
+    # Text (the page, its script and style, and the JSON) shrinks to about a quarter of its size.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     def require_auth(request: Request) -> AuthContext:
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
@@ -530,7 +539,12 @@ def create_api_app(services: Services) -> FastAPI:
 
     @app.get("/app", include_in_schema=False)
     def web_app():
-        return FileResponse(STATIC_DIR / "web" / "index.html", headers={"Content-Security-Policy": APP_CSP})
+        # The script and style addresses carry the release number, so a new release is fetched once and an
+        # unchanged one comes straight from the browser's cache.
+        page = (STATIC_DIR / "web" / "index.html").read_text(encoding="utf-8")
+        for name in ("theme.js", "app.js", "app.css"):
+            page = page.replace(f'/static/web/{name}"', f'/static/web/{name}?v={version_module.VERSION}"')
+        return Response(page, media_type="text/html", headers={"Content-Security-Policy": APP_CSP})
 
     # -- summary -------------------------------------------------------------
 
