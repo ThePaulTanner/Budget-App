@@ -632,13 +632,10 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 
 .subtabs .merch-tabs { margin-top: 8px; }
 
-/* The sub-tab bars never show a scroll bar. On a computer they are wide enough, so they just clip; on a phone they
-   still scroll sideways by touch. */
-#subtabs .seg.wide, #subtabs .tabs-sub { scrollbar-width: none; }
+/* The sub-tab bars never show a scroll bar, but a tab that does not fit (a narrow window, a big zoom) can still be
+   reached by touch, wheel or keyboard. */
+#subtabs .seg.wide, #subtabs .tabs-sub { scrollbar-width: none; overflow-x: auto; }
 #subtabs .seg.wide::-webkit-scrollbar, #subtabs .tabs-sub::-webkit-scrollbar { display: none; }
-@media (min-width: 861px) {
-  #subtabs .seg, #subtabs .tabs-sub { overflow: hidden; }
-}
 
 /* Settings > Banks: each bank's accounts as a table with owners and Hide in columns of their own. */
 .bank-accounts { width: 100%; border-collapse: collapse; }

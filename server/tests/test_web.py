@@ -312,8 +312,8 @@ def test_merchants_tabs_live_in_the_fixed_bar_not_the_scrolling_page():
 
 def test_sub_tab_bars_show_no_scroll_bar():
     css = (WEB_DIR / "app.css").read_text()
-    assert "#subtabs .seg.wide, #subtabs .tabs-sub { scrollbar-width: none; }" in css
-    assert "#subtabs .seg, #subtabs .tabs-sub { overflow: hidden; }" in css
+    assert "#subtabs .seg.wide, #subtabs .tabs-sub { scrollbar-width: none; overflow-x: auto; }" in css
+    assert "#subtabs .seg.wide::-webkit-scrollbar, #subtabs .tabs-sub::-webkit-scrollbar { display: none; }" in css
 
 
 def test_settings_banks_lists_accounts_as_a_table_with_owner_and_hide_columns():
