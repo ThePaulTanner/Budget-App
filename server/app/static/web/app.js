@@ -432,7 +432,7 @@
       const used = credit && a.credit_limit > 0 && a.current_balance != null ? Math.round((a.current_balance / a.credit_limit) * 100) : null;
       const cells = [
         index === 0 && el("td", { class: "col-bankname shared", rowspan: accounts.length },
-          el("div", { class: "bank-cell" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
+          el("div", { class: "bank-cell", title: a.institution || (item && item.institution) || "Bank" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
         el("td", { class: "col-account" },
           el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
           a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),

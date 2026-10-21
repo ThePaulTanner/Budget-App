@@ -277,3 +277,10 @@ def test_on_a_phone_the_page_choice_lives_in_the_top_bar_not_a_bottom_bar():
     assert 'document.querySelector(".topbar").append(tabsNav)' in js and "placeTabs()" in js
     phone = css[css.index("@media (max-width: 860px) {\n  .app { display: block; }"):]
     assert ".topbar #tabs" in phone and "inset: auto 0 0 0" not in phone
+
+
+def test_accounts_on_a_phone_are_one_line_with_only_the_banks_logo():
+    css = (WEB_DIR / "app.css").read_text()
+    tail = css[css.index("Accounts on a phone: one line per account"):]
+    assert ".bank-grouped .bank-cell strong { position: absolute;" in tail and "white-space: nowrap" in tail
+    assert 'title: a.institution' in (WEB_DIR / "app.js").read_text()

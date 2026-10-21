@@ -614,3 +614,16 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 /* Settings puts its two rows of tabs in the same reserved bar as Spending. */
 .subtabs .toolbar { margin: 0; }
 .subtabs .tabs-sub { margin: 8px 0 -8px; }
+
+/* Accounts on a phone: one line per account. The bank is its logo alone, centred (the name is still there for
+   screen readers and as a tooltip), and the name, mask and balance are sized to fit; a long name is cut short. */
+@media (max-width: 760px) {
+  .bank-grouped .bank-cell { align-items: center; justify-content: center; }
+  .bank-grouped .bank-cell strong { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .bank-grouped .col-bankname { width: 44px; min-width: 44px; padding: 0 6px; text-align: center; }
+  .bank-grouped .col-account { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .86rem; }
+  .bank-grouped .col-account .acct-name { display: inline-block; max-width: calc(100% - 3.5em); overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }  /* a long name gives way, not the last digits */
+  .bank-grouped .col-account .muted { font-size: .76rem; }
+  .bank-grouped .col-account .narrow-only { display: inline; margin-left: .4em; }
+  .bank-grouped .col-balance { font-size: .9rem; }
+}
