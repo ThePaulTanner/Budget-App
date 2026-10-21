@@ -464,6 +464,7 @@
     const name = personName(viewer) || "this person";
     return el("p", { class: "viewer-note", text: `This page covers the whole household, not just ${name}.` });
   }
+  let peopleLoaded = false;
   async function loadPeople() {
     try { people = await api("/api/people"); } catch (err) { if (err instanceof SignedOut) throw err; people = []; }
     if (viewer != null && !people.some((p) => p.id === viewer)) viewer = null;
@@ -2123,7 +2124,12 @@
           onclick: () => { merchTab = key; show(); } })));
     function show() {
       for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.textContent.startsWith(merchTab === "needs" ? "Needs" : "Merchants")));
-      view().replaceChildren(viewerNote(true), el("div", { class: "toolbar sticky-tabs" }, tabs), merchTab === "needs" ? todoCard : masterCard);
+      // The Merchants pages sit in the reserved bar, under the Spending tabs, outside the part of the page that scrolls.
+      const bar = $("subtabs");
+      for (const old of bar.querySelectorAll(".merch-tabs")) old.remove();
+      bar.append(el("div", { class: "toolbar merch-tabs" }, tabs));
+      measureBars();
+      view().replaceChildren(viewerNote(true), merchTab === "needs" ? todoCard : masterCard);
       if (merchTab === "merchants") draw();
     }
     show();
@@ -2494,19 +2500,29 @@
     for (const a of accounts) accountsOf.set(a.item_id, [...(accountsOf.get(a.item_id) || []), a]);
     const orphans = accounts.filter((a) => !items.some((i) => i.id === a.item_id));
 
-    function accountRow(a) {
-      const chosen = new Set(a.owner_ids || []);
-      return el("div", { class: "row" }, el("div", { class: "grow" },
-        el("div", {}, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
-        people.length > 0 && el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
-          el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
-            if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
-            putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
-          } }), p.name)))),
-        el("label", { class: "checkline" }, el("input", { type: "checkbox", checked: a.hidden, onchange: async (e) => {
-          try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
-          catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
-        } }), "Hide"));
+    // A bank's accounts as a table: the account, who owns it (a column of its own) and a Hide switch (another).
+    function accountsTable(group) {
+      const hasOwners = people.length > 0;
+      const row = (a) => {
+        const chosen = new Set(a.owner_ids || []);
+        return el("tr", {},
+          el("td", { class: "col-account" }, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
+          hasOwners && el("td", { class: "col-owners" }, el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
+            el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
+              if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
+              putOwners(`/api/accounts/${encodeURIComponent(a.id)}/owners`, [...chosen], () => toast("Saved."));
+            } }), p.name)))),
+          el("td", { class: "col-hide" }, el("label", { class: "switch", title: "Hide this account from totals and budgets" },
+            el("input", { type: "checkbox", role: "switch", "aria-label": `Hide ${a.name}`, checked: a.hidden, onchange: async (e) => {
+              try { await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { hidden: e.target.checked } }); toast(e.target.checked ? "Hidden." : "Shown."); }
+              catch (err) { e.target.checked = !e.target.checked; if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
+            } }), el("span", { class: "track", "aria-hidden": "true" }))));
+      };
+      return el("div", { class: "table-wrap" }, el("table", { class: "bank-accounts" },
+        el("thead", {}, el("tr", {}, el("th", { scope: "col", class: "col-account", text: "Account" }),
+          hasOwners && el("th", { scope: "col", class: "col-owners", text: "Owners" }),
+          el("th", { scope: "col", class: "col-hide", text: "Hide" }))),
+        el("tbody", {}, group.map(row))));
     }
 
     // One block per bank: the bank and its status, then its accounts with who owns them and Hide.
@@ -2532,7 +2548,7 @@
             onclick: () => putOwners(ownersPath, [p.id], () => { toast(`Every ${name} account is now ${p.name}'s.`); reload(); }) })),
           people.length > 1 && el("button", { type: "button", class: "small", text: "Shared by everyone",
             onclick: () => putOwners(ownersPath, people.map((p) => p.id), () => { toast("Shared by everyone."); reload(); }) })),
-        group.map(accountRow),
+        group.length > 0 && accountsTable(group),
         group.length === 0 && el("p", { class: "muted bank-note", text: i.last_synced_at ? "No accounts at this bank." : "Its accounts appear after the first sync." }));
     }
 
@@ -2547,8 +2563,8 @@
       el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton, items.length > 0 && editButton)),
       syncOut,
       el("p", { class: "muted", text: people.length > 0
-        ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or tick Hide to leave it out of totals and budgets."
-        : "Each bank lists its accounts. Tick Hide to leave an account out of totals and budgets. To say who owns what, add the people in your household on the People tab first." }),
+        ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or switch Hide on to leave it out of totals and budgets."
+        : "Each bank lists its accounts. Switch Hide on to leave an account out of totals and budgets. To say who owns what, add the people in your household on the People tab first." }),
       unowned > 0 && el("p", { class: "muted", text: `${unowned} account${unowned === 1 ? " has" : "s have"} no owner yet. They count in the household but not in anyone's own view.` }),
       items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
       items.map(bankBlock),
@@ -2556,7 +2572,7 @@
       orphans.length > 0 && el("div", { class: "bank-block" },
         el("div", { class: "row bank-line" }, el("div", { class: "grow" }, el("strong", { text: "Other accounts" }),
           el("div", { class: "muted", text: "Not linked to a bank listed above." }))),
-        orphans.map(accountRow)));
+        accountsTable(orphans)));
 
     // The household's people. They are labels for organising accounts, not logins.
     const newName = el("input", { maxlength: 40, placeholder: "Name, for example Sam", "aria-label": "New person's name" });
@@ -2863,7 +2879,9 @@
     const id = ++navId;
     view().replaceChildren(el("p", { class: "empty", text: "Loading…" }));
     try {
-      await loadPeople();
+      // The household list is only awaited the first time; after that it refreshes alongside the page's own
+      // requests instead of ahead of them, which saves a round trip on every page change.
+      if (peopleLoaded) loadPeople().catch(() => {}); else { await loadPeople(); peopleLoaded = true; }
       if (id !== navId) return;
       await ROUTES[name](id, params);
       refreshStatus();
@@ -2880,6 +2898,7 @@
     stopIdleWatch();
     showPasskeyFirst();
     token = null;
+    peopleLoaded = false;  // the next person to sign in gets their own household list
     closeSheet();
     $("shell").hidden = true;
     $("login").hidden = false;

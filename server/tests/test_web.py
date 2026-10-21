@@ -191,8 +191,8 @@ def test_script_understands_that_invalidstateerror_means_a_passkey_already_exist
 
 def test_page_tabs_are_sticky_and_their_heights_are_measured():
     css, js = (WEB_DIR / "app.css").read_text(), (WEB_DIR / "app.js").read_text()
-    assert ".subtabs { position: sticky;" in css and ".sticky-tabs { position: sticky;" in css
-    assert "--topbar-h" in js and "sticky-tabs" in js
+    assert ".subtabs { position: sticky;" in css
+    assert "--topbar-h" in js and "measureBars" in js
 
 
 def test_sign_in_page_layout_two_boxes_and_face_id_below_sign_in():
@@ -302,3 +302,37 @@ def test_banks_are_logos_alone_and_overview_cards_have_no_status_pill():
     assert "bankLogo(" in summary and "pill" not in summary
     assert ".money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute;" in css
     assert 'class: "bank-cell", title: name' in app
+
+
+def test_merchants_tabs_live_in_the_fixed_bar_not_the_scrolling_page():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'bar.append(el("div", { class: "toolbar merch-tabs" }, tabs))' in app
+    assert 'el("div", { class: "toolbar sticky-tabs" }, tabs)' not in app
+
+
+def test_sub_tab_bars_show_no_scroll_bar():
+    css = (WEB_DIR / "app.css").read_text()
+    assert "#subtabs .seg.wide, #subtabs .tabs-sub { scrollbar-width: none; overflow-x: auto; }" in css
+    assert "#subtabs .seg.wide::-webkit-scrollbar, #subtabs .tabs-sub::-webkit-scrollbar { display: none; }" in css
+
+
+def test_settings_banks_lists_accounts_as_a_table_with_owner_and_hide_columns():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    start = app.index("function accountsTable")
+    table = app[start:app.index("// One block per bank", start)]
+    assert 'class: "bank-accounts"' in table and 'class: "col-owners"' in table and 'class: "col-hide"' in table
+    assert 'role: "switch"' in table and "accountRow" not in app
+    assert ".switch input:checked + .track" in css
+
+
+def test_page_is_compressed_and_its_assets_are_cached_by_release(web):
+    from app import version
+    page = web.get("/app", headers={"Accept-Encoding": "gzip"})
+    assert page.status_code == 200 and page.headers["cache-control"] == "no-store"
+    for name in ("theme.js", "app.js", "app.css"):
+        assert f"/static/web/{name}?v={version.VERSION}" in page.text
+    script = web.get(f"/static/web/app.js?v={version.VERSION}", headers={"Accept-Encoding": "gzip"})
+    assert script.headers["content-encoding"] == "gzip"
+    assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert web.get("/static/web/app.js").headers["cache-control"] == "no-cache"
