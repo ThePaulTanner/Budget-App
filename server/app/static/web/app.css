@@ -610,3 +610,7 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .chart .line.estimated { opacity: .45; }
 .chart .gl.recorded-from { stroke-dasharray: 3 4; opacity: .7; }
 .small { font-size: .85rem; }
+
+/* Settings puts its two rows of tabs in the same reserved bar as Spending. */
+.subtabs .toolbar { margin: 0; }
+.subtabs .tabs-sub { margin: 8px 0 -8px; }
