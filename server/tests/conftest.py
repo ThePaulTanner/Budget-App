@@ -158,6 +158,7 @@ def services(tmp_path, plaid, clock, monkeypatch):
         plaid_secret="secret",
         webhook_port=0,
         public_webhook_url="https://example.test/plaid/webhook",
+        live_quotes=False,  # tests that need market data bring their own fake; none may reach Yahoo
     )
     s = build_services(settings, plaid=plaid)  # real SQLCipher database
     fast = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)

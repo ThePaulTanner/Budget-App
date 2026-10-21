@@ -605,3 +605,8 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 @media (min-width: 861px) {
   .row.holding .amount { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 2px 22px; max-width: 74%; white-space: nowrap; }
 }
+
+/* Net worth days that are estimates (before the first recorded day) are drawn fainter, with a marker where recording begins. */
+.chart .line.estimated { opacity: .45; }
+.chart .gl.recorded-from { stroke-dasharray: 3 4; opacity: .7; }
+.small { font-size: .85rem; }

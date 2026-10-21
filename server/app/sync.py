@@ -7,6 +7,7 @@ import logging
 import queue
 import re
 import threading
+import time
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -30,6 +31,8 @@ NO_INVESTMENTS = {
 LIABILITY_TYPES = {"credit", "loan"}
 ASSET_TYPES = {"depository", "investment", "other"}
 DEBOUNCE_SECONDS = 5.0
+HISTORY_EVERY_SECONDS = 6 * 3600.0  # how often the rebuilt net worth history is refreshed on its own
+HISTORY_RETRY_SECONDS = 15 * 60.0  # how soon it tries again after prices could not be had
 
 
 class SyncBusy(Exception):
@@ -528,8 +531,11 @@ def sync_item(
 class SyncManager:
     """Runs syncs one at a time: on demand, when a webhook arrives, and on a timer."""
 
-    def __init__(self, db: Database, keys: Keys, plaid: PlaidClient | None, settings: Settings):
+    def __init__(self, db: Database, keys: Keys, plaid: PlaidClient | None, settings: Settings, quotes: Any = None):
         self.db = db
+        self.quotes = quotes  # market prices, for rebuilding net worth history
+        self._history_next = 0.0  # when the net worth history may next rebuild on its own
+        self._history_thread: threading.Thread | None = None
         self.keys = keys
         self.plaid = plaid
         self.settings = settings
@@ -538,7 +544,7 @@ class SyncManager:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def sync_items(self, item_ids: list[str] | None = None, *, blocking: bool = False) -> list[dict]:
+    def sync_items(self, item_ids: list[str] | None = None, *, blocking: bool = False, force_history: bool = False) -> list[dict]:
         if self.plaid is None:
             raise PlaidNotConfigured()
         if not self._lock.acquire(blocking=blocking):
@@ -557,6 +563,7 @@ class SyncManager:
                 for item in items
             ]
             snapshot_networth(self.db)
+            self._rebuild_history(force_history)
             from .transfers import match_transfers
 
             try:
@@ -566,6 +573,32 @@ class SyncManager:
             return results
         finally:
             self._lock.release()
+
+    def _rebuild_history(self, force: bool = False) -> None:
+        """Net worth for the days before the first recorded one, from transactions and market prices. It asks
+        Yahoo for long histories, so it runs in the background (a sync does not wait for it), at most every few
+        hours unless you press Sync now, and again in 15 minutes if prices could not be had."""
+        if self._history_thread is not None and self._history_thread.is_alive():
+            return
+        if not force and time.time() < self._history_next:
+            return
+        self._history_thread = threading.Thread(target=self._rebuild_history_now, name="net-worth-history", daemon=True)
+        self._history_thread.start()
+
+    def _rebuild_history_now(self) -> None:
+        from .history import Unavailable, rebuild_networth_history
+
+        try:
+            rebuild_networth_history(self.db, self.quotes)
+        except Unavailable as exc:
+            log.warning("Net worth history waits for market prices: %s", exc)
+            self._history_next = time.time() + HISTORY_RETRY_SECONDS
+            return
+        except Exception:  # an estimate must never fail anything
+            log.exception("Could not rebuild net worth history")
+            self._history_next = time.time() + HISTORY_RETRY_SECONDS
+            return
+        self._history_next = time.time() + HISTORY_EVERY_SECONDS
 
     def request(self, item_id: str) -> None:
         """Ask the worker to sync one bank soon (used by webhooks)."""

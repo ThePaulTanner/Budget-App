@@ -226,8 +226,13 @@
     if (rows.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
     const W = 640, H = 240, L = 62, R = 12, T = 12, B = 26;
     const x = (i) => L + (i / (rows.length - 1)) * (W - L - R);
+    // Days before the first recorded one are estimated from transactions and market prices: drawn fainter.
+    const firstRecorded = rows.findIndex((r) => !r.estimated);
+    const split = firstRecorded === -1 ? rows.length - 1 : firstRecorded;
+    const hasEstimates = rows.some((r) => r.estimated);
     const keyButtons = new Map();
     const caption = el("p", { class: "muted" });
+    const estimateNote = hasEstimates && el("p", { class: "muted small", text: `Before ${shortDate(rows[split].date)} these are estimates, worked back from your transactions and market prices.` });
     const key = el("div", { class: "nw-key", role: "group", "aria-label": "Lines on the chart" });
     for (const [field, label, cls] of NW_SERIES) {
       const value = el("span", { class: "nw-value" });
@@ -247,7 +252,7 @@
     function show(i) {
       current = i;
       for (const [field] of NW_SERIES) keyButtons.get(field).value.textContent = money(rows[i][field], currency);
-      caption.textContent = dayLabel(rows[i].date);
+      caption.textContent = dayLabel(rows[i].date) + (rows[i].estimated ? " \u00B7 estimate" : "");
       if (!chart) return;
       for (const dot of chart.querySelectorAll("circle.dot")) {
         dot.setAttribute("cx", x(i));
@@ -273,10 +278,17 @@
         next.append(label);
       }
       if (lo < 0 && hi > 0) next.append(svg("line", { class: "gl zero", x1: L, x2: W - R, y1: y(0), y2: y(0) }));
+      const draw1 = (field, from, to) => rows.slice(from, to + 1).map((r, n) => `${n ? "L" : "M"}${x(from + n).toFixed(1)},${y(r[field]).toFixed(1)}`).join(" ");
+      if (hasEstimates && split > 0) next.append(svg("line", { class: "gl recorded-from", x1: x(split), x2: x(split), y1: T, y2: H - B }));
       for (const [field, , cls] of shown) {
-        const path = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[field]).toFixed(1)}`).join(" ");
+        const path = draw1(field, 0, rows.length - 1);
         if (field === "net_worth") next.append(svg("path", { class: `area ${cls}`, d: `${path} L${x(rows.length - 1)},${y(Math.max(lo, Math.min(0, hi)))} L${L},${y(Math.max(lo, Math.min(0, hi)))} Z` }));
-        next.append(svg("path", { class: `line ${cls}`, d: path }));
+        if (hasEstimates && split > 0) {
+          next.append(svg("path", { class: `line ${cls} estimated`, d: draw1(field, 0, split) }));
+          next.append(svg("path", { class: `line ${cls}`, d: draw1(field, split, rows.length - 1) }));
+        } else {
+          next.append(svg("path", { class: `line ${cls}`, d: path }));
+        }
       }
       for (const i of [0, Math.floor((rows.length - 1) / 2), rows.length - 1]) {
         const label = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === rows.length - 1 ? "end" : "middle" });
@@ -297,6 +309,7 @@
     wrap.append(key);
     draw();
     wrap.append(caption);
+    if (estimateNote) wrap.append(estimateNote);
     return wrap;
   }
 
@@ -805,27 +818,36 @@
   function paymentsSummary(data) {
     if (!data || data.cards.length === 0) return document.createDocumentFragment();  // nothing to show, and nothing printed
     const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
+    // One line per card: what is owed now on the right (these add up to "Balance owed" above), and on the left
+    // what to pay and by when. The minimum payment lives on the Money Management page.
+    const toPay = (c) => {
+      if (c.status === "nothing_owed" || c.status === "paid") return null;  // the pill already says so
+      if (c.due_date == null) return data.dues_available ? "No due date from your bank" : null;  // else the note below says so
+      const date = shortDate(c.due_date), past = c.days_until_due < 0;
+      if (c.status === "unknown") return `Was due ${date}, may have been paid`;
+      if (c.statement_balance == null) return past ? `Was due ${date}` : `Due ${date}`;
+      const amount = money(c.statement_balance, c.currency);
+      return past ? `${amount} was due ${date}` : `Pay ${amount} by ${date}`;
+    };
     return el("section", { class: "card" },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg("i-card", 22)),
-        el("div", { class: "grow" }, el("h2", { text: "Credit card payments" }),
+        el("div", { class: "grow" }, el("h2", { text: "Credit cards" }),
           el("div", { class: "muted", text: `${data.cards.length} card${data.cards.length === 1 ? "" : "s"}` })),
         el("a", { href: "#/money", text: "Details" })),
       Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
-        stat(`Statement balances to pay (${cur})`, money(t.statement_due, cur)),
-        stat("Minimum payments", money(t.minimum_due, cur)),
-        stat("Total owed on cards", money(t.owed, cur)))),
+        stat(`Balance owed (${cur})`, money(t.owed, cur)),
+        stat("Statements to pay", money(t.statement_due, cur)))),
       data.cards.map((c) => {
         const [label, tone] = DUE_PILLS[c.status];
         return el("a", { class: "row click", href: "#/money" },
           el("div", { class: "grow" },
             el("div", {}, el("strong", { text: `${c.institution} ${c.name}` }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
               el("span", { class: `pill ${tone}`, text: label })),
-            el("div", { class: c.status === "overdue" ? "error" : "muted", text: dueText(c) })),
-          el("div", { class: "amount" }, money(c.statement_balance ?? c.current_balance, c.currency),
-            el("div", { class: "muted", text: c.minimum_payment != null ? `minimum ${money(c.minimum_payment, c.currency)}` : c.statement_balance == null ? "balance" : "statement" })));
+            toPay(c) && el("div", { class: c.status === "overdue" ? "error" : "muted", text: toPay(c) })),
+          el("div", { class: "amount" }, money(c.current_balance, c.currency)));
       }),
-      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet, so these are the balances now." }));
+      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet." }));
   }
 
   // Every account and its balance, by kind, with each bank's logo.

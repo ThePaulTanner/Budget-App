@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA = """
 CREATE TABLE users (
@@ -180,6 +180,7 @@ CREATE TABLE networth (
   liabilities TEXT NOT NULL,
   investments TEXT NOT NULL,
   net_worth TEXT NOT NULL,
+  estimated INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (date, currency, person_id)
 );
 CREATE TABLE people (
@@ -385,6 +386,12 @@ ALTER TABLE sessions ADD COLUMN active_at REAL;
 ALTER TABLE sessions ADD COLUMN expires_at REAL;
 UPDATE sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   WHERE device_name = 'Web browser' AND revoked_at IS NULL;
+""",
+
+    # Net worth for days before the server began recording it is rebuilt from transactions and market
+    # prices; those rows are marked `estimated`.
+    13: """
+ALTER TABLE networth ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;
 """}
 
 
