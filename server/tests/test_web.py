@@ -292,3 +292,13 @@ def test_top_title_is_always_the_app_name_and_overview_cards_have_no_count():
     assert '<h1 id="page-title">HomeFinance</h1>' in html
     assert '$("page-title").textContent' not in app
     assert 'data.cards.length === 1 ? "" : "s"' not in app
+
+
+def test_banks_are_logos_alone_and_overview_cards_have_no_status_pill():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    start = app.index("function paymentsSummary")
+    summary = app[start:app.index("async function viewAccounts", start)]
+    assert "bankLogo(" in summary and "pill" not in summary
+    assert ".money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute;" in css
+    assert 'class: "bank-cell", title: name' in app
