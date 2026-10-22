@@ -2779,6 +2779,13 @@
   }
   window.addEventListener("resize", measureBars);
 
+  // Pressing a page choice (or any header control) and sliding away would start dragging the link, which looks like a highlight
+  // without going anywhere. These are for clicking, not dragging, so the drag is cancelled.
+  document.addEventListener("dragstart", (e) => {
+    const node = e.target && (e.target.closest ? e.target : e.target.parentElement);
+    if (node && node.closest("#tabs, .topbar, .sidebar, .menu-list, .seg, .tabs-sub, .subtabs, button")) e.preventDefault();
+  });
+
   // On a phone the page choice (Overview, Accounts, ...) sits at the top, inside the top bar, so it stays put
   // and never competes with the browser's own bottom toolbar. On a larger screen it is the side bar's menu.
   const tabsNav = $("tabs");

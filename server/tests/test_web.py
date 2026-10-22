@@ -629,3 +629,12 @@ def test_a_transaction_in_the_category_popup_opens_the_category_editor_and_the_p
     assert "openTransaction(tx, choices, names" in edit and 'addEventListener("close", back)' in edit
     assert "budgetPopup = category; reload();" in edit and "showTransactions(category)" in edit
     assert "if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }" in page
+
+
+def test_a_press_that_slides_away_does_not_leave_the_page_choices_highlighted():
+    css = (WEB_DIR / "app.css").read_text()
+    assert "-webkit-user-select: none; user-select: none;" in css and "-webkit-tap-highlight-color: transparent" in css
+    assert "@media (hover: none)" in css and '#tabs a:not([aria-current="page"]):hover { background: transparent;' in css
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'document.addEventListener("dragstart"' in app and 'closest("#tabs, .topbar, .sidebar, .menu-list, .seg, .tabs-sub, .subtabs, button")' in app
+    assert "-webkit-user-drag: none" in css
