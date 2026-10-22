@@ -447,3 +447,12 @@ def test_cash_flow_controls_sit_at_the_top_of_the_chart_box_and_are_small():
     assert box.index("controls, customRow") < box.index('class: "card-head"')
     assert '"seg wide compact"' in app and '"seg compact", role: "group", "aria-label": "Group by"' in app
     assert ".cf-controls button.cf-filters {" in (WEB_DIR / "app.css").read_text()
+
+
+def test_spending_by_category_folds_sub_categories_and_starts_folded():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index('const group = el("div", { class: "sub-group", hidden: true }')
+    block = app[start:app.index("const trendCard", start)]
+    assert '"aria-expanded": "false"' in block and "group.hidden = !group.hidden" in block
+    assert "e.stopPropagation();  // the row itself opens the transactions" in block
+    assert ".sub-group[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()

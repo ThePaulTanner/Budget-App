@@ -1159,20 +1159,30 @@
       el("p", { class: "muted", text: `${money(spending.total, cur)} in ${monthLabel(month)}. Transfers, loan and card payments and income are left out.` }));
     if (spending.categories.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
     for (const c of spending.categories) {
-      spendCard.append(el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
-        el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
-        el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
-        el("div", { class: "amount", text: money(c.spent, cur) })));
       // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
+      // They start folded away; the arrow on the category's row opens and closes them.
       const split = c.subcategories || [];
       const rest = c.spent - split.reduce((sum, s) => sum + s.spent, 0);
       const parts = split.map((s) => [subLabel(s.category), s.spent, s.category]);
       if (split.length > 0 && Math.abs(rest) >= 0.005) parts.push(["Not in a sub-category", rest]);
-      for (const [label, spent, code] of parts) {
-        spendCard.append(el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
+      const group = el("div", { class: "sub-group", hidden: true }, parts.map(([label, spent, code]) =>
+        el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
           el("div", { class: "grow" }, el("div", { class: "muted", text: label }), progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true)),
-          el("div", { class: "amount muted", text: money(spent, cur) })));
+          el("div", { class: "amount muted", text: money(spent, cur) }))));
+      let twisty = el("span", { class: "twisty" });
+      if (parts.length > 0) {
+        twisty = el("button", { type: "button", class: "twisty", "aria-expanded": "false", "aria-label": `Show the sub-categories of ${categoryLabel(c.category)}`, text: "\u25B8",
+          onclick: (e) => {
+            e.stopPropagation();  // the row itself opens the transactions
+            group.hidden = !group.hidden;
+            twisty.setAttribute("aria-expanded", String(!group.hidden));
+            twisty.textContent = group.hidden ? "\u25B8" : "\u25BE";
+          }, onkeydown: (e) => e.stopPropagation() });
       }
+      spendCard.append(el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
+        el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
+        el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
+        el("div", { class: "amount", text: money(c.spent, cur) }), twisty), group);
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
     view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
