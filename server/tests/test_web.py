@@ -670,3 +670,9 @@ def test_budgets_page_has_no_twelve_month_chart():
     assert "barChart" not in page and "Last 12 months" not in page and "/api/spending/monthly" not in page
     assert "view().replaceChildren(viewerNote(true), nav, spendCard);" in page
     assert "barChart(monthly, cur)" in app   # the Spending page's own "Last 12 months" chart is unchanged
+
+
+def test_sign_in_screen_has_no_blank_space_below_the_box_on_phones():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".login { min-height: 100vh; min-height: 100dvh; display: grid;" in css
+    assert ".login { display: block; min-height: 0; padding: 0; background: var(--surface); }" in css
