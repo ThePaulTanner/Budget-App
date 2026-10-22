@@ -1894,7 +1894,17 @@
 
   async function viewInvestments(id) {
     let timer = null;
+    let lastData = null;      // the latest figures, so choosing a period repaints without another request
     let activityCard = null;  // built on the first paint and kept across the once-a-minute refresh
+    // The period choice is a pinned bar just under the page choices (the page's own bar, like Spending's tabs), not part of the scrolling page.
+    const seg = el("div", { class: "seg period-seg", role: "group", "aria-label": "Compare against" },
+      CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
+        onclick: () => { invPeriod = key; syncSeg(); if (lastData) paint(lastData); } })));
+    const syncSeg = () => seg.querySelectorAll("button").forEach((btn, i) => btn.setAttribute("aria-pressed", String(CHANGE_PERIODS[i][0] === invPeriod)));
+    const bar = $("subtabs");
+    bar.replaceChildren(seg);
+    bar.hidden = false;
+    measureBars();
     let banks = new Map();    // account id -> its bank's logo item and name, loaded once
     const loadBanks = async () => {
       try {
@@ -1931,9 +1941,7 @@
     const paint = (data) => {
       const totals = Object.entries(data.totals);
       const status = data.status;
-      const seg = el("div", { class: "seg", role: "group", "aria-label": "Compare against" },
-        CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
-          onclick: () => { invPeriod = key; paint(data); } })));
+      lastData = data;
       // Only say something when prices are off or failing; the usual "live, about every two minutes" note is gone.
       const statusLine = !status.enabled
         ? "Live prices are turned off on the server. Showing your bank's last prices."
@@ -1960,7 +1968,6 @@
               c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: upperFirst(PERIOD_HELP[invPeriod]) }), el("strong", { class: c.cls, text: c.text }))
                 : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
           })),
-        el("div", { class: "toolbar" }, seg),
         statusLine && el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }));
 
       const byAccount = new Map();

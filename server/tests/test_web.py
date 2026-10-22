@@ -549,7 +549,7 @@ def test_investments_total_has_a_box_for_each_currency_in_smaller_type():
     assert 'class: "cur-boxes"' in page and 'class: "cur-box"' in page and 'class: "cur-value"' in page
     assert ".cur-box { padding: 8px 12px; border: 1px solid var(--border-strong);" in css and ".cur-value { font-size: 1.45rem;" in css
     assert "Change since yesterday" not in app and 'day: "since yesterday\'s close"' in app
-    assert ".toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }" in css
+    assert ".subtabs .seg.period-seg button { padding: .32rem .5rem; font-size: .82rem; white-space: nowrap; }" in css
 
 
 def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_not_empty():
@@ -560,7 +560,7 @@ def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_no
 
 def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_gain_figures():
     app = (WEB_DIR / "app.js").read_text()
-    box = app[app.index('class: "cur-box"'):app.index('el("div", { class: "toolbar" }, seg)')]
+    box = app[app.index('class: "cur-box"'):app.index("const byAccount")]
     assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index("`All time")
     assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
     assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur)")
@@ -638,3 +638,13 @@ def test_a_press_that_slides_away_does_not_leave_the_page_choices_highlighted():
     app = (WEB_DIR / "app.js").read_text()
     assert 'document.addEventListener("dragstart"' in app and 'closest("#tabs, .topbar, .sidebar, .menu-list, .seg, .tabs-sub, .subtabs, button")' in app
     assert "-webkit-user-drag: none" in css
+
+
+def test_investments_period_filter_is_the_pinned_bar_under_the_page_choices():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'class: "seg period-seg"' in inv and 'const bar = $("subtabs");' in inv and "bar.replaceChildren(seg);" in inv and "bar.hidden = false;" in inv
+    assert "lastData = data;" in inv and "paint(lastData)" in inv
+    head = inv[inv.index('const head = el("section"'):inv.index("const byAccount")]
+    assert "seg" not in head   # no longer inside the scrolling Total value card

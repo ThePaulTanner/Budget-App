@@ -771,10 +771,10 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
 .cur-line > span { white-space: nowrap; }
 .cur-line strong { margin-left: auto; text-align: right; white-space: nowrap; }
 /* The period choice (Day, Since open, 1W ... 1Y) stays on one line, in smaller type. */
-.toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
+.subtabs .seg.period-seg button { padding: .32rem .5rem; font-size: .82rem; white-space: nowrap; }
 @media (max-width: 480px) {
-  .toolbar .seg { width: 100%; }
-  .toolbar .seg button { flex: 1 1 auto; padding: .3rem .2rem; font-size: .76rem; }
+  .subtabs .seg.period-seg { width: 100%; }
+  .subtabs .seg.period-seg button { flex: 1 1 auto; padding: .32rem .15rem; font-size: .76rem; }
 }
 .cur-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
 .cur-box .muted { font-size: inherit; }   /* .muted alone would force .9rem and make the labels bigger than their figures */
@@ -824,3 +824,4 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
   .row.click:hover, .acct-table tr.click:hover, .cf-table tr.click:hover { background: transparent; }
 }
 #tabs a, .brand, .menu-list a, a.icon-btn { -webkit-user-drag: none; }
+@media (max-width: 360px) { .subtabs .seg.period-seg button { font-size: .68rem; padding-inline: .1rem; } }
