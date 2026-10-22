@@ -2496,9 +2496,8 @@
     const banks = el("section", { class: "card banks-card" },
       el("div", { class: "card-head" }, el("h2", { text: "Banks" }), el("div", { class: "actions" }, linkButton, syncButton, items.length > 0 && editButton)),
       syncOut,
-      el("p", { class: "muted", text: people.length > 0
-        ? "Each bank lists its accounts. Choose who owns each one (give an account more than one owner to share it; it still counts once in the household totals), or switch Hide on to leave it out of totals and budgets."
-        : "Each bank lists its accounts. Switch Hide on to leave an account out of totals and budgets. To say who owns what, add the people in your household on the People tab first." }),
+      // With people set up there is nothing to explain; without any, say where to add them so accounts can have owners.
+      people.length === 0 && el("p", { class: "muted", text: "To say who owns what, add the people in your household on the People tab first." }),
       unowned > 0 && el("p", { class: "muted", text: `${unowned} account${unowned === 1 ? " has" : "s have"} no owner yet. They count in the household but not in anyone's own view.` }),
       items.length === 0 && el("p", { class: "empty", text: "No banks linked yet. Press Link a bank to add your first." }),
       items.map(bankBlock),
