@@ -508,3 +508,8 @@ def test_header_controls_shrink_on_very_narrow_phones_instead_of_wrapping():
     css = (WEB_DIR / "app.css").read_text()
     assert ".topbar .titles { min-width: 5.5rem; }" in css
     assert "@media (max-width: 360px)" in css and ".top-actions .viewer select { max-width: 5.25rem;" in css
+
+
+def test_budgets_month_switcher_and_add_budget_stay_pinned_while_scrolling():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".monthnav { position: sticky; top: var(--topbar-h, 64px);" in css

@@ -717,3 +717,11 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
 .budget-slot { flex: none; width: 3.6rem; display: flex; justify-content: flex-end; }
 .progress.budgeted.over > i { background: linear-gradient(90deg, var(--green) var(--limit), var(--red) var(--limit)); }
 .progress.budgeted .limit-line { position: absolute; top: -4px; bottom: -4px; left: var(--limit); width: 3px; margin-left: -1px; border-radius: 2px; background: var(--red); box-shadow: 0 0 0 1.5px var(--surface); }
+
+/* Budgets: the month switcher and Add budget stay put under the top bar while the page scrolls. */
+.monthnav { position: sticky; top: var(--topbar-h, 64px); z-index: 9; margin: 0 calc(var(--gutter) * -1) 14px; padding: 10px var(--gutter); background: var(--bg); }
+@media (max-width: 600px) {
+  .monthnav { flex-wrap: nowrap; gap: 8px; padding-block: 8px; }
+  .monthnav strong { min-width: 0; flex: 1; font-size: .95rem; }
+  .monthnav button { padding: .35rem .7rem; min-height: 0; }
+}
