@@ -559,3 +559,19 @@ def test_title_bar_and_sidebar_are_fixed_so_they_never_scroll():
     assert ".content { grid-column: 2; box-sizing: border-box; padding-top: var(--topbar-h, 64px); }" in css
     assert ".sidebar { position: fixed; top: 0; left: 0; width: var(--side-w); box-sizing: border-box; }" in css
     assert ".topbar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }" in css
+
+
+def test_investments_total_has_a_box_for_each_currency_in_smaller_type():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewInvestments"):]
+    assert 'class: "cur-boxes"' in page and 'class: "cur-box"' in page and 'class: "cur-value"' in page
+    assert ".cur-box { padding: 8px 12px; border: 1px solid var(--border-strong);" in css and ".cur-value { font-size: 1.45rem;" in css
+    assert "Change since yesterday" not in app and 'day: "since yesterday\'s close"' in app
+    assert ".toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }" in css
+
+
+def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_not_empty():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3000]
+    assert '/api/spending/monthly?months=12' in page and 'text: "Last 12 months"' in page and "spendCard, trendCard" in page

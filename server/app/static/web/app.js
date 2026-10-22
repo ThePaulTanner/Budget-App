@@ -891,9 +891,10 @@
 
   // The Spending page's first tab: this month's spending against the budgets, and the top categories.
   async function viewSpendingSummary(id) {
-    const [summary, spending] = await Promise.all([
+    const [summary, spending, monthly] = await Promise.all([
       api(scoped("/api/summary")),
-      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 }))]);  // no month = the current one, same as the summary
+      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 })),  // no month = the current one, same as the summary
+      api(scoped("/api/spending/monthly?months=12")).catch(() => null)]);
     if (id !== navId) return;
     baseCurrency = summary.base_currency;
     const worth = summary.net_worth.find((n) => n.currency === baseCurrency) || summary.net_worth[0];
@@ -915,7 +916,10 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
-    view().replaceChildren(viewerNote(), spendCard);
+    // The month's card is short, so the last twelve months sit under it instead of leaving the page empty.
+    const trendCard = Array.isArray(monthly) && monthly.length > 0
+      ? el("section", { class: "card" }, el("h3", { text: "Last 12 months" }), barChart(monthly, cur)) : null;
+    view().replaceChildren(viewerNote(), spendCard, trendCard);
   }
 
   // ---------------------------------------------------------------- Transactions
@@ -1823,8 +1827,8 @@
 
   const CHANGE_PERIODS = [["day", "Day"], ["open", "Since open"], ["1w", "1W"], ["1m", "1M"], ["3m", "3M"], ["ytd", "YTD"], ["1y", "1Y"]];
   const PERIOD_HELP = {
-    day: "Change since yesterday's close.", open: "Change since today's open.", "1w": "Change over the last 7 days.",
-    "1m": "Change over the last month.", "3m": "Change over the last 3 months.", ytd: "Change since the start of the year.", "1y": "Change over the last year.",
+    day: "since yesterday's close", open: "since today's open", "1w": "over the last 7 days",
+    "1m": "over the last month", "3m": "over the last 3 months", ytd: "since the start of the year", "1y": "over the last year",
   };
   let invPeriod = "day";
   let syncPolls = 0;  // first-sync checks on the Settings screen since you last navigated or linked
@@ -1918,16 +1922,19 @@
             : "";
       const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
-          : totals.map(([cur, t]) => {
+          : el("div", { class: "cur-boxes" }, totals.map(([cur, t]) => {
+            // Each currency is its own bordered box, so it is clear which figures belong together.
             const c = changeText(t.changes[invPeriod], cur);
             const b = bookOf(data.holdings, cur);
-            return el("div", {}, el("div", { class: "big" }, money(t.value, cur), el("span", { class: "muted", text: `  ${cur}` })),
-              b.known > 0 && el("div", { class: "muted" }, `Book value ${money(b.book, cur)} \u00B7 `,
+            return el("div", { class: "cur-box", role: "group", "aria-label": `${cur} total` },
+              el("div", { class: "cur-name", text: cur }),
+              el("div", { class: "cur-value", text: money(t.value, cur) }),
+              b.known > 0 && el("div", { class: "cur-line muted" }, `Book ${money(b.book, cur)} \u00B7 `,
                 el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: `All time ${gainText(b.gain, b.pct, cur)}` }),
-                b.missing > 0 && ` \u00B7 ${b.missing} position${b.missing === 1 ? " has" : "s have"} no book value from the bank`),
-              c ? el("div", { class: c.cls }, el("strong", { text: c.text }), el("span", { class: "muted", text: `  ${PERIOD_HELP[invPeriod]}` }))
-                : el("div", { class: "muted", text: "No change available for this period yet." }));
-          }),
+                b.missing > 0 && ` \u00B7 ${b.missing} no book value`),
+              c ? el("div", { class: `cur-line ${c.cls}` }, el("strong", { text: c.text }), el("span", { class: "muted", text: ` ${PERIOD_HELP[invPeriod]}` }))
+                : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
+          })),
         el("div", { class: "toolbar" }, seg),
         statusLine && el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }));
 

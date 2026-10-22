@@ -768,3 +768,16 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
 
 /* Accounts: the section's total sits at the right end of its coloured header. */
 .acct-section > .section-head .head-total { margin-left: auto; padding-left: 12px; text-align: right; font-size: .85rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* Investments: each currency's total is its own bordered box, in smaller type so it takes fewer lines. */
+.cur-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin: 6px 0 10px; }
+.cur-box { padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
+.cur-name { font-size: .7rem; font-weight: 700; letter-spacing: .07em; color: var(--muted); }
+.cur-value { font-size: 1.45rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.cur-line { font-size: .8rem; line-height: 1.35; }
+/* The period choice (Day, Since open, 1W ... 1Y) stays on one line, in smaller type. */
+.toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
+@media (max-width: 480px) {
+  .toolbar .seg { width: 100%; }
+  .toolbar .seg button { flex: 1 1 auto; padding: .3rem .2rem; font-size: .76rem; }
+}
