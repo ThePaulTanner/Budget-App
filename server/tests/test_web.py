@@ -360,3 +360,11 @@ def test_page_shows_its_release_under_the_name_and_notices_a_newer_server(web):
     app = (WEB_DIR / "app.js").read_text()
     assert "serverRelease !== pageRelease" in app and "location.reload()" in app
     assert (WEB_DIR / "app.css").read_text().count(".release {") == 1
+
+
+def test_accounts_do_not_show_value_or_balance_column_headings():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert '"num col-balance", !(credit || kind === "loan")' in section
+    assert 'unlabelled ? el("span", { class: "sr", text }) : text' in section

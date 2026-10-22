@@ -414,7 +414,7 @@
     const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
-      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance"]].filter(Boolean);
+      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", !(credit || kind === "loan")]].filter(Boolean);
     const size = (a) => Math.abs(a.current_balance || 0);
     const banks = new Map();
     for (const a of rows) {
@@ -453,7 +453,9 @@
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
         el("div", { class: "grow" }, el("h2", { text: label }))),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
-        el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
+        el("thead", {}, el("tr", {}, headers.map(([text, cls, unlabelled]) => el("th", { scope: "col", class: cls },
+          // The amounts speak for themselves, so "Value" and "Balance" are not shown; screen readers still hear them.
+          unlabelled ? el("span", { class: "sr", text }) : text)))),
         el("tbody", {}, body))),
       el("p", { class: "section-total muted", text: `Total: ${sectionTotals(rows, kind)}` }));
   }
