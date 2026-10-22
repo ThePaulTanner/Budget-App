@@ -711,3 +711,9 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
   .top-actions { gap: 4px; }
   .topbar h1 { font-size: 1.05rem; }
 }
+
+/* Budgets on the Spending by category rows: the limit is the end of the bar; past it the bar runs on red behind a red line. */
+.progress.budgeted { position: relative; overflow: visible; }
+.budget-slot { flex: none; width: 3.6rem; display: flex; justify-content: flex-end; }
+.progress.budgeted.over > i { background: linear-gradient(90deg, var(--green) var(--limit), var(--red) var(--limit)); }
+.progress.budgeted .limit-line { position: absolute; top: -4px; bottom: -4px; left: var(--limit); width: 3px; margin-left: -1px; border-radius: 2px; background: var(--red); box-shadow: 0 0 0 1.5px var(--surface); }

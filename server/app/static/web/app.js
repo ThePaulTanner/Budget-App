@@ -346,6 +346,26 @@
       (() => { const bar = document.createElement("i"); bar.style.width = `${Math.min(100, Math.max(0, percent))}%`; return bar; })());
   }
 
+
+  // A budgeted category's bar: the limit is the full length while spending is under it; past it the bar keeps going,
+  // red beyond the limit, with a red line where the limit was.
+  function budgetBar(spent, limit) {
+    const scale = Math.max(limit, spent, 0.01);
+    const over = spent > limit;
+    const bar = document.createElement("i");
+    bar.style.width = `${Math.min(100, Math.max(0, spent) / scale * 100)}%`;
+    const track = el("div", { class: `progress budgeted${over ? " over" : spent >= limit * 0.8 ? " warn" : ""}`, role: "progressbar",
+      "aria-valuenow": Math.round(spent / Math.max(limit, 0.01) * 100), "aria-valuemin": 0, "aria-valuemax": 100,
+      "aria-label": over ? "Over budget" : "Within budget" }, bar);
+    if (over) {
+      track.style.setProperty("--limit", `${limit / scale * 100}%`);
+      const line = document.createElement("b");
+      line.className = "limit-line";
+      track.append(line);
+    }
+    return track;
+  }
+
   // ---------------------------------------------------------------- shared data
 
   let baseCurrency = "CAD";
@@ -1139,40 +1159,47 @@
     detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
     const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
 
-    const budgetCard = el("section", { class: "card" }, el("h2", { text: "Budgets" }));
-    if (budgets.budgets.length === 0) budgetCard.append(el("p", { class: "empty", text: "No budgets yet. Add one to track a category." }));
-    const budgeted = new Set(budgets.budgets.map((b) => b.category));
-    for (const b of budgets.budgets) {
-      const left = b.remaining >= 0 ? `${money(b.remaining, cur)} left` : `${money(-b.remaining, cur)} over`;
-      const inside = b.parent && budgeted.has(b.parent) ? `also counted in ${categoryLabel(b.parent)}` : "";
-      // The title and the money are one line, the bar has the full width under them, and a note (when a sub-category
-      // budget also counts in its parent's) is a small line below the bar.
-      budgetCard.append(el("div", { class: `row click${b.parent ? " sub budget-sub" : ""}`, role: "button", tabindex: 0, ...pickable(b.category) },
-        el("div", { class: "icon", text: icon(b.category), "aria-hidden": "true" }),
-        el("div", { class: "grow" },
-          el("div", { class: "budget-head" }, el("strong", { text: categoryLabel(b.category) }),
-            el("span", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} \u00B7 ${left}` })),
-          progress(b.percent),
-          inside && el("div", { class: "muted budget-note", text: inside })),
-        el("button", { type: "button", class: "secondary budget-edit", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
-          onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() })));
+    // Budgets live on the rows of "Spending by category": a budgeted category's bar is measured against its limit
+    // (so the end of the bar is the max), and once spending passes the limit the bar runs on in red past a red line.
+    const budgetOf = new Map(budgets.budgets.map((b) => [b.category, b]));
+    const budgeted = new Set(budgetOf.keys());
+    const rows = spending.categories.map((c) => ({ ...c, subcategories: [...(c.subcategories || [])] }));
+    const rowOf = (code) => rows.find((r) => r.category === code) || (rows.push({ category: code, spent: 0, subcategories: [] }), rows[rows.length - 1]);
+    for (const b of budgets.budgets) {   // a budget on a category with no spending yet still gets its row
+      if (!b.parent) rowOf(b.category);
+      else {
+        const parent = rowOf(b.parent);
+        if (!parent.subcategories.some((s) => s.category === b.category)) parent.subcategories.push({ category: b.category, spent: b.spent });
+      }
     }
+    const budgetNote = (b) => {
+      const note = el("div", { class: "muted budget-note" }, `of ${money(b.monthly_limit, cur)} \u00B7 `,
+        b.remaining >= 0 ? `${money(b.remaining, cur)} left` : el("span", { class: "neg", text: `${money(-b.remaining, cur)} over` }));
+      if (b.parent && budgeted.has(b.parent)) note.append(` \u00B7 also counted in ${categoryLabel(b.parent)}`);
+      return note;
+    };
+    // Every row has the same-sized slot for the button, so the bars line up whether or not a category has a budget.
+    const editButton = (b) => el("span", { class: "budget-slot" }, b && el("button", { type: "button", class: "secondary budget-edit", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
+      onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() }));
 
-    const maxSpent = Math.max(...spending.categories.map((c) => Math.abs(c.spent)), 1);
+    const maxSpent = Math.max(...rows.map((c) => Math.abs(c.spent)), 1);
     const spendCard = el("section", { class: "card" }, el("h2", { text: "Spending by category" }),
       el("p", { class: "muted", text: `${money(spending.total, cur)} in ${monthLabel(month)}. Transfers, loan and card payments and income are left out.` }));
-    if (spending.categories.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
-    for (const c of spending.categories) {
+    if (rows.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
+    for (const c of rows) {
       // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
       // They start folded away; the arrow on the category's row opens and closes them.
-      const split = c.subcategories || [];
+      const split = c.subcategories;
       const rest = c.spent - split.reduce((sum, s) => sum + s.spent, 0);
       const parts = split.map((s) => [subLabel(s.category), s.spent, s.category]);
       if (split.length > 0 && Math.abs(rest) >= 0.005) parts.push(["Not in a sub-category", rest]);
-      const group = el("div", { class: "sub-group", hidden: true }, parts.map(([label, spent, code]) =>
-        el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
-          el("div", { class: "grow" }, el("div", { class: "muted", text: label }), progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true)),
-          el("div", { class: "amount muted", text: money(spent, cur) }))));
+      const group = el("div", { class: "sub-group", hidden: true }, parts.map(([label, spent, code]) => {
+        const sb = code && budgetOf.get(code);
+        return el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
+          el("div", { class: "grow" }, el("div", { class: "muted", text: label }),
+            sb ? budgetBar(spent, sb.monthly_limit) : progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true), sb && budgetNote(sb)),
+          el("div", { class: "amount muted", text: money(spent, cur) }), editButton(sb));
+      }));
       let twisty = el("span", { class: "twisty" });
       if (parts.length > 0) {
         twisty = el("button", { type: "button", class: "twisty", "aria-expanded": "false", "aria-label": `Show the sub-categories of ${categoryLabel(c.category)}`, text: "\u25B8",
@@ -1183,13 +1210,15 @@
             twisty.textContent = group.hidden ? "\u25B8" : "\u25BE";
           }, onkeydown: (e) => e.stopPropagation() });
       }
+      const b = budgetOf.get(c.category);
       spendCard.append(el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
         el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
-        el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }), progress((Math.max(c.spent, 0) / maxSpent) * 100, true)),
-        el("div", { class: "amount", text: money(c.spent, cur) }), twisty), group);
+        el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
+          b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
+        el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b), twisty), group);
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, budgetCard, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
+    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
   }
 
   // ---------------------------------------------------------------- Cash flow

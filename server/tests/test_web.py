@@ -458,12 +458,15 @@ def test_spending_by_category_folds_sub_categories_and_starts_folded():
     assert ".sub-group[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
 
 
-def test_budget_rows_put_title_and_money_above_a_full_width_bar_and_indent_sub_budgets():
+def test_budgets_sit_on_the_spending_by_category_rows_with_a_red_line_when_over():
     app = (WEB_DIR / "app.js").read_text()
-    start = app.index('class: "budget-head"')
-    row = app[start:app.index('class: "secondary budget-edit"', start)]
-    assert row.index("categoryLabel(b.category)") < row.index("of ${money(b.monthly_limit, cur)}") < row.index("progress(b.percent)")
-    assert " sub budget-sub" in app and ".row.budget-sub { padding-left: 4rem; }" in (WEB_DIR / "app.css").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'el("h2", { text: "Budgets" })' not in page and "budgetCard" not in page
+    assert 'text: "Add budget"' in page and page.index('text: "Add budget"') < page.index('"Spending by category"')
+    assert "budgetBar(c.spent, b.monthly_limit)" in page and "budgetBar(spent, sb.monthly_limit)" in page
+    assert "const scale = Math.max(limit, spent, 0.01);" in app and 'className = "limit-line"' in app
+    assert ".progress.budgeted .limit-line" in css and "var(--red) var(--limit)" in css
 
 
 def test_settings_banks_start_folded_with_an_arrow_to_open_their_accounts():
