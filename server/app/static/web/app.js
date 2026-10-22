@@ -1124,21 +1124,18 @@
         message);
     }
 
-    // Clicking a budget or a spending row lists the transactions behind that amount in the box under the chart.
-    const detail = el("section", { class: "card" });
-    let picked = null;
-    const markPicked = () => view().querySelectorAll("[data-pick]").forEach((r) => r.classList.toggle("picked", r.dataset.pick === picked));
+    // Clicking a category (or sub-category) opens a popup listing the transactions behind its total for the month.
     async function showTransactions(category) {
-      picked = category;
-      markPicked();
       const label = categoryLabel(category);
-      detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }), el("p", { class: "empty", text: "Loading…" }));
+      const title = `${label} in ${monthLabel(month)}`;
+      const body = el("div", {}, el("p", { class: "empty", text: "Loading…" }));
+      openSheet(el("h2", { text: title }), body, el("div", { class: "actions" }, el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
       try {
         const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
         const q = new URLSearchParams({ category, start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, "0")}`, limit: "200" });
         if (viewer != null) q.set("person_id", String(viewer));
         const [page, accounts] = await Promise.all([api(`/api/transactions?${q}`), api(scoped("/api/accounts"))]);
-        if (id !== navId || picked !== category) return;
+        if (id !== navId || !body.isConnected) return;   // moved to another page, or another popup replaced this one
         const names = Object.fromEntries(accounts.map((a) => [a.id, `${a.institution ? a.institution + " " : ""}${a.name}`]));
         const net = page.transactions.reduce((sum, t) => sum + (t.currency === cur ? t.amount : 0), 0);
         const rows = [];
@@ -1153,16 +1150,15 @@
               el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} \u00B7 ${names[tx.account_id] || ""}` })),
             el("div", { class: `amount ${amount.cls}`, text: amount.text })));
         }
-        detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }),
+        body.replaceChildren(
           el("p", { class: "muted", text: page.total === 0 ? "No transactions." : (page.total > page.transactions.length ? `${page.total} transactions. The newest ${page.transactions.length} add up to ${money(net, cur)}.` : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total.`) }),
           ...rows,
-          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", text: "Search all transactions" })));
+          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", onclick: closeSheet, text: "Search all transactions" })));
       } catch (err) {
-        if (err instanceof SignedOut) showLogin(); else detail.replaceChildren(el("h2", { text: "Transactions" }), el("p", { class: "error", text: err.message }));
+        if (err instanceof SignedOut) { closeSheet(); showLogin(); } else if (body.isConnected) body.replaceChildren(el("p", { class: "error", text: err.message }));
       }
     }
-    detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
-    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
+    const pickable = (category) => ({ onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
 
     // Budgets live on the rows of "Spending by category": a budgeted category's bar is measured against its limit
     // (so the end of the bar is the max), and once spending passes the limit the bar runs on in red past a red line.
@@ -1228,7 +1224,7 @@
         el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group);
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
+    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, trendCard));
   }
 
   // ---------------------------------------------------------------- Cash flow

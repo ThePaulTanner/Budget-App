@@ -591,3 +591,12 @@ def test_budget_pill_and_fold_arrow_take_less_room():
     css = (WEB_DIR / "app.css").read_text()
     assert ".row > .twisty { width: 22px; height: 22px;" in css
     assert ".row > .budget-slot { width: 2.6rem;" in css and "button.budget-add, button.budget-edit { width: 2.6rem; height: 1.6rem;" in css
+
+
+def test_clicking_a_spending_category_opens_a_popup_of_its_transactions():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    fn = page[page.index("async function showTransactions"):page.index("const pickable")]
+    assert "openSheet(" in fn and "closeSheet" in fn and "/api/transactions?" in fn and "!body.isConnected" in fn
+    assert "detail.replaceChildren" not in page and "Click a budget or a category to see" not in page
+    assert "pickable(c.category)" in page and "pickable(code)" in page
