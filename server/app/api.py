@@ -886,6 +886,7 @@ def create_api_app(services: Services) -> FastAPI:
             )["n"],
             "budgets": db.one("SELECT count(*) AS n FROM budgets WHERE category = ?", (code,))["n"],
             "rules": db.one("SELECT count(*) AS n FROM rules WHERE category = ?", (code,))["n"],
+            "merchants": db.one("SELECT count(*) AS n FROM merchants WHERE category = ?", (code,))["n"],
         }
 
     @app.get("/api/categories/custom")
@@ -935,10 +936,11 @@ def create_api_app(services: Services) -> FastAPI:
         if db.one("SELECT 1 FROM custom_categories WHERE parent = ?", (code,)):
             raise HTTPException(409, "Remove its sub-categories first.")
         used = custom_json(row)
-        if used["transactions"] or used["budgets"] or used["rules"]:
+        if used["transactions"] or used["budgets"] or used["rules"] or used["merchants"]:
             raise HTTPException(
                 409,
-                f"In use by {used['transactions']} transaction(s), {used['budgets']} budget(s) and {used['rules']} rule(s). "
+                f"In use by {used['transactions']} transaction(s), {used['budgets']} budget(s), {used['rules']} rule(s) "
+                f"and {used['merchants']} merchant(s). "
                 "Move them to another category first.",
             )
         db.run("DELETE FROM custom_categories WHERE code = ?", (code,))

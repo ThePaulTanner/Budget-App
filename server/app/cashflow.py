@@ -213,7 +213,9 @@ def classify(row: Any, acct_type: str, p: Params) -> tuple[bool, str, Decimal, s
 def _category_source(row: Any) -> str:
     if row["override_category"] is not None:
         return "manual"
-    return "rule" if row["rule_category"] is not None else "plaid"
+    if row["rule_category"] is None:
+        return "plaid"
+    return "rule" if row["rule_id"] is not None else "merchant"
 
 
 def tx_out(row: Any, account_name: str, side: str, value: Decimal, counted: bool, reason: str | None) -> dict[str, Any]:

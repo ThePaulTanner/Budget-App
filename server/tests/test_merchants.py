@@ -455,3 +455,13 @@ def test_merging_keeps_a_category(seeded):
     client.patch(f"/api/merchants/{iga['id']}", json={"category": "GROCERIES"}, headers=auth)
     client.post(f"/api/merchants/{iga['id']}/merge", json={"into_id": store["id"]}, headers=auth)
     assert by_name(merchants(client, auth, period="all"), "Store")["category"] == "GROCERIES"
+
+
+def test_cash_flow_names_the_merchant_as_the_source(seeded):
+    client, auth = seeded
+    iga = by_name(merchants(client, auth, period="all"), "IGA")
+    client.patch(f"/api/merchants/{iga['id']}", json={"category": "GROCERIES"}, headers=auth)
+    detail = client.get("/api/cashflow/transactions?period_start=2026-10-01&period_end=2026-10-31&range=all", headers=auth).json()
+    rows = [t for t in detail["transactions"] + detail["left_out"] if t["id"] == "tx_000"]
+    assert rows and rows[0]["category"] == "GROCERIES" and rows[0]["category_source"] == "merchant"
+    assert category_of(client, auth, "tx_000")["category_source"] == "merchant"

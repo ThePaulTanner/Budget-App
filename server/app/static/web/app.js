@@ -2660,7 +2660,7 @@
       try { await api(`/api/categories/${encodeURIComponent(code)}`, { method: "DELETE" }); toast("Category removed."); reload(); }
       catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
     }
-    const usage = (c) => { const bits = [c.transactions && `${c.transactions} transaction${c.transactions === 1 ? "" : "s"}`, c.budgets && `${c.budgets} budget${c.budgets === 1 ? "" : "s"}`, c.rules && `${c.rules} rule${c.rules === 1 ? "" : "s"}`].filter(Boolean); return bits.length ? bits.join(", ") : "Not used yet"; };
+    const usage = (c) => { const bits = [c.transactions && `${c.transactions} transaction${c.transactions === 1 ? "" : "s"}`, c.budgets && `${c.budgets} budget${c.budgets === 1 ? "" : "s"}`, c.rules && `${c.rules} rule${c.rules === 1 ? "" : "s"}`, c.merchants && `${c.merchants} merchant${c.merchants === 1 ? "" : "s"}`].filter(Boolean); return bits.length ? bits.join(", ") : "Not used yet"; };
     const categoryRows = [];
     for (const top of [...PRIMARIES].sort(byLabel)) {
       const own = mine.get(top);
