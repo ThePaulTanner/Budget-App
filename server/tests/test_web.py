@@ -377,3 +377,10 @@ def test_accounts_show_the_owner_as_a_small_line_under_the_name_not_a_column():
     assert 'class: "muted acct-owner"' in section and 'class: "col-owner"' not in section
     assert '["Owner", "col-owner"]' not in section and "function ownersCell" not in app
     assert ".acct-owner { font-size: .74rem;" in (WEB_DIR / "app.css").read_text()
+
+
+def test_accounts_page_does_not_show_the_account_number():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert "a.mask" not in section

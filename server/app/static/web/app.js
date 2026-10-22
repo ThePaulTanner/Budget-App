@@ -430,7 +430,6 @@
           el("div", { class: "bank-cell", title: a.institution || (item && item.institution) || "Bank" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
         el("td", { class: "col-account" },
           el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
-          a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
           showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" })),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
         credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),

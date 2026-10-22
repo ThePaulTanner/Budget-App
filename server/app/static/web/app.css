@@ -618,7 +618,7 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .bank-grouped .bank-cell strong { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .bank-grouped .col-bankname { width: 44px; min-width: 44px; padding: 0 6px; text-align: center; }
   .bank-grouped .col-account { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .86rem; }
-  .bank-grouped .col-account .acct-name { display: inline-block; max-width: calc(100% - 3.5em); overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }  /* a long name gives way, not the last digits */
+  .bank-grouped .col-account .acct-name { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
   .bank-grouped .col-account .muted { font-size: .76rem; }
   .bank-grouped .col-account .acct-owner { display: inline; margin-left: .4em; }
   .bank-grouped .col-balance { font-size: .9rem; }
