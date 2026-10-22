@@ -1090,13 +1090,14 @@
       el("button", { type: "button", "aria-label": "Next month", text: "›", onclick: () => { budgetMonth = addMonths(month, 1); reload(); } }),
       el("button", { type: "button", class: "primary", text: "Add budget", onclick: () => budgetDialog(null) }));
 
-    function budgetDialog(existing) {
+    function budgetDialog(existing, preset = null) {
       const used = new Set(budgets.budgets.map((b) => b.category));
-      const picker = existing ? null : categoryPicker(choices.filter((c) => !used.has(c)), null);
+      const fixed = existing ? existing.category : preset;   // a row's own + button already knows the category
+      const picker = fixed ? null : categoryPicker(choices.filter((c) => !used.has(c)), null);
       const limit = el("input", { type: "number", min: "0.01", step: "0.01", inputmode: "decimal", value: existing ? String(existing.monthly_limit) : "", "aria-label": "Monthly limit" });
       const message = el("p", { class: "error", role: "alert" });
       const save = async () => {
-        const category = existing ? existing.category : picker.value();
+        const category = fixed || picker.value();
         const amount = Number(limit.value);
         if (!category) { message.textContent = "Choose a category."; return; }
         if (!(amount > 0)) { message.textContent = "Enter a limit above zero."; return; }
@@ -1106,7 +1107,7 @@
         } catch (err) { message.textContent = err instanceof SignedOut ? "Signed out." : err.message; }
       };
       openSheet(
-        el("h2", { text: existing ? categoryLabel(existing.category) : "Add a budget" }),
+        el("h2", { text: fixed ? categoryLabel(fixed) : "Add a budget" }),
         picker && el("label", {}, "Category", picker.node),
         el("label", {}, `Monthly limit (${cur})`, limit),
         el("div", { class: "actions" },
@@ -1179,8 +1180,13 @@
       return note;
     };
     // Every row has the same-sized slot for the button, so the bars line up whether or not a category has a budget.
-    const editButton = (b) => el("span", { class: "budget-slot" }, b && el("button", { type: "button", class: "secondary budget-edit", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
-      onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() }));
+    // A category with a budget gets Edit; one without gets a small + and target button that asks for the monthly amount.
+    const editButton = (b, category) => el("span", { class: "budget-slot" }, b
+      ? el("button", { type: "button", class: "secondary budget-edit", title: `Edit the ${categoryLabel(b.category)} budget`, "aria-label": `Edit ${categoryLabel(b.category)} budget`,
+        onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() }, iconSvg("i-target", 16))
+      : category && el("button", { type: "button", class: "secondary budget-add", title: `Add a budget for ${categoryLabel(category)}`, "aria-label": `Add a budget for ${categoryLabel(category)}`,
+        onclick: (e) => { e.stopPropagation(); budgetDialog(null, category); }, onkeydown: (e) => e.stopPropagation() },
+        el("span", { "aria-hidden": "true", text: "+" }), iconSvg("i-target", 16)));
 
     const maxSpent = Math.max(...rows.map((c) => Math.abs(c.spent)), 1);
     const spendCard = el("section", { class: "card" }, el("h2", { text: "Spending by category" }),
@@ -1198,7 +1204,7 @@
         return el("div", { class: `row sub${code ? " click" : ""}`, ...(code ? { role: "button", tabindex: 0, ...pickable(code) } : {}) },
           el("div", { class: "grow" }, el("div", { class: "muted", text: label }),
             sb ? budgetBar(spent, sb.monthly_limit) : progress((Math.max(spent, 0) / Math.max(c.spent, 0.01)) * 100, true), sb && budgetNote(sb)),
-          el("div", { class: "amount muted", text: money(spent, cur) }), editButton(sb));
+          el("div", { class: "amount muted", text: money(spent, cur) }), editButton(sb, code));
       }));
       let twisty = el("span", { class: "twisty" });
       if (parts.length > 0) {
@@ -1215,7 +1221,7 @@
         el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
         el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
           b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
-        el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b), twisty), group);
+        el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group);
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
     view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));

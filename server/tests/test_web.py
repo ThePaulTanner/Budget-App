@@ -525,3 +525,21 @@ def test_pinned_month_switcher_stays_on_one_line_on_very_narrow_phones():
     css = (WEB_DIR / "app.css").read_text()
     assert ".monthnav strong { font-size: .85rem; white-space: nowrap; }" in css
     assert ".monthnav strong { overflow: hidden; text-overflow: ellipsis; }" in css
+
+
+def test_categories_without_a_budget_get_a_plus_target_button_that_asks_for_the_amount():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'class: "secondary budget-add"' in page and 'iconSvg("i-target", 16)' in page
+    assert "budgetDialog(null, category)" in page and "function budgetDialog(existing, preset = null)" in page
+    assert "editButton(b, c.category)" in page and "editButton(sb, code)" in page
+    assert 'text: "Add budget"' in page   # the button at the top stays
+
+
+def test_edit_budget_button_is_just_the_target_and_matches_the_add_pill():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    edit = page[page.index('class: "secondary budget-edit"'):page.index('class: "secondary budget-add"')]
+    assert 'text: "Edit"' not in edit and 'iconSvg("i-target", 16)' in edit and '"aria-label": `Edit ' in edit
+    assert "button.budget-add, button.budget-edit {" in css and "width: 3.4rem; height: 1.9rem;" in css
