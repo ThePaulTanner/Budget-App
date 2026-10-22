@@ -617,3 +617,15 @@ def test_positions_table_has_currency_as_its_own_column_and_the_amount_has_no_cu
     table = app[start:app.index("if (!activityCard", start)]
     assert table.index('"Position"') < table.index('"Currency"') < table.index('"All time %"')
     assert 'class: "pos-cur muted", text: h.currency' in table and "money(h.value" not in table
+
+
+def test_a_transaction_in_the_category_popup_opens_the_category_editor_and_the_popup_comes_back():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    fn = page[page.index("async function showTransactions"):page.index("const pickable")]
+    assert "editFromPopup(tx, names, category)" in fn and 'role: "button"' in fn and "Tap a transaction to change its category." in fn
+    assert ".filter(Boolean))" in fn   # no stray "false" text when there is nothing to list
+    edit = page[page.index("function editFromPopup"):page.index("const pickable")]
+    assert "openTransaction(tx, choices, names" in edit and 'addEventListener("close", back)' in edit
+    assert "budgetPopup = category; reload();" in edit and "showTransactions(category)" in edit
+    assert "if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }" in page

@@ -1074,6 +1074,7 @@
   // ---------------------------------------------------------------- Budgets
 
   let budgetMonth = null;
+  let budgetPopup = null;   // a category whose transactions popup should reopen once the page has reloaded (after a category change)
 
   async function viewBudgets(id) {
     if (!budgetMonth) {
@@ -1143,20 +1144,36 @@
         for (const tx of page.transactions) {
           if (tx.date !== day) { day = tx.date; rows.push(el("div", { class: "dayhead", text: dayLabel(tx.date) })); }
           const amount = signed(tx.amount, tx.currency);
-          rows.push(el("div", { class: "row" },
+          const open = () => editFromPopup(tx, names, category);
+          rows.push(el("div", { class: "row click", role: "button", tabindex: 0, onclick: open,
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } } },
             el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
             el("div", { class: "grow" },
               el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
               el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} \u00B7 ${names[tx.account_id] || ""}` })),
             el("div", { class: `amount ${amount.cls}`, text: amount.text })));
         }
-        body.replaceChildren(
+        body.replaceChildren(...[
           el("p", { class: "muted", text: page.total === 0 ? "No transactions." : (page.total > page.transactions.length ? `${page.total} transactions. The newest ${page.transactions.length} add up to ${money(net, cur)}.` : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total.`) }),
+          page.total > 0 && el("p", { class: "muted", text: "Tap a transaction to change its category." }),
           ...rows,
-          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", onclick: closeSheet, text: "Search all transactions" })));
+          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", onclick: closeSheet, text: "Search all transactions" }))].filter(Boolean));   // replaceChildren would print a false as the word "false"
       } catch (err) {
         if (err instanceof SignedOut) { closeSheet(); showLogin(); } else if (body.isConnected) body.replaceChildren(el("p", { class: "error", text: err.message }));
       }
+    }
+    // A transaction opens the usual detail sheet (category picker, reset, rule offer). When that sheet closes the popup comes back:
+    // as it was if nothing changed, or after the page has reloaded with the new totals if the category was changed.
+    function editFromPopup(tx, names, category) {
+      const sheet = $("sheet");
+      let changed = false;
+      const back = () => {
+        sheet.removeEventListener("close", back);
+        if ($("shell").hidden || id !== navId) return;   // signed out, or moved to another page
+        if (changed) { budgetPopup = category; reload(); } else showTransactions(category);
+      };
+      sheet.addEventListener("close", back);
+      openTransaction(tx, choices, names, () => { changed = true; });
     }
     const pickable = (category) => ({ onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
 
@@ -1225,6 +1242,7 @@
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
     view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, trendCard));
+    if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }
   }
 
   // ---------------------------------------------------------------- Cash flow
