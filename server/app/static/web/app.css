@@ -526,13 +526,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .cf-left summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 .cf-checks { max-height: 220px; overflow: auto; }
 .cf-checks .row { padding: 6px 0; }
-.cf-tablewrap { overflow-x: auto; }
-.cf-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.cf-table th, .cf-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-.cf-table th:first-child, .cf-table td:first-child { text-align: left; }
-.cf-table th { color: var(--muted); font-weight: 600; font-size: .78rem; }
-.cf-table tr.click { cursor: pointer; } .cf-table tr.click:hover { background: var(--hover); }
-.cf-table .cf-total td { font-weight: 650; }
 @media (max-width: 1100px) { .cf-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .cf-controls { flex-wrap: wrap; }
@@ -822,7 +815,7 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
   .icon-btn:not(.current):not([aria-current="page"]):hover { background: var(--surface); }   /* the current one keeps its accent fill */
   .brand-refresh:hover { background: transparent; color: var(--muted); }
   .tabs-sub button:not([aria-pressed="true"]):hover { color: var(--muted); }   /* these rest on a transparent background: only the colour changes on hover */
-  .row.click:hover, .acct-table tr.click:hover, .cf-table tr.click:hover { background: transparent; }
+  .row.click:hover, .acct-table tr.click:hover { background: transparent; }
 }
 #tabs a, .brand, .menu-list a, a.icon-btn { -webkit-user-drag: none; }
 @media (max-width: 360px) { .subtabs .seg.period-seg button { font-size: .68rem; padding-inline: .1rem; } }

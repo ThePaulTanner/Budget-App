@@ -82,6 +82,16 @@ def test_delete_only_when_unused(services, seeded):
     assert client.get("/api/categories/custom", headers=auth).json()["categories"] == []
 
 
+def test_a_merchants_saved_category_blocks_delete(seeded):
+    client, auth = seeded
+    make(client, auth, "Pets")
+    merchant = client.post("/api/merchants", json={"name": "Pet Barn", "category": "PETS"}, headers=auth).json()
+    r = client.delete("/api/categories/PETS", headers=auth)
+    assert r.status_code == 409 and "1 merchant(s)" in r.json()["detail"]
+    client.patch(f"/api/merchants/{merchant['id']}", json={"category": None}, headers=auth)
+    assert client.delete("/api/categories/PETS", headers=auth).status_code == 204
+
+
 def test_requires_login(services, seeded):
     client, _ = seeded
     assert client.post("/api/categories", json={"name": "x"}).status_code == 401

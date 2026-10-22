@@ -239,10 +239,10 @@ def sync_transactions(
         for gone in removed:
             db.run("DELETE FROM transactions WHERE id=?", (gone["transaction_id"],))
         db.run("UPDATE items SET cursor=? WHERE id=?", (next_cursor, item["id"]))
-    if touched:
-        assign_rules(db, touched)
     if touched or removed:
         assign_merchants(db, touched)  # also tidies automatic merchants whose transactions were removed
+    if touched:
+        assign_rules(db, touched)  # after merchants: a merchant's saved category feeds in here
     return len(added) + len(modified) + len(removed)
 
 

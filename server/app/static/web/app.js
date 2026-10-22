@@ -513,6 +513,15 @@
     };
   }
 
+  // The same picker with a first choice for "no saved category" (value() is then null).
+  function optionalCategoryPicker(choices, current) {
+    const picker = categoryPicker(current && !choices.includes(current) ? [...choices, current] : choices, current);
+    const select = picker.node.firstChild;
+    select.prepend(el("option", { value: "", text: "Automatic (rules, then your bank)" }));
+    if (!current) select.value = "";
+    return { node: picker.node, value: () => (select.value === "" ? null : picker.value() || null) };
+  }
+
   function openSheet(...content) {
     const sheet = $("sheet");
     const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
@@ -1008,7 +1017,7 @@
   function openTransaction(tx, choices, accountName, onChange) {
     const picker = categoryPicker(choices.includes(tx.category) ? choices : [...choices, tx.category].filter(Boolean), tx.category);
     const amount = signed(tx.amount, tx.currency);
-    const sourceLabel = { rule: "Set by a rule", manual: "Changed by you", plaid: "From your bank (Plaid)" }[tx.category_source] || "From your bank (Plaid)";
+    const sourceLabel = { rule: "Set by a rule", merchant: "Set by its merchant", manual: "Changed by you", plaid: "From your bank (Plaid)" }[tx.category_source] || "From your bank (Plaid)";
     const message = el("p", { class: "error", role: "alert" });
     const offer = el("div");
 
@@ -1265,7 +1274,7 @@
   const CF_BAR_KEYS = [["income", "Income", "cf-inc", "rect"], ["expenses", "Expenses", "cf-exp", "rect"], ["net", "Net", "cf-net", "dot"]];
   const CF_LINE_KEYS = [["cum_income", "Income so far", "cf-inc"], ["cum_expenses", "Expenses so far", "cf-exp"],
     ["cum_net", "Saved (income − expenses)", "cf-saved"], ["nw", "Net worth change, accounts shown", "cf-nw"]];
-  const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, view: "chart", hidden: [] };
+  const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, hidden: [] };
   const cf = { ...CF_DEFAULTS };
   let cfZoom = [];
   const coarsePointer = () => matchMedia("(pointer: coarse)").matches;
@@ -1338,12 +1347,10 @@
     const legend2 = el("div", { class: "cf-legend", role: "group", "aria-label": "Lines on the chart" });
     const title1 = el("h2", { text: "Income and expenses" });
     const title2 = el("h3", { text: "Running totals" });
-    const viewSeg = el("div", { class: "seg compact", role: "group", "aria-label": "View" });
     const plot1 = el("div", { class: "cf-plot" });
     const plot2 = el("div", { class: "cf-plot" });
     const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
     const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty), el("div", { class: "cf-panel2" }, title2, legend2, plot2));
-    const tableView = el("div", { class: "cf-tablewrap", hidden: true });
     const notes = el("p", { class: "muted cf-notes" });
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
@@ -1351,8 +1358,8 @@
     const controls = el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn);
     const chartCard = el("section", { class: "card cf-card" },
       controls, customRow,
-      el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn, viewSeg)),
-      chartView, tableView, notes);
+      el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn)),
+      chartView, notes);
     const listTitle = el("h2", { text: "" });
     const listSummary = el("p", { class: "muted" });
     const sideSeg = el("div", { class: "seg compact", role: "group", "aria-label": "Show" });
@@ -1398,9 +1405,6 @@
         onclick: () => { cf.group = key; load(); } })));
       const n = (cf.accounts ? 1 : 0) + cf.exclude.length + (cf.pending ? 0 : 1) + (cf.transfers ? 1 : 0) + (cf.week_start !== "mon" ? 1 : 0);
       filtersBtn.textContent = n ? `Filters (${n})` : "Filters";
-      viewSeg.replaceChildren(...[["chart", "Chart"], ["table", "Table"]].map(([key, label]) => el("button", { type: "button", "aria-pressed": String(cf.view === key), text: label,
-        onclick: () => { cf.view = key; paintControls(); chartView.hidden = cf.view !== "chart"; tableView.hidden = cf.view !== "table"; } })));
-      chartView.hidden = cf.view !== "chart"; tableView.hidden = cf.view !== "table";
       zoomBtn.hidden = cfZoom.length === 0;
     }
 
@@ -1809,28 +1813,10 @@
           el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
     }
 
-    // ---- table view (the chart's numbers, readable without hovering)
-    function renderTable() {
-      const head = el("tr", {}, ["Period", "Income", "Expenses", "Net", "Saved so far", "Net worth"].map((h) => el("th", { text: h })));
-      const rows = data.buckets.map((b, i) => {
-        const r = el("tr", { tabindex: 0, class: "click" },
-          el("td", { text: b.label + (b.partial ? " (partial)" : "") }), el("td", { class: "amount", text: m2(b.income) }),
-          el("td", { class: "amount", text: m2(b.expenses) }), el("td", { class: "amount", text: sgn(b.net) }),
-          el("td", { class: "amount", text: sgn(b.cum_net) }), el("td", { class: "amount", text: m0(b.net_worth) }));
-        r.addEventListener("click", () => pin(i, "all"));
-        r.addEventListener("keydown", (e) => { if (e.key === "Enter") pin(i, "all"); });
-        return r;
-      });
-      const t = data.totals;
-      const total = el("tr", { class: "cf-total" }, el("td", { text: "Total" }), el("td", { class: "amount", text: m2(t.income) }),
-        el("td", { class: "amount", text: m2(t.expenses) }), el("td", { class: "amount", text: sgn(t.net) }), el("td"), el("td"));
-      tableView.replaceChildren(el("table", { class: "cf-table" }, el("thead", {}, head), el("tbody", {}, rows, total)));
-    }
-
     function render() {
       title1.textContent = `Income and expenses per ${data.group}`;
       title2.textContent = `Running totals since ${shortDate(data.range.start)}`;
-      paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
+      paintControls(); renderTiles(); renderLegends(); draw();
       notes.textContent = data.notes.join(" ");
     }
 
@@ -2119,15 +2105,19 @@
     show();
   }
 
-  function openAddMerchant(done) {
+  async function openAddMerchant(done) {
+    let choices;
+    try { choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
     const name = el("input", { maxlength: 80, placeholder: "e.g. Corner Store", "aria-label": "Merchant name" });
+    const category = optionalCategoryPicker(choices, null);
     const message = el("p", { class: "error", role: "alert" });
     openSheet(el("h2", { text: "Add a merchant" }),
       el("p", { class: "muted", text: "Creates an empty merchant. Attach bank text to it afterwards with Name it." }),
-      el("label", {}, "Name", name), message,
+      el("label", {}, "Name", name),
+      el("h3", { text: "Category (optional)" }), category.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Add", onclick: async () => {
-          try { await api("/api/merchants", { method: "POST", body: { name: name.value } }); closeSheet(); toast("Merchant added."); done(); }
+          try { await api("/api/merchants", { method: "POST", body: { name: name.value, category: category.value() } }); closeSheet(); toast("Merchant added."); done(); }
           catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
         } }),
         el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
@@ -2135,8 +2125,9 @@
 
   // Give some bank text a name. `done` runs after it is saved.
   async function openNameDialog({ pattern = "", field = "name", kind = "equals", name = "" }, done) {
-    let existing = [];
-    try { existing = (await api("/api/merchants?period=all")).merchants.map((m) => m.name); } catch (err) { if (err instanceof SignedOut) { showLogin(); return; } }
+    let existing = [], choices = [];
+    try { existing = (await api("/api/merchants?period=all")).merchants.map((m) => m.name); choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) { showLogin(); return; } }
+    const categoryPick = optionalCategoryPicker(choices, null);
     const patternInput = el("input", { value: pattern, maxlength: 200, "aria-label": "Bank text" });
     const kindSel = el("select", { "aria-label": "How to match" },
       [["equals", "is exactly"], ["contains", "contains"]].map(([v, l]) => el("option", { value: v, selected: v === kind, text: l })));
@@ -2172,12 +2163,15 @@
       el("div", { class: "toolbar" }, el("span", { class: "muted", text: "When" }), fieldSel, kindSel),
       el("label", {}, "Bank text", patternInput),
       previewBox,
-      el("label", {}, "Merchant name (pick an existing one to combine them)", nameInput), datalist, message,
+      el("label", {}, "Merchant name (pick an existing one to combine them)", nameInput), datalist,
+      el("h3", { text: "Category for this merchant (optional)" }),
+      el("p", { class: "muted", text: "Saved with the merchant, so all its transactions use it unless a rule or a change you made by hand says otherwise. Leave it on Automatic to keep what the merchant has now." }),
+      categoryPick.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save name", onclick: async () => {
           message.textContent = "";
           try {
-            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value } });
+            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value, ...(categoryPick.value() ? { category: categoryPick.value() } : {}) } });
             closeSheet();
             toast(`${r.updated_transactions} transaction${r.updated_transactions === 1 ? "" : "s"} now tracked as ${r.merchant.name}.`);
             done();
@@ -2209,7 +2203,8 @@
         stat("Average charge", d.average_transaction == null ? "\u2014" : money(d.average_transaction, cur)),
         stat("All time", money(d.lifetime.spent, cur)),
         stat("First seen", d.first_date ? shortDate(d.first_date) : "\u2014"),
-        stat("Last seen", d.last_date ? shortDate(d.last_date) : "\u2014")),
+        stat("Last seen", d.last_date ? shortDate(d.last_date) : "\u2014"),
+        stat("Category", d.category ? categoryLabel(d.category) : "Automatic")),
       d.spent === 0 && d.outflow > 0 && el("p", { class: "muted", text: `This is not counted as spending (payments, transfers and income are left out), but ${money(d.outflow, cur)} left your accounts.` }),
       el("h3", { text: "Spending by month" }), barChart(d.monthly, cur),
       d.categories.length > 0 && [el("h3", { text: "Categories" }), d.categories.slice(0, 4).map((c) =>
@@ -2229,7 +2224,7 @@
       }), el("p", {}, el("a", { href: `#/spending?tab=transactions&merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
       message,
       el("div", { class: "actions" },
-        el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
+        el("button", { type: "button", text: "Edit", onclick: () => openRename(d, () => { done(); again(); }) }),
         el("button", { type: "button", text: "Merge into\u2026", onclick: () => openMerge(d, done) }),
         // Deleting a merchant your bank named, with nothing of yours attached, would change nothing: it comes straight back.
         (!d.auto || d.alias_list.some((a) => a.source === "user")) && el("button", { type: "button", class: "danger", text: d.auto ? "Delete" : "Delete or reset", onclick: async () => {
@@ -2242,15 +2237,21 @@
         el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
   }
 
-  function openRename(d, done) {
+  async function openRename(d, done) {
+    let choices;
+    try { choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
     const name = el("input", { value: d.name, maxlength: 80, "aria-label": "Merchant name" });
+    const category = optionalCategoryPicker(choices, d.category);
     const message = el("p", { class: "error", role: "alert" });
-    openSheet(el("h2", { text: "Rename merchant" }),
+    openSheet(el("h2", { text: "Edit merchant" }),
       el("p", { class: "muted", text: "The new name shows everywhere. Matching transactions stay attached, including future ones." }),
-      el("label", {}, "Name", name), message,
+      el("label", {}, "Name", name),
+      el("h3", { text: "Category" }),
+      el("p", { class: "muted", text: "All this merchant\u2019s transactions use it, including future ones, unless a rule or a change you made by hand says otherwise." }),
+      category.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save", onclick: async () => {
-          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value } }); toast("Renamed."); done(); }
+          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value, category: category.value() } }); toast("Saved."); done(); }
           catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
         } }),
         el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
@@ -2636,7 +2637,7 @@
       try { await api(`/api/categories/${encodeURIComponent(code)}`, { method: "DELETE" }); toast("Category removed."); reload(); }
       catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
     }
-    const usage = (c) => { const bits = [c.transactions && `${c.transactions} transaction${c.transactions === 1 ? "" : "s"}`, c.budgets && `${c.budgets} budget${c.budgets === 1 ? "" : "s"}`, c.rules && `${c.rules} rule${c.rules === 1 ? "" : "s"}`].filter(Boolean); return bits.length ? bits.join(", ") : "Not used yet"; };
+    const usage = (c) => { const bits = [c.transactions && `${c.transactions} transaction${c.transactions === 1 ? "" : "s"}`, c.budgets && `${c.budgets} budget${c.budgets === 1 ? "" : "s"}`, c.rules && `${c.rules} rule${c.rules === 1 ? "" : "s"}`, c.merchants && `${c.merchants} merchant${c.merchants === 1 ? "" : "s"}`].filter(Boolean); return bits.length ? bits.join(", ") : "Not used yet"; };
     const categoryRows = [];
     for (const top of [...PRIMARIES].sort(byLabel)) {
       const own = mine.get(top);
@@ -2774,17 +2775,26 @@
   }
 
   // The sticky tab bars sit just under the top bar (and under the Spending tabs), so their heights are measured, not guessed.
+  // The pinned bars (top bar and the page's own bar) are measured once and then held at that exact height, so
+  // nothing that happens while scrolling on a phone (the browser's toolbars sliding away, a resize that only
+  // changes the height) can change their size. They are measured again only when their content or the width changes.
+  // The bars are re-measured when something inside them changes size (their own, held size is not watched).
+  const barWatcher = window.ResizeObserver ? new ResizeObserver(() => measureBars()) : null;
   function measureBars() {
     const root = document.documentElement.style;
-    root.setProperty("--topbar-h", `${document.querySelector(".topbar").offsetHeight}px`);
-    root.setProperty("--subtabs-h", `${$("subtabs").hidden ? 0 : $("subtabs").offsetHeight}px`);
+    const top = document.querySelector(".topbar"), sub = $("subtabs");
+    top.style.height = "";
+    sub.style.height = "";
+    const topHeight = Math.ceil(top.getBoundingClientRect().height);
+    const subHeight = sub.hidden ? 0 : Math.ceil(sub.getBoundingClientRect().height);
+    top.style.height = `${topHeight}px`;
+    if (!sub.hidden) sub.style.height = `${subHeight}px`;
+    root.setProperty("--topbar-h", `${topHeight}px`);
+    root.setProperty("--subtabs-h", `${subHeight}px`);
+    if (barWatcher) for (const node of [...top.children, ...sub.children]) barWatcher.observe(node);
   }
-  if (window.ResizeObserver) {
-    const watcher = new ResizeObserver(measureBars);
-    watcher.observe(document.querySelector(".topbar"));
-    watcher.observe($("subtabs"));
-  }
-  window.addEventListener("resize", measureBars);
+  let barsWidth = window.innerWidth;
+  window.addEventListener("resize", () => { if (window.innerWidth !== barsWidth) { barsWidth = window.innerWidth; measureBars(); } });
 
   // Pressing a page choice (or any header control) and sliding away would start dragging the link, which looks like a highlight
   // without going anywhere. These are for clicking, not dragging, so the drag is cancelled.

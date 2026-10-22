@@ -1,7 +1,7 @@
 """Categorization rules.
 
-Priority for a transaction's category: a manual change wins over a rule, and a rule
-wins over Plaid's own category. When several rules match, an `equals` rule beats a
+Priority for a transaction's category: a manual change wins over a rule, a rule wins over
+its merchant's saved category, and that wins over Plaid's own category. When several rules match, an `equals` rule beats a
 `contains` rule; among `contains` rules the longest pattern wins (more specific beats
 generic), then the newest rule.
 """
@@ -124,33 +124,30 @@ def assign_rules(db: Database, tx_ids: list[str] | None = None) -> int:
     Returns how many transactions changed.
     """
     rules = db.query("SELECT * FROM rules")
+    select = (
+        "SELECT t.id, t.account_id, t.name, t.merchant_name, t.rule_id, t.rule_category, "
+        "m.category AS merchant_category FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id"
+    )
     if tx_ids is None:
-        rows = db.query("SELECT id, account_id, name, merchant_name, rule_id FROM transactions")
+        rows = db.query(select)
     else:
         rows = []
         for start in range(0, len(tx_ids), 500):
             chunk = tx_ids[start : start + 500]
-            rows += db.query(
-                "SELECT id, account_id, name, merchant_name, rule_id FROM transactions "
-                f"WHERE id IN ({placeholders(len(chunk))})",
-                chunk,
-            )
+            rows += db.query(f"{select} WHERE t.id IN ({placeholders(len(chunk))})", chunk)
     changed = 0
     with db.transaction():
         for tx in rows:
+            # A rule beats the merchant's own category (which has no rule id), and both beat Plaid's.
             rule = best_rule(rules, tx)
             new_id = rule["id"] if rule else None
-            if new_id != tx["rule_id"]:
+            new_category = rule["category"] if rule else tx["merchant_category"]
+            if new_id != tx["rule_id"] or new_category != tx["rule_category"]:
                 db.run(
                     "UPDATE transactions SET rule_id=?, rule_category=? WHERE id=?",
-                    (new_id, rule["category"] if rule else None, tx["id"]),
+                    (new_id, new_category, tx["id"]),
                 )
                 changed += 1
-            elif rule is not None:
-                db.run(
-                    "UPDATE transactions SET rule_category=? WHERE id=? AND rule_category IS NOT ?",
-                    (rule["category"], tx["id"], rule["category"]),
-                )
     return changed
 
 

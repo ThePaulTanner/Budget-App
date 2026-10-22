@@ -709,3 +709,28 @@ def test_investments_page_amounts_use_a_plain_dollar_sign_not_us_dollar():
     assert 'text: moneyShort(t.value, cur)' in inv and "Book ${moneyShort(b.book, cur)}" in inv and "Value ${moneyShort(v, cur)}" in inv
     assert "gainText(b.gain, b.pct, cur, true)" in inv and "moneyShort(Math.abs(change.amount), currency)" in app
     assert "money(t.value" not in inv and "money(b.book" not in inv
+
+
+def test_merchant_boxes_offer_a_saved_category():
+    js = (WEB_DIR / "app.js").read_text()
+    assert "function optionalCategoryPicker" in js
+    add = js[js.index("async function openAddMerchant"):js.index("async function openNameDialog")]
+    assert "optionalCategoryPicker(choices, null)" in add and "category: category.value()" in add
+    name = js[js.index("async function openNameDialog"):js.index("async function openMerchantById")]
+    assert "categoryPick.value()" in name
+    edit = js[js.index("async function openRename"):js.index("async function openMerge")]
+    assert "Edit merchant" in edit and "optionalCategoryPicker(choices, d.category)" in edit and "category: category.value()" in edit
+    assert "Set by its merchant" in js
+
+
+def test_pinned_bars_are_held_at_a_measured_height():
+    js = (WEB_DIR / "app.js").read_text()
+    measure = js[js.index("function measureBars()"):js.index("// Pressing a page choice")]
+    assert 'top.style.height = `${topHeight}px`' in measure and "sub.style.height" in measure
+    assert "window.innerWidth !== barsWidth" in measure  # a resize that only changes the height is ignored
+    assert 'addEventListener("resize", measureBars)' not in js
+
+
+def test_overview_cash_flow_has_no_table_view():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "renderTable" not in app and "tableView" not in app and '["table", "Table"]' not in app

@@ -386,3 +386,82 @@ def test_a_realistic_volume_is_assigned_quickly(services):
     again = time.time() - started
     assert first < 10 and again < 3, (first, again)
     assert services.db.one("SELECT count(*) AS n FROM merchants")["n"] >= 1000  # a third have no Plaid name
+
+
+# -- a saved category on the merchant -------------------------------------------------
+
+
+def category_of(client, auth, tx_id):
+    rows = client.get("/api/transactions?limit=1000", headers=auth).json()["transactions"]
+    return next(t for t in rows if t["id"] == tx_id)
+
+
+def test_a_merchants_saved_category_applies_to_its_transactions(seeded, services):
+    client, auth = seeded
+    iga = by_name(merchants(client, auth, period="all"), "IGA")
+    assert iga["category"] is None
+    r = client.patch(f"/api/merchants/{iga['id']}", json={"category": "groceries"}, headers=auth)
+    assert r.status_code == 200 and r.json()["category"] == "GROCERIES" and r.json()["name"] == "IGA"
+    tx = category_of(client, auth, "tx_000")
+    assert (tx["category"], tx["category_source"], tx["rule_id"], tx["category_overridden"]) == ("GROCERIES", "merchant", None, False)
+    # Future transactions follow too.
+    add_tx(services, "tx_new", "IGA #2", "IGA", 5)
+    from app.rules import assign_rules
+    assign_rules(services.db, ["tx_new"])
+    assert category_of(client, auth, "tx_new")["category"] == "GROCERIES"
+    # Clearing it goes back to the bank's category.
+    client.patch(f"/api/merchants/{iga['id']}", json={"category": None}, headers=auth)
+    tx = category_of(client, auth, "tx_000")
+    assert tx["category"] == tx["plaid_category"] and tx["category_source"] == "plaid"
+
+
+def test_a_rule_and_a_manual_change_beat_the_merchant_category(seeded):
+    client, auth = seeded
+    iga = by_name(merchants(client, auth, period="all"), "IGA")
+    client.patch(f"/api/merchants/{iga['id']}", json={"category": "GROCERIES"}, headers=auth)
+    rule = client.post("/api/rules", json={"match_field": "merchant_name", "match_type": "equals", "pattern": "IGA", "category": "PANTRY", "apply_to_past": True}, headers=auth).json()
+    tx = category_of(client, auth, "tx_000")
+    assert (tx["category"], tx["category_source"], tx["rule_id"]) == ("PANTRY", "rule", rule["id"])
+    client.delete(f"/api/rules/{rule['id']}", headers=auth)
+    assert category_of(client, auth, "tx_000")["category"] == "GROCERIES"  # falls back to the merchant's
+    client.patch("/api/transactions/tx_000", json={"category": "TREATS"}, headers=auth)
+    assert category_of(client, auth, "tx_000")["category"] == "TREATS"
+
+
+def test_a_category_can_be_set_when_naming_or_adding_a_merchant(seeded):
+    client, auth = seeded
+    r = client.post("/api/merchants", json={"name": "Corner Store", "category": "Snacks"}, headers=auth)
+    assert r.status_code == 201 and r.json()["category"] == "SNACKS"
+    r = name_it(client, auth, "STORE", "Corner Store")
+    assert r.status_code == 201
+    assert by_name(merchants(client, auth, period="all"), "Corner Store")["category"] == "SNACKS"  # not sent: kept
+    body = {"match_field": "name", "match_type": "equals", "pattern": "STORE", "name": "Corner Store", "category": "Treats"}
+    client.post("/api/merchants/aliases", json=body, headers=auth)
+    assert by_name(merchants(client, auth, period="all"), "Corner Store")["category"] == "TREATS"
+
+
+def test_editing_a_merchant_needs_something_and_checks_the_category(seeded):
+    client, auth = seeded
+    iga = by_name(merchants(client, auth, period="all"), "IGA")
+    assert client.patch(f"/api/merchants/{iga['id']}", json={}, headers=auth).status_code == 400
+    assert client.patch(f"/api/merchants/{iga['id']}", json={"category": "bad!!"}, headers=auth).status_code == 400
+    assert client.patch(f"/api/merchants/{iga['id']}", json={"name": "IGA Market"}, headers=auth).json()["name"] == "IGA Market"
+
+
+def test_merging_keeps_a_category(seeded):
+    client, auth = seeded
+    rows = merchants(client, auth, period="all")
+    iga, store = by_name(rows, "IGA"), by_name(rows, "Store")
+    client.patch(f"/api/merchants/{iga['id']}", json={"category": "GROCERIES"}, headers=auth)
+    client.post(f"/api/merchants/{iga['id']}/merge", json={"into_id": store["id"]}, headers=auth)
+    assert by_name(merchants(client, auth, period="all"), "Store")["category"] == "GROCERIES"
+
+
+def test_cash_flow_names_the_merchant_as_the_source(seeded):
+    client, auth = seeded
+    iga = by_name(merchants(client, auth, period="all"), "IGA")
+    client.patch(f"/api/merchants/{iga['id']}", json={"category": "GROCERIES"}, headers=auth)
+    detail = client.get("/api/cashflow/transactions?period_start=2026-10-01&period_end=2026-10-31&range=all", headers=auth).json()
+    rows = [t for t in detail["transactions"] + detail["left_out"] if t["id"] == "tx_000"]
+    assert rows and rows[0]["category"] == "GROCERIES" and rows[0]["category_source"] == "merchant"
+    assert category_of(client, auth, "tx_000")["category_source"] == "merchant"
