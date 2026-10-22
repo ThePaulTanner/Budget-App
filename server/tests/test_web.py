@@ -729,3 +729,8 @@ def test_pinned_bars_are_held_at_a_measured_height():
     assert 'top.style.height = `${topHeight}px`' in measure and "sub.style.height" in measure
     assert "window.innerWidth !== barsWidth" in measure  # a resize that only changes the height is ignored
     assert 'addEventListener("resize", measureBars)' not in js
+
+
+def test_overview_cash_flow_has_no_table_view():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "renderTable" not in app and "tableView" not in app and '["table", "Table"]' not in app

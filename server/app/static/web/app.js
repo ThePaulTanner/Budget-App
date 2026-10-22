@@ -1274,7 +1274,7 @@
   const CF_BAR_KEYS = [["income", "Income", "cf-inc", "rect"], ["expenses", "Expenses", "cf-exp", "rect"], ["net", "Net", "cf-net", "dot"]];
   const CF_LINE_KEYS = [["cum_income", "Income so far", "cf-inc"], ["cum_expenses", "Expenses so far", "cf-exp"],
     ["cum_net", "Saved (income − expenses)", "cf-saved"], ["nw", "Net worth change, accounts shown", "cf-nw"]];
-  const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, view: "chart", hidden: [] };
+  const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, hidden: [] };
   const cf = { ...CF_DEFAULTS };
   let cfZoom = [];
   const coarsePointer = () => matchMedia("(pointer: coarse)").matches;
@@ -1347,12 +1347,10 @@
     const legend2 = el("div", { class: "cf-legend", role: "group", "aria-label": "Lines on the chart" });
     const title1 = el("h2", { text: "Income and expenses" });
     const title2 = el("h3", { text: "Running totals" });
-    const viewSeg = el("div", { class: "seg compact", role: "group", "aria-label": "View" });
     const plot1 = el("div", { class: "cf-plot" });
     const plot2 = el("div", { class: "cf-plot" });
     const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
     const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty), el("div", { class: "cf-panel2" }, title2, legend2, plot2));
-    const tableView = el("div", { class: "cf-tablewrap", hidden: true });
     const notes = el("p", { class: "muted cf-notes" });
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
@@ -1360,8 +1358,8 @@
     const controls = el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn);
     const chartCard = el("section", { class: "card cf-card" },
       controls, customRow,
-      el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn, viewSeg)),
-      chartView, tableView, notes);
+      el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn)),
+      chartView, notes);
     const listTitle = el("h2", { text: "" });
     const listSummary = el("p", { class: "muted" });
     const sideSeg = el("div", { class: "seg compact", role: "group", "aria-label": "Show" });
@@ -1407,9 +1405,6 @@
         onclick: () => { cf.group = key; load(); } })));
       const n = (cf.accounts ? 1 : 0) + cf.exclude.length + (cf.pending ? 0 : 1) + (cf.transfers ? 1 : 0) + (cf.week_start !== "mon" ? 1 : 0);
       filtersBtn.textContent = n ? `Filters (${n})` : "Filters";
-      viewSeg.replaceChildren(...[["chart", "Chart"], ["table", "Table"]].map(([key, label]) => el("button", { type: "button", "aria-pressed": String(cf.view === key), text: label,
-        onclick: () => { cf.view = key; paintControls(); chartView.hidden = cf.view !== "chart"; tableView.hidden = cf.view !== "table"; } })));
-      chartView.hidden = cf.view !== "chart"; tableView.hidden = cf.view !== "table";
       zoomBtn.hidden = cfZoom.length === 0;
     }
 
@@ -1818,28 +1813,10 @@
           el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
     }
 
-    // ---- table view (the chart's numbers, readable without hovering)
-    function renderTable() {
-      const head = el("tr", {}, ["Period", "Income", "Expenses", "Net", "Saved so far", "Net worth"].map((h) => el("th", { text: h })));
-      const rows = data.buckets.map((b, i) => {
-        const r = el("tr", { tabindex: 0, class: "click" },
-          el("td", { text: b.label + (b.partial ? " (partial)" : "") }), el("td", { class: "amount", text: m2(b.income) }),
-          el("td", { class: "amount", text: m2(b.expenses) }), el("td", { class: "amount", text: sgn(b.net) }),
-          el("td", { class: "amount", text: sgn(b.cum_net) }), el("td", { class: "amount", text: m0(b.net_worth) }));
-        r.addEventListener("click", () => pin(i, "all"));
-        r.addEventListener("keydown", (e) => { if (e.key === "Enter") pin(i, "all"); });
-        return r;
-      });
-      const t = data.totals;
-      const total = el("tr", { class: "cf-total" }, el("td", { text: "Total" }), el("td", { class: "amount", text: m2(t.income) }),
-        el("td", { class: "amount", text: m2(t.expenses) }), el("td", { class: "amount", text: sgn(t.net) }), el("td"), el("td"));
-      tableView.replaceChildren(el("table", { class: "cf-table" }, el("thead", {}, head), el("tbody", {}, rows, total)));
-    }
-
     function render() {
       title1.textContent = `Income and expenses per ${data.group}`;
       title2.textContent = `Running totals since ${shortDate(data.range.start)}`;
-      paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
+      paintControls(); renderTiles(); renderLegends(); draw();
       notes.textContent = data.notes.join(" ");
     }
 
