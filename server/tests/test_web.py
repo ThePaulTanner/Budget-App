@@ -401,3 +401,12 @@ def test_cash_flow_lives_on_the_overview_not_in_a_spending_tab():
     overview = overview[:overview.index("\n  }\n")]
     assert "viewCashflow(id, params, cashflowBox)" in overview
     assert "history.replaceState(null, \"\", `#/overview?${q}`)" in app
+
+
+def test_budgets_has_its_own_top_level_tab():
+    app = (WEB_DIR / "app.js").read_text()
+    html = (WEB_DIR / "index.html").read_text()
+    tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
+    assert "viewBudgets" not in tabs
+    assert "budgets: viewBudgets" in app and 'budgets: ["Budgets"' in app
+    assert 'href="#/budgets" data-tab="budgets"' in html and "tab=budgets" not in app
