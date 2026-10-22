@@ -461,6 +461,6 @@ def test_spending_by_category_folds_sub_categories_and_starts_folded():
 def test_budget_rows_put_title_and_money_above_a_full_width_bar_and_indent_sub_budgets():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index('class: "budget-head"')
-    row = app[start:app.index('el("button", { type: "button", class: "secondary", text: "Edit"', start)]
+    row = app[start:app.index('class: "secondary budget-edit"', start)]
     assert row.index("categoryLabel(b.category)") < row.index("of ${money(b.monthly_limit, cur)}") < row.index("progress(b.percent)")
     assert " sub budget-sub" in app and ".row.budget-sub { padding-left: 4rem; }" in (WEB_DIR / "app.css").read_text()
