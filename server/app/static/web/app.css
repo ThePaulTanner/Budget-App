@@ -306,7 +306,6 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .section-head h2 { margin: 0; font-size: 1.1rem; }
 .section-icon { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
 .section-head .grow { flex: 1; min-width: 0; }
-.section-total { margin: 8px 0 0; font-size: .85rem; font-variant-numeric: tabular-nums; text-align: right; }
 .table-wrap { overflow-x: auto; margin: 0 calc(var(--pad) * -.5); }
 .acct-table { width: 100%; border-collapse: collapse; }
 .acct-table th { padding: 8px 10px; border-top: 0; border-bottom: 1px solid var(--border); font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; white-space: nowrap; }
@@ -657,12 +656,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .cf-page-heading { margin: 0 0 10px; font-size: 1.1rem; }
 
 /* A position: ticker with its name (small), then what is held and at what price, then the money. */
-.hold-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.hold-name { font-size: .78rem; }
-.hold-line { margin-top: 3px; font-size: .88rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.hold-line .income, .hold-line .neg { font-weight: 600; }
-.hold-note { font-size: .78rem; }
-@media (max-width: 600px) { .hold-line { font-size: .8rem; } .hold-name { font-size: .74rem; } }
 
 /* The cash flow controls live at the top of the chart's box, small. */
 .cf-card .cf-controls { gap: 6px 8px; margin: 0 0 10px; }
@@ -765,3 +758,35 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
   .topbar { left: 0; }
   .content { grid-column: auto; }
 }
+
+/* Accounts: the section's total sits at the right end of its coloured header. */
+.acct-section > .section-head .head-total { margin-left: auto; padding-left: 12px; text-align: right; font-size: .85rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* Investments: each currency's total is its own bordered box, in smaller type so it takes fewer lines. */
+.cur-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin: 6px 0 10px; }
+.cur-box { padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
+.cur-name { font-size: .7rem; font-weight: 700; letter-spacing: .07em; color: var(--muted); }
+.cur-value { font-size: 1.45rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.cur-line { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 10px; font-size: .8rem; line-height: 1.35; }
+.cur-line > span { white-space: nowrap; }
+.cur-line strong { margin-left: auto; text-align: right; white-space: nowrap; }
+/* The period choice (Day, Since open, 1W ... 1Y) stays on one line, in smaller type. */
+.toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
+@media (max-width: 480px) {
+  .toolbar .seg { width: 100%; }
+  .toolbar .seg button { flex: 1 1 auto; padding: .3rem .2rem; font-size: .76rem; }
+}
+.cur-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+.cur-box .muted { font-size: inherit; }   /* .muted alone would force .9rem and make the labels bigger than their figures */
+.cur-box .cur-book { font-size: .8rem; }
+@media (max-width: 360px) {
+  .cur-value { font-size: 1.25rem; }
+  .cur-box .cur-book, .cur-line { font-size: .7rem; }
+}
+
+/* Investments: the positions of an account as a small table. */
+.pos-table td, .pos-table th { padding: 7px 8px; }
+.pos-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pos-table td.num.income, .pos-table td.num.neg { font-weight: 600; }
+.pos-table .pos-ticker { width: 100%; }
+@media (max-width: 480px) { .pos-table td, .pos-table th { padding: 6px 5px; font-size: .8rem; } }

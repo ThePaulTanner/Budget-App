@@ -224,11 +224,6 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
 
 
-def test_a_position_row_keeps_its_name_beside_the_ticker_and_wraps_when_needed():
-    css = (WEB_DIR / "app.css").read_text()
-    assert ".hold-head { display: flex; flex-wrap: wrap;" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
-
-
 def test_phone_sign_in_fills_the_screen():
     css = (WEB_DIR / "app.css").read_text()
     assert "min-height: 100dvh" in css and ".login-outer { flex: 1 1 auto;" in css and ".login-inner { flex: 1 1 auto;" in css
@@ -248,7 +243,7 @@ def test_phone_filters_sit_two_to_a_line_under_the_search_box():
 
 def test_desktop_spending_tabs_and_positions_are_tidy():
     css = (WEB_DIR / "app.css").read_text()
-    assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".hold-line {" in css
+    assert ".subtabs { width: 100%; max-width: 1120px;" in css
 
 
 def test_net_worth_chart_fades_the_estimated_days_and_says_so():
@@ -343,12 +338,14 @@ def test_overview_has_no_credit_card_section():
     assert "paymentsSummary" not in app and "/api/payments-due" not in overview
 
 
-def test_account_section_total_is_a_small_line_below_the_table():
+def test_account_section_total_sits_at_the_right_of_the_coloured_header():
     app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
-    assert section.index('class: "acct-table bank-grouped"') < section.index('class: "section-total muted"')
-    assert "`Total: ${sectionTotals(rows, kind)}`" in section
+    assert section.index('class: "head-total"') < section.index('class: "acct-table bank-grouped"')
+    assert "`Total: ${sectionTotals(rows, kind)}`" in section and 'class: "section-total muted"' not in section
+    assert ".acct-section > .section-head .head-total { margin-left: auto;" in css
 
 
 def test_page_shows_its_release_under_the_name_and_notices_a_newer_server(web):
@@ -416,20 +413,6 @@ def test_old_budgets_and_cash_flow_tab_addresses_go_to_their_new_pages():
     app = (WEB_DIR / "app.js").read_text()
     assert 'params.get("tab") === "budgets") name = "budgets"' in app
     assert 'params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }' in app
-
-
-def test_position_rows_are_ticker_and_name_then_held_and_price_then_the_money():
-    app = (WEB_DIR / "app.js").read_text()
-    start = app.index('class: "hold-head"')
-    row = app[start:app.index("if (!activityCard", start)]
-    assert row.index("hold-name") < row.index("held") < row.index("avg ") < row.index("now ")
-    assert row.index("now ") < row.index("`Book ") < row.index("`Value ") < row.index("P&L ")
-
-
-def test_a_closed_market_position_is_tagged_closed_with_its_last_trade_time():
-    app = (WEB_DIR / "app.js").read_text()
-    assert 'h.market_open ? "Live" : "Closed"' in app and "Last trade ${" in app
-    assert 'h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade })' in app  # visible on a phone, not just a tooltip
 
 
 def test_the_sign_in_button_says_passkey_not_face_id():
@@ -557,3 +540,48 @@ def test_title_bar_and_sidebar_are_fixed_so_they_never_scroll():
     assert ".content { grid-column: 2; box-sizing: border-box; padding-top: var(--topbar-h, 64px); }" in css
     assert ".sidebar { position: fixed; top: 0; left: 0; width: var(--side-w); box-sizing: border-box; }" in css
     assert ".topbar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }" in css
+
+
+def test_investments_total_has_a_box_for_each_currency_in_smaller_type():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewInvestments"):]
+    assert 'class: "cur-boxes"' in page and 'class: "cur-box"' in page and 'class: "cur-value"' in page
+    assert ".cur-box { padding: 8px 12px; border: 1px solid var(--border-strong);" in css and ".cur-value { font-size: 1.45rem;" in css
+    assert "Change since yesterday" not in app and 'day: "since yesterday\'s close"' in app
+    assert ".toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }" in css
+
+
+def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_not_empty():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3000]
+    assert '/api/spending/monthly?months=12' in page and 'text: "Last 12 months"' in page and "spendCard, trendCard" in page
+
+
+def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_gain_figures():
+    app = (WEB_DIR / "app.js").read_text()
+    box = app[app.index('class: "cur-box"'):app.index('el("div", { class: "toolbar" }, seg)')]
+    assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index("`All time")
+    assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
+    assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur)")
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".cur-line { display: flex; flex-wrap: wrap; justify-content: space-between;" in css and ".cur-line strong { margin-left: auto; text-align: right;" in css
+    assert ".cur-box .muted { font-size: inherit; }" in css
+
+
+def test_spending_summary_does_not_pass_a_missing_chart_card_to_replace_children():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3500]
+    assert "replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean))" in page
+    assert "without book value" in app and "N no book value" not in app
+    assert ".section-total" not in (WEB_DIR / "app.css").read_text()
+
+
+def test_positions_are_a_table_of_ticker_position_and_two_percent_pnl_columns():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    start = app.index('class: "acct-table pos-table"')
+    table = app[start:app.index("if (!activityCard", start)]
+    assert table.index('"Ticker"') < table.index('"Position"') < table.index('"All time %"') < table.index("`${periodLabel} %`")
+    assert "h.changes[invPeriod]" in table and "openPosition" in app and "avg " not in table and "held`" not in table
+    assert ".pos-table td.num" in css and ".hold-line" not in css

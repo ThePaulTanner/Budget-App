@@ -464,13 +464,13 @@
     return el("section", { class: `card acct-section ${kind}` },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
-        el("div", { class: "grow" }, el("h2", { text: label }))),
+        el("div", { class: "grow" }, el("h2", { text: label })),
+        el("div", { class: "head-total", text: `Total: ${sectionTotals(rows, kind)}` })),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls, unlabelled]) => el("th", { scope: "col", class: cls },
           // The amounts speak for themselves, so "Value" and "Balance" are not shown; screen readers still hear them.
           unlabelled ? el("span", { class: "sr", text }) : text)))),
-        el("tbody", {}, body))),
-      el("p", { class: "section-total muted", text: `Total: ${sectionTotals(rows, kind)}` }));
+        el("tbody", {}, body))));
   }
 
   // A line under the page title in a person's view; empty for the household.
@@ -891,9 +891,10 @@
 
   // The Spending page's first tab: this month's spending against the budgets, and the top categories.
   async function viewSpendingSummary(id) {
-    const [summary, spending] = await Promise.all([
+    const [summary, spending, monthly] = await Promise.all([
       api(scoped("/api/summary")),
-      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 }))]);  // no month = the current one, same as the summary
+      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 })),  // no month = the current one, same as the summary
+      api(scoped("/api/spending/monthly?months=12")).catch(() => null)]);
     if (id !== navId) return;
     baseCurrency = summary.base_currency;
     const worth = summary.net_worth.find((n) => n.currency === baseCurrency) || summary.net_worth[0];
@@ -915,7 +916,10 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
-    view().replaceChildren(viewerNote(), spendCard);
+    // The month's card is short, so the last twelve months sit under it instead of leaving the page empty.
+    const trendCard = Array.isArray(monthly) && monthly.length > 0
+      ? el("section", { class: "card" }, el("h3", { text: "Last 12 months" }), barChart(monthly, cur)) : null;
+    view().replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean));   // replaceChildren would print a null as the word "null"
   }
 
   // ---------------------------------------------------------------- Transactions
@@ -1822,13 +1826,15 @@
   // ---------------------------------------------------------------- Investments
 
   const CHANGE_PERIODS = [["day", "Day"], ["open", "Since open"], ["1w", "1W"], ["1m", "1M"], ["3m", "3M"], ["ytd", "YTD"], ["1y", "1Y"]];
+  // Phrases that finish "since …" / "over …" after the figures (upperFirst turns one into the line's label), not whole sentences.
   const PERIOD_HELP = {
-    day: "Change since yesterday's close.", open: "Change since today's open.", "1w": "Change over the last 7 days.",
-    "1m": "Change over the last month.", "3m": "Change over the last 3 months.", ytd: "Change since the start of the year.", "1y": "Change over the last year.",
+    day: "since yesterday's close", open: "since today's open", "1w": "over the last 7 days",
+    "1m": "over the last month", "3m": "over the last 3 months", ytd: "since the start of the year", "1y": "over the last year",
   };
   let invPeriod = "day";
   let syncPolls = 0;  // first-sync checks on the Settings screen since you last navigated or linked
 
+  const upperFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   function changeText(change, currency) {
     if (!change) return null;
     const sign = change.amount > 0 ? "+" : change.amount < 0 ? MINUS : "";
@@ -1918,16 +1924,20 @@
             : "";
       const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
-          : totals.map(([cur, t]) => {
+          : el("div", { class: "cur-boxes" }, totals.map(([cur, t]) => {
+            // Each currency is its own bordered box, so it is clear which figures belong together.
             const c = changeText(t.changes[invPeriod], cur);
             const b = bookOf(data.holdings, cur);
-            return el("div", {}, el("div", { class: "big" }, money(t.value, cur), el("span", { class: "muted", text: `  ${cur}` })),
-              b.known > 0 && el("div", { class: "muted" }, `Book value ${money(b.book, cur)} \u00B7 `,
-                el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: `All time ${gainText(b.gain, b.pct, cur)}` }),
-                b.missing > 0 && ` \u00B7 ${b.missing} position${b.missing === 1 ? " has" : "s have"} no book value from the bank`),
-              c ? el("div", { class: c.cls }, el("strong", { text: c.text }), el("span", { class: "muted", text: `  ${PERIOD_HELP[invPeriod]}` }))
-                : el("div", { class: "muted", text: "No change available for this period yet." }));
-          }),
+            return el("div", { class: "cur-box", role: "group", "aria-label": `${cur} total` },
+              el("div", { class: "cur-name", text: cur }),
+              // The value and the (small) book value share a line; each gain line is its label first, then the figures.
+              el("div", { class: "cur-top" }, el("span", { class: "cur-value", text: money(t.value, cur) }),
+                b.known > 0 && el("span", { class: "cur-book muted", text: `Book ${money(b.book, cur)}` })),
+              b.known > 0 && el("div", { class: "cur-line" }, el("span", { class: "muted", text: `All time${b.missing > 0 ? ` \u00B7 ${b.missing} without book value` : ""}` }),
+                el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) })),
+              c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: upperFirst(PERIOD_HELP[invPeriod]) }), el("strong", { class: c.cls, text: c.text }))
+                : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
+          })),
         el("div", { class: "toolbar" }, seg),
         statusLine && el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }));
 
@@ -1944,35 +1954,25 @@
           return el("p", { class: "muted" }, `Value ${money(v, cur)}`, b.known > 0 && ` \u00B7 Book value ${money(b.book, cur)} \u00B7 `,
             b.known > 0 && el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }));
         }),
-        holdings.map((h) => {
-          const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
-          const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
-          const sign = (n) => (n > 0 ? "+" : n < 0 ? MINUS : "");
-          const avg = h.cost_basis != null && h.quantity > 0 ? h.cost_basis / h.quantity : null;
-          const change = h.changes[invPeriod];
+        // Positions are a small table: the ticker, what the position is worth, its all-time P&L %, and its P&L % over the period chosen above.
+        (() => {
           const periodLabel = (CHANGE_PERIODS.find(([key]) => key === invPeriod) || [, invPeriod])[1];
-          const dots = (parts) => parts.filter(Boolean).flatMap((part, i) => (i === 0 ? [part] : [" \u00B7 ", part]));
-          // Why there is no live price is only said when something is off; a live position just carries a small tag.
-          const lastTrade = h.price_time ? `Last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
-          const tag = h.live ? (h.market_open ? "Live" : "Closed") : (h.price == null ? "No price" : "Bank price");
-          return el("div", { class: "row click holding", role: "button", tabindex: 0, onclick: () => openPosition(h),
-            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
-            el("div", { class: "grow" },
-              el("div", { class: "hold-head" }, el("strong", { text: h.ticker || h.name }), h.ticker && el("span", { class: "hold-name muted", text: h.name }),
-                el("span", { class: "badge", title: h.live ? lastTrade : (h.live_note || ""), text: tag })),
-              el("div", { class: "hold-line" }, ...dots([
-                `${h.quantity.toLocaleString("en-CA", { maximumFractionDigits: 4 })} held`,
-                `avg ${avg != null ? money(avg, h.currency) : "\u2014"}`,
-                el("span", {}, `now ${h.price != null ? money(h.price, h.currency) : "\u2014"}`,
-                  change && change.percent != null && el("span", { class: change.percent > 0 ? "income" : change.percent < 0 ? "neg" : "muted", text: ` ${sign(change.percent)}${Math.abs(change.percent).toFixed(2)}% ${periodLabel}` }))])),
-              el("div", { class: "hold-line hold-money" }, ...dots([
-                `Book ${h.cost_basis != null ? money(h.cost_basis, h.currency) : "\u2014"}`,
-                `Value ${h.value != null ? money(h.value, h.currency) : "\u2014"}`,
-                el("span", { class: gainCls, text: h.gain != null ? `P&L ${sign(h.gain)}${money(Math.abs(h.gain), h.currency)}` : "P&L \u2014" }),
-                el("span", { class: gainCls, text: pct != null ? `${sign(pct)}${Math.abs(pct).toFixed(1)}%` : "\u2014" })])),
-              h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade }),
-              h.live_note && el("div", { class: "hold-line hold-note", text: `No live price: ${h.live_note}` })));
-        })));
+          const sign = (n) => (n > 0 ? "+" : n < 0 ? MINUS : "");
+          const pctCell = (pct) => el("td", { class: `num ${pct == null || pct === 0 ? "" : pct > 0 ? "income" : "neg"}`, text: pct == null ? "\u2014" : `${sign(pct)}${Math.abs(pct).toFixed(2)}%` });
+          const open = (h) => openPosition(h);
+          return el("div", { class: "table-wrap" }, el("table", { class: "acct-table pos-table" },
+            el("thead", {}, el("tr", {}, [["Ticker", ""], ["Position", "num"], ["All time %", "num"], [`${periodLabel} %`, "num"]]
+              .map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
+            el("tbody", {}, holdings.map((h) => {
+              const allTime = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
+              const change = h.changes[invPeriod];
+              return el("tr", { class: "click", tabindex: 0, onclick: () => open(h),
+                onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(h); } } },
+                el("td", { class: "pos-ticker", title: h.live_note || h.name }, el("strong", { text: h.ticker || h.name })),
+                el("td", { class: "num", text: h.value != null ? money(h.value, h.currency) : "\u2014" }),
+                pctCell(allTime), pctCell(change && change.percent != null ? change.percent : null));
+            }))));
+        })()));
       if (!activityCard && data.holdings.length > 0) {
         const accounts = [...new Map(data.holdings.map((h) => [h.account_id, `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`]))];
         const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }), accounts.map(([v, t]) => el("option", { value: v, text: t })));
