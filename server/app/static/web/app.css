@@ -659,3 +659,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 
 /* Whose account it is: a small line under the account name (inline on a phone, to keep one line per account). */
 .acct-owner { font-size: .74rem; line-height: 1.3; }
+
+.cf-on-overview { margin-top: 16px; }
+.cf-page-heading { margin: 0 0 10px; font-size: 1.1rem; }

@@ -830,7 +830,7 @@
     view().replaceChildren(viewerNote(), ...sections);
   }
 
-  async function viewOverview(id) {
+  async function viewOverview(id, params = new URLSearchParams()) {
     const [summary, log] = await Promise.all([api(scoped("/api/summary")), api("/auth/login-log?limit=100").catch(() => null)]);
     if (id !== navId) return;
     setAlert(log);
@@ -859,8 +859,13 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       chartBox);
 
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));
+    const cashflowBox = el("div", { class: "cf-on-overview" });
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard), cashflowBox);
     drawChart();
+    // The cash flow loads on its own, so the net worth shows at once.
+    viewCashflow(id, params, cashflowBox).catch((err) => {
+      if (err instanceof SignedOut) showLogin(); else if (id === navId) cashflowBox.replaceChildren(el("p", { class: "error", text: err.message }));
+    });
   }
 
   // The Spending page's first tab: this month's spending against the budgets, and the top categories.
@@ -1227,8 +1232,9 @@
     return svg("path", { class: cls, d });
   }
 
-  async function viewCashflow(id, params) {
-    // An address like #/spending?tab=cashflow&range=6m&group=week opens that view.
+  // `mount` is the element the cash flow is drawn into (the Overview's); without one it fills the whole page.
+  async function viewCashflow(id, params, mount = null) {
+    // An address like #/overview?range=6m&group=week opens that view.
     if (params.get("range")) {
       cf.range = params.get("range"); cf.group = params.get("group");
       cf.start = params.get("start"); cf.end = params.get("end");
@@ -1287,7 +1293,8 @@
     document.body.append(tip);
     cleanups.push(() => tip.remove());
 
-    view().replaceChildren(viewerNote(), el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard);
+    const parts = [el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard];
+    if (mount) mount.replaceChildren(el("h2", { class: "cf-page-heading", text: "Cash flow" }), ...parts); else view().replaceChildren(viewerNote(), ...parts);
 
     // ---- controls
     function allowedGroups() {
@@ -1321,10 +1328,10 @@
     }
 
     function rememberAddress() {
-      const q = new URLSearchParams({ tab: "cashflow", range: cf.range });
+      const q = new URLSearchParams({ range: cf.range });
       if (cf.group) q.set("group", cf.group);
       if (cf.range === "custom" && cf.start && cf.end) { q.set("start", cf.start); q.set("end", cf.end); }
-      history.replaceState(null, "", `#/spending?${q}`);  // no hashchange, so no reload
+      history.replaceState(null, "", `#/overview?${q}`);  // no hashchange, so no reload
     }
 
     // ---- data
@@ -1744,7 +1751,6 @@
     }
 
     function render() {
-      $("page-sub").textContent = `${shortDate(data.range.start)} – ${shortDate(data.range.end)} · by ${data.group}`;
       title1.textContent = `Income and expenses per ${data.group}`;
       title2.textContent = `Running totals since ${shortDate(data.range.start)}`;
       paintControls(); renderTiles(); renderLegends(); draw(); renderTable();
@@ -2623,7 +2629,6 @@
     ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
     ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
-    ["cashflow", "Cash flow", viewCashflow, "Income and expenses over time"],
   ];
   let spendingTab = "summary";
   const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
@@ -2672,7 +2677,7 @@
   placeTabs();
 
   const PAGES = {
-    overview: ["Overview", "Your net worth over time"],
+    overview: ["Overview", "Net worth, and income and expenses over time"],
     accounts: ["Accounts", "Balances by bank and account"],
     spending: ["Spending", "This month, transactions, merchants, budgets and cash flow"],
     investments: ["Investments", "Positions at live prices"],

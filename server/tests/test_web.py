@@ -391,3 +391,13 @@ def test_there_is_no_money_page():
     html = (WEB_DIR / "index.html").read_text()
     assert "viewMoney" not in app and "DUE_PILLS" not in app and "#/money" not in html
     assert 'data-tab="money"' not in html and "money: [" not in app
+
+
+def test_cash_flow_lives_on_the_overview_not_in_a_spending_tab():
+    app = (WEB_DIR / "app.js").read_text()
+    tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
+    assert "viewCashflow" not in tabs and "Cash flow" not in tabs
+    overview = app[app.index("async function viewOverview"):]
+    overview = overview[:overview.index("\n  }\n")]
+    assert "viewCashflow(id, params, cashflowBox)" in overview
+    assert "history.replaceState(null, \"\", `#/overview?${q}`)" in app
