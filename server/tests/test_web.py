@@ -685,3 +685,11 @@ def test_budgets_spending_card_title_has_the_total_spent_at_its_right():
     assert 'el("h2", { text: "Spending by category" }), el("div", { class: "head-total", text: `Total spent ${money(spending.total, cur)}` })' in page
     assert "Transfers, loan and card payments and income are left out" not in page
     assert ".card-head { display: flex; align-items: baseline; justify-content: space-between;" in css and ".card-head + .row { border-top: 0; }" in css
+
+
+def test_every_other_top_level_budget_category_has_a_slightly_different_shade():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'for (const [index, c] of rows.entries())' in page and 'class: `cat-block${index % 2 === 1 ? " alt" : ""}`' in page
+    assert ".cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }" in css

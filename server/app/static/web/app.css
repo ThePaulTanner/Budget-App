@@ -841,3 +841,8 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
   .card-head h2 { font-size: .86rem; }
   .card-head .head-total { font-size: .7rem; }
 }
+
+/* Budgets: every other top-level category (and its sub-categories) is shaded very slightly. The block spans the same width as its rows. */
+.cat-block { margin: 0 calc(var(--pad) * -.5); padding: 0 calc(var(--pad) * .5); border-radius: 8px; }
+.cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.cat-block + .cat-block .row:first-child { border-top: 0; }

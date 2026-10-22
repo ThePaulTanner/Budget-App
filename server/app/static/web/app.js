@@ -1215,7 +1215,7 @@
     const spendCard = el("section", { class: "card" },
       el("div", { class: "card-head" }, el("h2", { text: "Spending by category" }), el("div", { class: "head-total", text: `Total spent ${money(spending.total, cur)}` })));
     if (rows.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
-    for (const c of rows) {
+    for (const [index, c] of rows.entries()) {
       // The sub-categories are a finer view of the same money, so they are indented and never added to the total.
       // They start folded away; the arrow on the category's row opens and closes them.
       const split = c.subcategories;
@@ -1240,11 +1240,13 @@
           }, onkeydown: (e) => e.stopPropagation() });
       }
       const b = budgetOf.get(c.category);
-      spendCard.append(el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
-        el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
-        el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
-          b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
-        el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group);
+      // Every other top-level category (with its sub-categories) has a very slightly different shade, to tell them apart at a glance.
+      spendCard.append(el("div", { class: `cat-block${index % 2 === 1 ? " alt" : ""}` },
+        el("div", { class: "row click", role: "button", tabindex: 0, ...pickable(c.category) },
+          el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
+          el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
+            b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
+          el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group));
     }
     view().replaceChildren(viewerNote(true), nav, spendCard);
     if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }
