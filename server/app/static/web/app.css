@@ -744,3 +744,7 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
 @media (max-width: 360px) {
   .monthnav strong { overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* Budgets: a category with no budget gets a small "+ target" button in the same slot where Edit sits. */
+button.budget-add { display: inline-flex; align-items: center; gap: 3px; padding: .25rem .5rem; min-height: 0; line-height: 1; font-weight: 650; }
+button.budget-add .ico { color: var(--accent); }
