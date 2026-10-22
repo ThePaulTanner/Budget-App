@@ -288,11 +288,11 @@ def test_top_title_is_always_the_app_name_and_overview_cards_have_no_count():
     assert 'data.cards.length === 1 ? "" : "s"' not in app
 
 
-def test_banks_are_logos_alone_on_money_and_accounts():
+def test_banks_are_logos_alone_on_accounts():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
     assert ".money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute;" in css
-    assert 'class: "bank-cell", title: name' in app
+    assert 'class: "bank-cell", title: a.institution' in app
 
 
 def test_merchants_tabs_live_in_the_fixed_bar_not_the_scrolling_page():
@@ -360,3 +360,44 @@ def test_page_shows_its_release_under_the_name_and_notices_a_newer_server(web):
     app = (WEB_DIR / "app.js").read_text()
     assert "serverRelease !== pageRelease" in app and "location.reload()" in app
     assert (WEB_DIR / "app.css").read_text().count(".release {") == 1
+
+
+def test_accounts_do_not_show_value_or_balance_column_headings():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert '"num col-balance", !(credit || kind === "loan")' in section
+    assert 'unlabelled ? el("span", { class: "sr", text }) : text' in section
+
+
+def test_accounts_show_the_owner_as_a_small_line_under_the_name_not_a_column():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert 'class: "muted acct-owner"' in section and 'class: "col-owner"' not in section
+    assert '["Owner", "col-owner"]' not in section and "function ownersCell" not in app
+    assert ".acct-owner { font-size: .74rem;" in (WEB_DIR / "app.css").read_text()
+
+
+def test_accounts_page_does_not_show_the_account_number():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert "a.mask" not in section
+
+
+def test_there_is_no_money_page():
+    app = (WEB_DIR / "app.js").read_text()
+    html = (WEB_DIR / "index.html").read_text()
+    assert "viewMoney" not in app and "DUE_PILLS" not in app and "#/money" not in html
+    assert 'data-tab="money"' not in html and "money: [" not in app
+
+
+def test_cash_flow_lives_on_the_overview_not_in_a_spending_tab():
+    app = (WEB_DIR / "app.js").read_text()
+    tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
+    assert "viewCashflow" not in tabs and "Cash flow" not in tabs
+    overview = app[app.index("async function viewOverview"):]
+    overview = overview[:overview.index("\n  }\n")]
+    assert "viewCashflow(id, params, cashflowBox)" in overview
+    assert "history.replaceState(null, \"\", `#/overview?${q}`)" in app
