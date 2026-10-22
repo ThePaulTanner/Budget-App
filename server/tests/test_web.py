@@ -437,7 +437,7 @@ def test_the_sign_in_button_says_passkey_not_face_id():
     app = (WEB_DIR / "app.js").read_text()
     assert ">Sign in with passkey<" in html and ">Sign in and set up a passkey<" in html
     for text in ("Sign in with Face ID", "Set up Face ID?", "Face ID is set up", '"Passkeys (Face ID)"'):
-        assert text not in html and text not in app, text
+        assert text not in html + app, text
 
 
 def test_cash_flow_controls_sit_at_the_top_of_the_chart_box_and_are_small():
