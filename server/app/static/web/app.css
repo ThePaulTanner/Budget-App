@@ -749,3 +749,19 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
 /* Edit (just the target) and + target are the same size of pill. */
 button.budget-add, button.budget-edit { display: inline-flex; align-items: center; justify-content: center; gap: 3px; width: 3.4rem; height: 1.9rem; padding: 0; min-height: 0; line-height: 1; font-weight: 650; border-radius: 99px; }
 button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
+
+/* Budgets: the month bar has one fixed height, so it never grows or shrinks (wide or narrow, any month name). */
+.monthnav { box-sizing: border-box; height: 56px; padding-block: 0; flex-wrap: nowrap; align-items: center; overflow: hidden; }
+.monthnav strong { white-space: nowrap; }
+@media (max-width: 600px) { .monthnav { height: 48px; } }
+
+/* The title bar (with its page choices on a phone) and the sidebar never scroll: they are fixed to the window, and the content
+   starts below the bar's measured height (--topbar-h, set in app.js). Sticky bars could slip on some phones. */
+.topbar { position: fixed; top: 0; left: var(--side-w); right: 0; }
+.content { grid-column: 2; box-sizing: border-box; padding-top: var(--topbar-h, 64px); }
+.sidebar { position: fixed; top: 0; left: 0; width: var(--side-w); box-sizing: border-box; }
+.topbar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }  /* solid, so nothing shows through as the page scrolls under it */
+@media (max-width: 860px) {
+  .topbar { left: 0; }
+  .content { grid-column: auto; }
+}
