@@ -549,3 +549,11 @@ def test_budgets_month_bar_has_a_locked_height():
     css = (WEB_DIR / "app.css").read_text()
     assert ".monthnav { box-sizing: border-box; height: 56px; padding-block: 0; flex-wrap: nowrap;" in css
     assert "@media (max-width: 600px) { .monthnav { height: 48px; } }" in css
+
+
+def test_title_bar_and_sidebar_are_fixed_so_they_never_scroll():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".topbar { position: fixed; top: 0; left: var(--side-w); right: 0; }" in css
+    assert ".content { grid-column: 2; box-sizing: border-box; padding-top: var(--topbar-h, 64px); }" in css
+    assert ".sidebar { position: fixed; top: 0; left: 0; width: var(--side-w); box-sizing: border-box; }" in css
+    assert ".topbar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }" in css
