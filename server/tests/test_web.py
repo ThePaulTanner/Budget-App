@@ -742,3 +742,12 @@ def test_budgets_month_bar_lives_in_the_pinned_page_bar():
     body = app[start:app.index("\n  async function ", start + 10)]
     assert 'bar.replaceChildren(nav)' in body and "measureBars();" in body
     assert "view().replaceChildren(viewerNote(true), spendCard);" in body and "nav, spendCard" not in body
+
+
+def test_name_merchant_dialog_uses_compact_rows_and_explains_automatic():
+    app = (WEB_DIR / "app.js").read_text()
+    dialog = app[app.index("async function openNameDialog"):app.index("async function openMerchantById")]
+    assert dialog.count('class: "field-row"') == 3
+    assert "Automatic uses a matching rule if there is one, otherwise the category from your bank." in dialog
+    assert "Leave it on Automatic to keep" not in dialog
+    assert ".field-row {" in (WEB_DIR / "app.css").read_text()

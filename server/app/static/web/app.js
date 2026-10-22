@@ -517,7 +517,7 @@
   function optionalCategoryPicker(choices, current) {
     const picker = categoryPicker(current && !choices.includes(current) ? [...choices, current] : choices, current);
     const select = picker.node.firstChild;
-    select.prepend(el("option", { value: "", text: "Automatic (rules, then your bank)" }));
+    select.prepend(el("option", { value: "", text: "Automatic" }));
     if (!current) select.value = "";
     return { node: picker.node, value: () => (select.value === "" ? null : picker.value() || null) };
   }
@@ -2165,13 +2165,13 @@
 
     openSheet(el("h2", { text: "Name this merchant" }),
       el("p", { class: "muted", text: "Pick the bank text to recognise, and the name to show and track it under. Matching is not case-sensitive." }),
-      el("div", { class: "toolbar" }, el("span", { class: "muted", text: "When" }), fieldSel, kindSel),
-      el("label", {}, "Bank text", patternInput),
+      el("div", { class: "field-row" }, el("span", { class: "muted", text: "When" }), fieldSel, kindSel),
+      el("div", { class: "field-row" }, el("label", {}, "Bank text", patternInput)),
       previewBox,
-      el("label", {}, "Merchant name (pick an existing one to combine them)", nameInput), datalist,
-      el("h3", { text: "Category for this merchant (optional)" }),
-      el("p", { class: "muted", text: "Saved with the merchant, so all its transactions use it unless a rule or a change you made by hand says otherwise. Leave it on Automatic to keep what the merchant has now." }),
-      categoryPick.node, message,
+      datalist,
+      el("div", { class: "field-row" }, el("label", { class: "grow-2" }, "Merchant", nameInput), el("label", {}, "Category", categoryPick.node)),
+      el("p", { class: "muted", text: "Pick an existing merchant name to combine them. Automatic uses a matching rule if there is one, otherwise the category from your bank." }),
+      message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save name", onclick: async () => {
           message.textContent = "";
@@ -2252,7 +2252,7 @@
       el("p", { class: "muted", text: "The new name shows everywhere. Matching transactions stay attached, including future ones." }),
       el("label", {}, "Name", name),
       el("h3", { text: "Category" }),
-      el("p", { class: "muted", text: "All this merchant\u2019s transactions use it, including future ones, unless a rule or a change you made by hand says otherwise." }),
+      el("p", { class: "muted", text: "All this merchant\u2019s transactions use it, including future ones, unless a rule or a change you made by hand says otherwise. Automatic uses a matching rule if there is one, otherwise the category from your bank." }),
       category.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save", onclick: async () => {
