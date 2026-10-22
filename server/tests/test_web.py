@@ -438,3 +438,12 @@ def test_the_sign_in_button_says_passkey_not_face_id():
     assert ">Sign in with passkey<" in html and ">Sign in and set up a passkey<" in html
     for text in ("Sign in with Face ID", "Set up Face ID?", "Face ID is set up", '"Passkeys (Face ID)"'):
         assert text not in html and text not in app
+
+
+def test_cash_flow_controls_sit_at_the_top_of_the_chart_box_and_are_small():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'const parts = [tiles, chartCard, listCard];' in app
+    box = app[app.index('const chartCard = el("section"'):]
+    assert box.index("controls, customRow") < box.index('class: "card-head"')
+    assert '"seg wide compact"' in app and '"seg compact", role: "group", "aria-label": "Group by"' in app
+    assert ".cf-controls button.cf-filters {" in (WEB_DIR / "app.css").read_text()

@@ -1249,9 +1249,9 @@
     const dShort = (text) => parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
 
     // ---- page skeleton
-    const rangeSeg = el("div", { class: "seg wide", role: "group", "aria-label": "Look-back period" });
-    const groupSeg = el("div", { class: "seg", role: "group", "aria-label": "Group by" });
-    const filtersBtn = el("button", { type: "button", class: "secondary", onclick: () => openFilters() });
+    const rangeSeg = el("div", { class: "seg wide compact", role: "group", "aria-label": "Look-back period" });
+    const groupSeg = el("div", { class: "seg compact", role: "group", "aria-label": "Group by" });
+    const filtersBtn = el("button", { type: "button", class: "secondary cf-filters", onclick: () => openFilters() });
     const cStart = el("input", { type: "date", "aria-label": "From" });
     const cEnd = el("input", { type: "date", "aria-label": "To" });
     const customRow = el("div", { class: "toolbar cf-custom", hidden: true }, el("label", {}, "From ", cStart), el("label", {}, "To ", cEnd),
@@ -1273,7 +1273,10 @@
     const notes = el("p", { class: "muted cf-notes" });
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
+    // The range, grouping and filters shape this chart (and the figures above it), so they sit at the top of its box.
+    const controls = el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn);
     const chartCard = el("section", { class: "card cf-card" },
+      controls, customRow,
       el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn, viewSeg)),
       chartView, tableView, notes);
     const listTitle = el("h2", { text: "" });
@@ -1293,7 +1296,7 @@
     document.body.append(tip);
     cleanups.push(() => tip.remove());
 
-    const parts = [el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard];
+    const parts = [tiles, chartCard, listCard];
     if (mount) mount.replaceChildren(el("h2", { class: "cf-page-heading", text: "Cash flow" }), ...parts); else view().replaceChildren(viewerNote(), ...parts);
 
     // ---- controls
