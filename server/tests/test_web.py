@@ -581,7 +581,7 @@ def test_positions_are_a_table_of_ticker_position_and_two_percent_pnl_columns():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
     start = app.index('class: "acct-table pos-table"')
-    table = app[start:app.index("if (!activityCard", start)]
+    table = app[start:app.index("view().replaceChildren(viewerNote(), head, ...cards)", start)]
     assert table.index('"Ticker"') < table.index('"Position"') < table.index('"All time %"') < table.index("`${periodLabel} %`")
     assert "h.changes[invPeriod]" in table and "openPosition" in app and "avg " not in table and "held`" not in table
     assert ".pos-table td.num" in css and ".hold-line" not in css
@@ -614,7 +614,7 @@ def test_investments_shows_the_bank_logo_beside_the_account_name_without_the_acc
 def test_positions_table_has_currency_as_its_own_column_and_the_amount_has_no_currency_sign():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index('class: "acct-table pos-table"')
-    table = app[start:app.index("if (!activityCard", start)]
+    table = app[start:app.index("view().replaceChildren(viewerNote(), head, ...cards)", start)]
     assert table.index('"Position"') < table.index('"Currency"') < table.index('"All time %"')
     assert 'class: "pos-cur muted", text: h.currency' in table and "money(h.value" not in table
 
@@ -648,3 +648,14 @@ def test_investments_period_filter_is_the_pinned_bar_under_the_page_choices():
     assert "lastData = data;" in inv and "paint(lastData)" in inv
     head = inv[inv.index('const head = el("section"'):inv.index("const byAccount")]
     assert "seg" not in head   # no longer inside the scrolling Total value card
+
+
+def test_investments_page_has_no_activity_list_and_budgets_cannot_go_to_a_future_month():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'text: "Activity"' not in inv and "activityCard" not in inv and "Click a position above" not in inv
+    assert "investmentActivity(() => ({ account_id: h.account_id, security_id: h.security_id }), false, id)" in inv   # a position's own history stays in its sheet
+    budgets = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'disabled: month >= latest' in budgets and "if (month < latest)" in budgets
+    assert "const month = budgetMonth > latest ? latest : budgetMonth;" in budgets
