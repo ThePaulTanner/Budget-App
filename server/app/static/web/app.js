@@ -460,6 +460,7 @@
     return el("p", { class: "viewer-note", text: `This page covers the whole household, not just ${name}.` });
   }
   let peopleLoaded = false;
+  const openBanks = new Set();  // Settings > Banks: which banks are unfolded
   async function loadPeople() {
     try { people = await api("/api/people"); } catch (err) { if (err instanceof SignedOut) throw err; people = []; }
     if (viewer != null && !people.some((p) => p.id === viewer)) viewer = null;
@@ -2439,14 +2440,20 @@
     }
 
     // A bank's details (who owns what, Hide) start folded away so the list of banks stays short; the arrow opens them.
-    function foldButton(body, what) {
-      const button = el("button", { type: "button", class: "twisty", "aria-expanded": "false", "aria-label": `Show ${what}`, text: "\u25B8",
-        onclick: () => {
-          body.hidden = !body.hidden;
-          button.setAttribute("aria-expanded", String(!body.hidden));
-          button.setAttribute("aria-label", `${body.hidden ? "Show" : "Hide"} ${what}`);
-          button.textContent = body.hidden ? "\u25B8" : "\u25BE";
-        } });
+    // The banks you open stay open while the page reloads itself after a change (until the page is loaded afresh).
+    function foldButton(body, what, key) {
+      const paint = () => {
+        button.setAttribute("aria-expanded", String(!body.hidden));
+        button.setAttribute("aria-label", `${body.hidden ? "Show" : "Hide"} ${what}`);
+        button.textContent = body.hidden ? "\u25B8" : "\u25BE";
+      };
+      const button = el("button", { type: "button", class: "twisty", onclick: () => {
+        body.hidden = !body.hidden;
+        if (body.hidden) openBanks.delete(key); else openBanks.add(key);
+        paint();
+      } });
+      body.hidden = !openBanks.has(key);
+      paint();
       return button;
     }
 
@@ -2464,7 +2471,7 @@
         group.length > 0 && accountsTable(group),
         group.length === 0 && el("p", { class: "muted bank-note", text: i.last_synced_at ? "No accounts at this bank." : "Its accounts appear after the first sync." }));
       return el("div", { class: "bank-block" },
-        el("div", { class: "row bank-line" }, foldButton(details, `the accounts at ${name}`), bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
+        el("div", { class: "row bank-line" }, foldButton(details, `the accounts at ${name}`, i.id), bankLogo(i, i.institution, 36), el("div", { class: "grow" }, el("strong", { text: i.institution || "Bank" }),
           el("div", { class: i.needs_reauth ? "error" : "muted", text: i.needs_reauth ? "Needs reconnecting" : i.last_synced_at ? `Last synced ${ago(i.last_synced_at)}` : "Waiting for the first sync\u2026" })),
           i.needs_reauth && el("button", { type: "button", class: "primary", text: "Reconnect", onclick: () => startLink(i, reload) }),
           el("button", { type: "button", class: "danger bank-remove", text: "Remove", onclick: async () => {
@@ -2499,7 +2506,7 @@
       orphans.length > 0 && (() => {
         const details = el("div", { class: "bank-body", hidden: true }, accountsTable(orphans));
         return el("div", { class: "bank-block" },
-          el("div", { class: "row bank-line" }, foldButton(details, "the other accounts"), el("div", { class: "grow" }, el("strong", { text: "Other accounts" }),
+          el("div", { class: "row bank-line" }, foldButton(details, "the other accounts", "other"), el("div", { class: "grow" }, el("strong", { text: "Other accounts" }),
             el("div", { class: "muted", text: "Not linked to a bank listed above." }))),
           details);
       })());

@@ -473,3 +473,9 @@ def test_settings_banks_start_folded_with_an_arrow_to_open_their_accounts():
     assert 'class: "bank-body", hidden: true' in block and "foldButton(details," in block
     assert block.index('class: "bank-body"') < block.index("accountsTable(group)")
     assert ".bank-body[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
+
+
+def test_unfolded_banks_stay_unfolded_when_the_list_reloads_and_other_accounts_fold_too():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "const openBanks = new Set();" in app and "body.hidden = !openBanks.has(key);" in app
+    assert 'foldButton(details, `the accounts at ${name}`, i.id)' in app and 'foldButton(details, "the other accounts", "other")' in app
