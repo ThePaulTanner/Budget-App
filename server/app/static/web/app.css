@@ -819,8 +819,9 @@ button.budget-add .ico, button.budget-edit .ico { width: 14px; height: 14px; }
 a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: transparent; }
 @media (hover: none) {
   #tabs a:not([aria-current="page"]):hover { background: transparent; color: var(--muted); }
-  .icon-btn:hover, .brand-refresh:hover, .tabs-sub button:hover { background: var(--surface); }
+  .icon-btn:not(.current):not([aria-current="page"]):hover { background: var(--surface); }   /* the current one keeps its accent fill */
   .brand-refresh:hover { background: transparent; color: var(--muted); }
+  .tabs-sub button:not([aria-pressed="true"]):hover { color: var(--muted); }   /* these rest on a transparent background: only the colour changes on hover */
   .row.click:hover, .acct-table tr.click:hover, .cf-table tr.click:hover { background: transparent; }
 }
 #tabs a, .brand, .menu-list a, a.icon-btn { -webkit-user-drag: none; }

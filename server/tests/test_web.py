@@ -635,6 +635,9 @@ def test_a_press_that_slides_away_does_not_leave_the_page_choices_highlighted():
     css = (WEB_DIR / "app.css").read_text()
     assert "-webkit-user-select: none; user-select: none;" in css and "-webkit-tap-highlight-color: transparent" in css
     assert "@media (hover: none)" in css and '#tabs a:not([aria-current="page"]):hover { background: transparent;' in css
+    touch = css[css.index("@media (hover: none)"):css.index("-webkit-user-drag: none; }")]
+    assert '.icon-btn:not(.current):not([aria-current="page"]):hover { background: var(--surface); }' in touch   # the current icon button keeps its accent fill
+    assert '.tabs-sub button:not([aria-pressed="true"]):hover { color: var(--muted); }' in touch and ".tabs-sub button:hover { background" not in touch
     app = (WEB_DIR / "app.js").read_text()
     assert 'document.addEventListener("dragstart"' in app and 'closest("#tabs, .topbar, .sidebar, .menu-list, .seg, .tabs-sub, .subtabs, button")' in app
     assert "-webkit-user-drag: none" in css
