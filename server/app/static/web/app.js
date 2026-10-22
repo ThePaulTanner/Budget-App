@@ -686,15 +686,15 @@
     box.addEventListener("close", () => { pending = ""; }, { once: true });  // also when something else closes it (sign-out)
     prefetchRegisterOptions().catch(() => {});  // so the tap goes straight to Face ID
     box.replaceChildren(el("div", { class: "setup" },
-      el("h2", { id: "passkey-setup-title", text: "Set up Face ID?" }),
-      el("p", {}, "Create a passkey on this device. Next time one look signs you in, with no password or code."),
+      el("h2", { id: "passkey-setup-title", text: "Set up a passkey?" }),
+      el("p", {}, "Create a passkey on this device. Next time you can sign in with it, with no password or code."),
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Create passkey", onclick: async (event) => {
           message.textContent = "";
           event.target.disabled = true;
-          try { await addPasskey(guessDevice(), pending); toast("Face ID is set up"); close(); }
+          try { await addPasskey(guessDevice(), pending); toast("Passkey is set up"); close(); }
           catch (err) {
-            if (err instanceof PasskeyExists) { toast("This device already has a passkey. Face ID sign-in is ready."); close(); return; }
+            if (err instanceof PasskeyExists) { toast("This device already has a passkey. Passkey sign-in is ready."); close(); return; }
             message.textContent = err.message;
             event.target.disabled = false;
           }
@@ -757,7 +757,7 @@
   // The browser says InvalidStateError when this device already holds a passkey the server knows about (we list those
   // so a second one is not made). So one exists here: remember that, and the sign-in page will lead with Face ID.
   class PasskeyExists extends Error {
-    constructor() { super("This device already has a passkey for HomeFinance, so Face ID sign-in is ready. Sign out and tap Sign in with Face ID."); }
+    constructor() { super("This device already has a passkey for HomeFinance, so passkey sign-in is ready. Sign out and tap Sign in with passkey."); }
   }
 
   async function addPasskey(name, password) {
@@ -1249,9 +1249,9 @@
     const dShort = (text) => parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
 
     // ---- page skeleton
-    const rangeSeg = el("div", { class: "seg wide", role: "group", "aria-label": "Look-back period" });
-    const groupSeg = el("div", { class: "seg", role: "group", "aria-label": "Group by" });
-    const filtersBtn = el("button", { type: "button", class: "secondary", onclick: () => openFilters() });
+    const rangeSeg = el("div", { class: "seg wide compact", role: "group", "aria-label": "Look-back period" });
+    const groupSeg = el("div", { class: "seg compact", role: "group", "aria-label": "Group by" });
+    const filtersBtn = el("button", { type: "button", class: "secondary cf-filters", onclick: () => openFilters() });
     const cStart = el("input", { type: "date", "aria-label": "From" });
     const cEnd = el("input", { type: "date", "aria-label": "To" });
     const customRow = el("div", { class: "toolbar cf-custom", hidden: true }, el("label", {}, "From ", cStart), el("label", {}, "To ", cEnd),
@@ -1273,7 +1273,10 @@
     const notes = el("p", { class: "muted cf-notes" });
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
+    // The range, grouping and filters shape this chart (and the figures above it), so they sit at the top of its box.
+    const controls = el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn);
     const chartCard = el("section", { class: "card cf-card" },
+      controls, customRow,
       el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn, viewSeg)),
       chartView, tableView, notes);
     const listTitle = el("h2", { text: "" });
@@ -1293,7 +1296,7 @@
     document.body.append(tip);
     cleanups.push(() => tip.remove());
 
-    const parts = [el("div", { class: "toolbar cf-controls" }, rangeSeg, groupSeg, filtersBtn), customRow, tiles, chartCard, listCard];
+    const parts = [tiles, chartCard, listCard];
     if (mount) mount.replaceChildren(el("h2", { class: "cf-page-heading", text: "Cash flow" }), ...parts); else view().replaceChildren(viewerNote(), ...parts);
 
     // ---- controls
@@ -2337,8 +2340,8 @@
     const passkeyPassword = el("input", { type: "password", autocomplete: "current-password", "aria-label": "Your password" });
     passkeyPassword.addEventListener("focus", () => { if (passkeysSupported()) prefetchRegisterOptions().catch(() => {}); });  // ready by the time you tap
     const passkeyMessage = el("p", { class: "error", role: "alert" });
-    const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys (Face ID)" }),
-      el("p", { class: "muted", text: "Sign in with Face ID or your device's unlock instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
+    const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys" }),
+      el("p", { class: "muted", text: "Sign in with your device's unlock (Face ID, fingerprint or PIN) instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
       passkeyList.length === 0 && el("p", { class: "empty", text: "No passkeys yet." }),
       passkeyList.map((p) => el("div", { class: "row" }, el("div", { class: "grow" },
         el("strong", { text: p.name }),
@@ -2858,7 +2861,7 @@
     event.preventDefault();
     const form = new FormData(event.target);
     const buttons = event.target.querySelectorAll("button");
-    const setUp = event.submitter?.id === "password-passkey-submit";  // "Sign in and set up Face ID"
+    const setUp = event.submitter?.id === "password-passkey-submit";  // "Sign in and set up a passkey"
     const password = form.get("password");
     for (const button of buttons) button.disabled = true;
     $("login-message").textContent = "";

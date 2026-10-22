@@ -663,3 +663,9 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .hold-line .income, .hold-line .neg { font-weight: 600; }
 .hold-note { font-size: .78rem; }
 @media (max-width: 600px) { .hold-line { font-size: .8rem; } .hold-name { font-size: .74rem; } }
+
+/* The cash flow controls live at the top of the chart's box, small. */
+.cf-card .cf-controls { gap: 6px 8px; margin: 0 0 10px; }
+.cf-controls .seg.compact button { padding: .15rem .5rem; font-size: .76rem; }
+.cf-controls button.cf-filters { padding: .15rem .6rem; font-size: .76rem; min-height: 0; }
+.cf-card .cf-custom { margin: 0 0 10px; }
