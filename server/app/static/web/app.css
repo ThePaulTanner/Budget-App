@@ -690,3 +690,15 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
 /* Settings > Banks: each bank's accounts start folded away; the arrow beside the bank opens them. */
 .bank-line .twisty { margin-left: -4px; }
 .bank-body[hidden] { display: none; }
+
+/* header: the title and the household choice, refresh and cog share one line, a little smaller */
+.top-actions { flex: none; flex-wrap: nowrap; gap: 6px; }
+.top-actions .icon-btn { width: 32px; height: 32px; }
+.top-actions .icon-btn .ico { width: 17px; height: 17px; }
+.top-actions .viewer select { padding: .28rem .65rem; font-size: .82rem; }
+.topbar .titles { min-width: 0; flex: 1 1 0; }
+.topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 860px) {
+  .topbar .titles { order: 1; }
+  .topbar .top-actions { order: 2; }
+}

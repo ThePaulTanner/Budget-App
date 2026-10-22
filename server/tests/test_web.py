@@ -485,3 +485,10 @@ def test_settings_banks_no_longer_has_the_long_explanation_paragraph():
     app = (WEB_DIR / "app.js").read_text()
     assert "Each bank lists its accounts" not in app and "switch hide on" not in app.lower()
     assert "add the people in your household on the People tab first" in app
+
+
+def test_header_keeps_title_and_controls_on_one_line_and_smaller():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".top-actions { flex: none; flex-wrap: nowrap;" in css
+    assert ".top-actions .icon-btn { width: 32px; height: 32px; }" in css
+    assert ".topbar .titles { min-width: 0; flex: 1 1 0; }" in css
