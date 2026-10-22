@@ -563,7 +563,7 @@ def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_g
     box = app[app.index('class: "cur-box"'):app.index("const byAccount")]
     assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index("`All time")
     assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
-    assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur)")
+    assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur, true)")
     css = (WEB_DIR / "app.css").read_text()
     assert ".cur-line { display: flex; flex-wrap: wrap; justify-content: space-between;" in css and ".cur-line strong { margin-left: auto; text-align: right;" in css
     assert ".cur-box .muted { font-size: inherit; }" in css
@@ -699,3 +699,13 @@ def test_every_other_top_level_budget_category_has_a_slightly_different_shade():
 def test_pinned_bars_tuck_under_the_top_bar_so_scrolling_content_cannot_show_through():
     css = (WEB_DIR / "app.css").read_text()
     assert ".subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }" in css
+
+
+def test_investments_page_amounts_use_a_plain_dollar_sign_not_us_dollar():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'currency === "USD" ? "en-US" : "en-CA"' in app and "const moneyShort = (value, currency) => {" in app
+    assert 'text: moneyShort(t.value, cur)' in inv and "Book ${moneyShort(b.book, cur)}" in inv and "Value ${moneyShort(v, cur)}" in inv
+    assert "gainText(b.gain, b.pct, cur, true)" in inv and "moneyShort(Math.abs(change.amount), currency)" in app
+    assert "money(t.value" not in inv and "money(b.book" not in inv

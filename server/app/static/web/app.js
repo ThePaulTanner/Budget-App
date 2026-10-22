@@ -1856,11 +1856,18 @@
   let syncPolls = 0;  // first-sync checks on the Settings screen since you last navigated or linked
 
   const upperFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  // On the Investments page the currency is named next to each total, so amounts there use a plain "$" (not "US$").
+  // In the Canadian locale "$" means CAD, so US dollars are formatted in the US locale to get a plain "$".
+  const shortFormatters = {};
+  const moneyShort = (value, currency) => {
+    shortFormatters[currency] ??= new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-CA", { style: "currency", currency, currencyDisplay: "narrowSymbol" });
+    return shortFormatters[currency].format(value);
+  };
   function changeText(change, currency) {
     if (!change) return null;
     const sign = change.amount > 0 ? "+" : change.amount < 0 ? MINUS : "";
     const percent = change.percent == null ? "" : ` (${sign}${Math.abs(change.percent).toFixed(2)}%)`;
-    return { text: `${sign}${money(Math.abs(change.amount), currency)}${percent}`, cls: change.amount > 0 ? "income" : change.amount < 0 ? "neg" : "muted" };
+    return { text: `${sign}${moneyShort(Math.abs(change.amount), currency)}${percent}`, cls: change.amount > 0 ? "income" : change.amount < 0 ? "neg" : "muted" };
   }
 
   // ---- Investment activity: buys, sells, dividends and fees with their dates ---------------------
@@ -1926,7 +1933,7 @@
       const value = known.reduce((sum, h) => sum + (h.value || 0), 0);
       return { book, gain: value - book, pct: book > 0 ? ((value - book) / book) * 100 : null, missing: mine.length - known.length, known: known.length };
     };
-    const gainText = (gain, pct, cur) => `${gain > 0 ? "+" : gain < 0 ? MINUS : ""}${money(Math.abs(gain), cur)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}`;
+    const gainText = (gain, pct, cur, short = false) => `${gain > 0 ? "+" : gain < 0 ? MINUS : ""}${(short ? moneyShort : money)(Math.abs(gain), cur)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}`;
     function openPosition(h) {
       const history = investmentActivity(() => ({ account_id: h.account_id, security_id: h.security_id }), false, id);
       const avg = h.cost_basis != null && h.quantity > 0 ? h.cost_basis / h.quantity : null;
@@ -1967,10 +1974,10 @@
             return el("div", { class: "cur-box", role: "group", "aria-label": `${cur} total` },
               el("div", { class: "cur-name", text: cur }),
               // The value and the (small) book value share a line; each gain line is its label first, then the figures.
-              el("div", { class: "cur-top" }, el("span", { class: "cur-value", text: money(t.value, cur) }),
-                b.known > 0 && el("span", { class: "cur-book muted", text: `Book ${money(b.book, cur)}` })),
+              el("div", { class: "cur-top" }, el("span", { class: "cur-value", text: moneyShort(t.value, cur) }),
+                b.known > 0 && el("span", { class: "cur-book muted", text: `Book ${moneyShort(b.book, cur)}` })),
               b.known > 0 && el("div", { class: "cur-line" }, el("span", { class: "muted", text: `All time${b.missing > 0 ? ` \u00B7 ${b.missing} without book value` : ""}` }),
-                el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) })),
+                el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur, true) })),
               c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: upperFirst(PERIOD_HELP[invPeriod]) }), el("strong", { class: c.cls, text: c.text }))
                 : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
           })),
@@ -1987,8 +1994,8 @@
         [...new Set(holdings.map((h) => h.currency))].map((cur) => {
           const b = bookOf(holdings, cur);
           const v = holdings.filter((h) => h.currency === cur).reduce((sum, h) => sum + (h.value || 0), 0);
-          return el("p", { class: "muted" }, `Value ${money(v, cur)}`, b.known > 0 && ` \u00B7 Book value ${money(b.book, cur)} \u00B7 `,
-            b.known > 0 && el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }));
+          return el("p", { class: "muted" }, `Value ${moneyShort(v, cur)}`, b.known > 0 && ` \u00B7 Book value ${moneyShort(b.book, cur)} \u00B7 `,
+            b.known > 0 && el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur, true) }));
         }),
         // Positions are a small table: the ticker, what the position is worth, its all-time P&L %, and its P&L % over the period chosen above.
         (() => {
