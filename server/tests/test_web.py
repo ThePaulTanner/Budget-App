@@ -226,7 +226,7 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
 
 def test_phone_positions_get_the_full_row_for_their_name():
     css = (WEB_DIR / "app.css").read_text()
-    assert ".row.holding .grow { flex: 1 1 100%; }" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
+    assert ".hold-name { display: block; margin: 0; }" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
 
 
 def test_phone_sign_in_fills_the_screen():
@@ -248,7 +248,7 @@ def test_phone_filters_sit_two_to_a_line_under_the_search_box():
 
 def test_desktop_spending_tabs_and_positions_are_tidy():
     css = (WEB_DIR / "app.css").read_text()
-    assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".row.holding .amount { display: flex;" in css
+    assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".hold-line {" in css
 
 
 def test_net_worth_chart_fades_the_estimated_days_and_says_so():
@@ -416,3 +416,11 @@ def test_old_budgets_and_cash_flow_tab_addresses_go_to_their_new_pages():
     app = (WEB_DIR / "app.js").read_text()
     assert 'params.get("tab") === "budgets") name = "budgets"' in app
     assert 'params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }' in app
+
+
+def test_position_rows_are_ticker_and_name_then_held_and_price_then_the_money():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index('class: "hold-head"')
+    row = app[start:app.index("if (!activityCard", start)]
+    assert row.index("hold-name") < row.index("held") < row.index("avg ") < row.index("now ")
+    assert row.index("now ") < row.index("`Book ") < row.index("`Value ") < row.index("P&L ")
