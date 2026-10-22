@@ -508,3 +508,20 @@ def test_header_controls_shrink_on_very_narrow_phones_instead_of_wrapping():
     css = (WEB_DIR / "app.css").read_text()
     assert ".topbar .titles { min-width: 5.5rem; }" in css
     assert "@media (max-width: 360px)" in css and ".top-actions .viewer select { max-width: 5.25rem;" in css
+
+
+def test_budgets_month_switcher_and_add_budget_stay_pinned_while_scrolling():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".monthnav { position: sticky; top: var(--topbar-h, 64px);" in css
+
+
+def test_account_sections_have_a_slim_coloured_header_band():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".acct-section > .section-head { gap: 8px; margin: calc(var(--pad) * -1) calc(var(--pad) * -1) 4px;" in css
+    assert ".acct-section.credit { --sec: var(--c-liab); }" in css and "color-mix(in srgb, var(--sec) 16%, var(--surface))" in css
+
+
+def test_pinned_month_switcher_stays_on_one_line_on_very_narrow_phones():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".monthnav strong { font-size: .85rem; white-space: nowrap; }" in css
+    assert ".monthnav strong { overflow: hidden; text-overflow: ellipsis; }" in css
