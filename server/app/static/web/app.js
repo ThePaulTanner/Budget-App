@@ -2769,6 +2769,9 @@
     const asked = path.replace(/^\//, "");
     const params = new URLSearchParams(query || "");
     let name = asked in ROUTES || isSpendingTab(asked) ? asked : "overview";
+    // Old Spending tabs that became pages of their own: their bookmarks go to the new place.
+    if (name === "spending" && params.get("tab") === "budgets") name = "budgets";
+    if (name === "spending" && params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }
     if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
     if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
     renderSubtabs(name);

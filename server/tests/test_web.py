@@ -410,3 +410,9 @@ def test_budgets_has_its_own_top_level_tab():
     assert "viewBudgets" not in tabs
     assert "budgets: viewBudgets" in app and 'budgets: ["Budgets"' in app
     assert 'href="#/budgets" data-tab="budgets"' in html and "tab=budgets" not in app
+
+
+def test_old_budgets_and_cash_flow_tab_addresses_go_to_their_new_pages():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'params.get("tab") === "budgets") name = "budgets"' in app
+    assert 'params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }' in app
