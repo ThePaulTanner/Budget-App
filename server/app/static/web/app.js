@@ -2861,7 +2861,7 @@
     event.preventDefault();
     const form = new FormData(event.target);
     const buttons = event.target.querySelectorAll("button");
-    const setUp = event.submitter?.id === "password-passkey-submit";  // "Sign in and set up Face ID"
+    const setUp = event.submitter?.id === "password-passkey-submit";  // "Sign in and set up a passkey"
     const password = form.get("password");
     for (const button of buttons) button.disabled = true;
     $("login-message").textContent = "";

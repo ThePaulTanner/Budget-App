@@ -44,9 +44,9 @@ The web app at `/app` uses the same password + authenticator code, but keeps its
 | **Devices** | Shows up as "Web browser" in the signed-in devices list and can be revoked like any device. Signing out revokes the session on the server and clears the cookie. |
 | **Honest limits** | A browser cookie is easier to steal from a compromised computer than a Face-ID-locked Keychain item. Use the web app only on computers you trust, and revoke it from Settings when you stop. |
 
-### Passkeys (Face ID) in the web app *(server)*
+### Passkeys in the web app *(server)*
 
-A signed-in user can add a **passkey** (WebAuthn) in Settings → Security → Passkeys. The sign-in page then offers **Sign in with Face ID**: the phone checks your face and signs a one-time challenge; the server checks that signature against the stored public key and opens the same cookie session as a password sign-in.
+A signed-in user can add a **passkey** (WebAuthn) in Settings → Security → Passkeys. The sign-in page then offers **Sign in with passkey**: the phone checks your face (or fingerprint or PIN) and signs a one-time challenge; the server checks that signature against the stored public key and opens the same cookie session as a password sign-in.
 
 | Piece | Choice |
 |---|---|
