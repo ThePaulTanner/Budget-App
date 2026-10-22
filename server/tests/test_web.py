@@ -464,3 +464,18 @@ def test_budget_rows_put_title_and_money_above_a_full_width_bar_and_indent_sub_b
     row = app[start:app.index('class: "secondary budget-edit"', start)]
     assert row.index("categoryLabel(b.category)") < row.index("of ${money(b.monthly_limit, cur)}") < row.index("progress(b.percent)")
     assert " sub budget-sub" in app and ".row.budget-sub { padding-left: 4rem; }" in (WEB_DIR / "app.css").read_text()
+
+
+def test_settings_banks_start_folded_with_an_arrow_to_open_their_accounts():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function bankBlock")
+    block = app[start:app.index("// Removing a bank is hidden until you press Edit", start)]
+    assert 'class: "bank-body", hidden: true' in block and "foldButton(details," in block
+    assert block.index('class: "bank-body"') < block.index("accountsTable(group)")
+    assert ".bank-body[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
+
+
+def test_unfolded_banks_stay_unfolded_when_the_list_reloads_and_other_accounts_fold_too():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "const openBanks = new Set();" in app and "body.hidden = !openBanks.has(key);" in app
+    assert 'foldButton(details, `the accounts at ${name}`, i.id)' in app and 'foldButton(details, "the other accounts", "other")' in app
