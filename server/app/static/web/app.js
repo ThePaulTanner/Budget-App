@@ -1211,8 +1211,9 @@
         el("span", { "aria-hidden": "true", text: "+" }), iconSvg("i-target", 16)));
 
     const maxSpent = Math.max(...rows.map((c) => Math.abs(c.spent)), 1);
-    const spendCard = el("section", { class: "card" }, el("h2", { text: "Spending by category" }),
-      el("p", { class: "muted", text: `${money(spending.total, cur)} in ${monthLabel(month)}. Transfers, loan and card payments and income are left out.` }));
+    // The title has the month's total on its right (the longer explanation is gone).
+    const spendCard = el("section", { class: "card" },
+      el("div", { class: "card-head" }, el("h2", { text: "Spending by category" }), el("div", { class: "head-total", text: `Total spent ${money(spending.total, cur)}` })));
     if (rows.length === 0) spendCard.append(el("p", { class: "empty", text: "Nothing spent this month." }));
     for (const c of rows) {
       // The sub-categories are a finer view of the same money, so they are indented and never added to the total.

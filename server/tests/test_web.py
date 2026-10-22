@@ -676,3 +676,12 @@ def test_sign_in_screen_has_no_blank_space_below_the_box_on_phones():
     css = (WEB_DIR / "app.css").read_text()
     assert ".login { min-height: 100vh; min-height: 100dvh; display: grid;" in css
     assert ".login { display: block; min-height: 0; padding: 0; background: var(--surface); }" in css
+
+
+def test_budgets_spending_card_title_has_the_total_spent_at_its_right():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'el("h2", { text: "Spending by category" }), el("div", { class: "head-total", text: `Total spent ${money(spending.total, cur)}` })' in page
+    assert "Transfers, loan and card payments and income are left out" not in page
+    assert ".card-head { display: flex; align-items: baseline; justify-content: space-between;" in css and ".card-head + .row { border-top: 0; }" in css

@@ -826,3 +826,18 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
 }
 #tabs a, .brand, .menu-list a, a.icon-btn { -webkit-user-drag: none; }
 @media (max-width: 360px) { .subtabs .seg.period-seg button { font-size: .68rem; padding-inline: .1rem; } }
+
+/* A card title with a figure at its right end (Budgets: Spending by category / Total spent). */
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.card-head h2 { margin: 0; }
+.card-head .head-total { font-size: .95rem; font-weight: 650; font-variant-numeric: tabular-nums; margin-left: auto; text-align: right; }
+.card-head + .row { border-top: 0; }
+@media (max-width: 600px) {
+  .card-head { flex-wrap: nowrap; }
+  .card-head h2 { font-size: .98rem; white-space: nowrap; }
+  .card-head .head-total { font-size: .8rem; white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  .card-head h2 { font-size: .86rem; }
+  .card-head .head-total { font-size: .7rem; }
+}
