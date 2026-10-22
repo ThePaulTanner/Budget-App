@@ -341,3 +341,11 @@ def test_overview_has_no_credit_card_section():
     overview = app[app.index("async function viewOverview"):]
     overview = overview[:overview.index("\n  }\n")]
     assert "paymentsSummary" not in app and "/api/payments-due" not in overview
+
+
+def test_account_section_total_is_a_small_line_below_the_table():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert section.index('class: "acct-table bank-grouped"') < section.index('class: "section-total muted"')
+    assert "`Total: ${sectionTotals(rows, kind)}`" in section

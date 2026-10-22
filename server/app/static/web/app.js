@@ -451,11 +451,11 @@
     return el("section", { class: `card acct-section ${kind}` },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
-        el("div", { class: "grow" }, el("h2", { text: label })),
-        el("div", { class: "section-total", text: sectionTotals(rows, kind) })),
+        el("div", { class: "grow" }, el("h2", { text: label }))),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
-        el("tbody", {}, body))));
+        el("tbody", {}, body))),
+      el("p", { class: "section-total muted", text: `Total: ${sectionTotals(rows, kind)}` }));
   }
 
   // A line under the page title in a person's view; empty for the household.

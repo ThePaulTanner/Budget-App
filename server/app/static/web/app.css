@@ -306,7 +306,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .section-head h2 { margin: 0; font-size: 1.1rem; }
 .section-icon { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
 .section-head .grow { flex: 1; min-width: 0; }
-.section-total { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.section-total { margin: 8px 0 0; font-size: .85rem; font-variant-numeric: tabular-nums; text-align: right; }
 .table-wrap { overflow-x: auto; margin: 0 calc(var(--pad) * -.5); }
 .acct-table { width: 100%; border-collapse: collapse; }
 .acct-table th { padding: 8px 10px; border-top: 0; border-bottom: 1px solid var(--border); font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; white-space: nowrap; }
@@ -323,7 +323,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 .bank-logo.initials { display: inline-grid; place-items: center; font-size: .8rem; font-weight: 700; border: 0; }
 .narrow-only { display: none; }
 @media (max-width: 1100px) { .col-bank, .col-owner { display: none; } .narrow-only { display: block; } }
-@media (max-width: 760px) { .col-extra { display: none; } .section-total { font-size: 1.1rem; } }
+@media (max-width: 760px) { .col-extra { display: none; } }
 
 /* Settings: banks with their accounts */
 .card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 4px; }
