@@ -542,6 +542,7 @@ def create_api_app(services: Services) -> FastAPI:
         # The script and style addresses carry the release number, so a new release is fetched once and an
         # unchanged one comes straight from the browser's cache.
         page = (STATIC_DIR / "web" / "index.html").read_text(encoding="utf-8")
+        page = page.replace('<meta name="release" content="">', f'<meta name="release" content="{version_module.VERSION}">')
         for name in ("theme.js", "app.js", "app.css"):
             page = page.replace(f'/static/web/{name}"', f'/static/web/{name}?v={version_module.VERSION}"')
         return Response(page, media_type="text/html", headers={"Content-Security-Policy": APP_CSP})

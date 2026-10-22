@@ -349,3 +349,14 @@ def test_account_section_total_is_a_small_line_below_the_table():
     section = app[start:app.index("async function viewAccounts", start)]
     assert section.index('class: "acct-table bank-grouped"') < section.index('class: "section-total muted"')
     assert "`Total: ${sectionTotals(rows, kind)}`" in section
+
+
+def test_page_shows_its_release_under_the_name_and_notices_a_newer_server(web):
+    from app import version
+    page = web.get("/app")
+    assert f'<meta name="release" content="{version.VERSION}">' in page.text
+    html = (WEB_DIR / "index.html").read_text()
+    assert html.index('id="page-title"') < html.index('id="release"') < html.index('id="page-sub"')
+    app = (WEB_DIR / "app.js").read_text()
+    assert "serverRelease !== pageRelease" in app and "location.reload()" in app
+    assert (WEB_DIR / "app.css").read_text().count(".release {") == 1
