@@ -1896,17 +1896,31 @@
         holdings.map((h) => {
           const pct = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
           const gainCls = h.gain == null || h.gain === 0 ? "" : h.gain > 0 ? "income" : "neg";
-          const c = changeText(h.changes[invPeriod], h.currency);
-          const priceNote = h.live ? (h.market_open ? "live" : `last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`) : (h.price == null ? "no price from your bank" : "bank price") + (h.live_note ? ` \u2014 no live price: ${h.live_note}` : "");
+          const sign = (n) => (n > 0 ? "+" : n < 0 ? MINUS : "");
+          const avg = h.cost_basis != null && h.quantity > 0 ? h.cost_basis / h.quantity : null;
+          const change = h.changes[invPeriod];
+          const periodLabel = (CHANGE_PERIODS.find(([key]) => key === invPeriod) || [, invPeriod])[1];
+          const dots = (parts) => parts.filter(Boolean).flatMap((part, i) => (i === 0 ? [part] : [" \u00B7 ", part]));
+          // Why there is no live price is only said when something is off; a live position just carries a small tag.
+          const lastTrade = h.price_time ? `Last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
+          const tag = h.live ? (h.market_open ? "Live" : "Closed") : (h.price == null ? "No price" : "Bank price");
           return el("div", { class: "row click holding", role: "button", tabindex: 0, onclick: () => openPosition(h),
             onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },
-              el("strong", { text: h.ticker || h.name }), h.live && h.market_open && el("span", { class: "badge", text: "Live" }),
-              el("div", { class: "muted", text: `${h.ticker ? h.name + " \u00B7 " : ""}${h.quantity} @ ${h.price != null ? money(h.price, h.currency) : "\u2014"} (${priceNote})` })),
-            el("div", { class: "amount" }, h.value != null ? money(h.value, h.currency) : "\u2014",
-              c && el("div", { class: c.cls, text: c.text }),
-              h.cost_basis != null && el("div", { class: "muted", text: `Book value ${money(h.cost_basis, h.currency)}` }),
-              h.gain != null && el("div", { class: `muted ${gainCls}`, text: `All time ${h.gain > 0 ? "+" : h.gain < 0 ? MINUS : ""}${money(Math.abs(h.gain), h.currency)}${pct != null ? ` (${pct >= 0 ? "+" : MINUS}${Math.abs(pct).toFixed(1)}%)` : ""}` })));
+              el("div", { class: "hold-head" }, el("strong", { text: h.ticker || h.name }), h.ticker && el("span", { class: "hold-name muted", text: h.name }),
+                el("span", { class: "badge", title: h.live ? lastTrade : (h.live_note || ""), text: tag })),
+              el("div", { class: "hold-line" }, ...dots([
+                `${h.quantity.toLocaleString("en-CA", { maximumFractionDigits: 4 })} held`,
+                `avg ${avg != null ? money(avg, h.currency) : "\u2014"}`,
+                el("span", {}, `now ${h.price != null ? money(h.price, h.currency) : "\u2014"}`,
+                  change && change.percent != null && el("span", { class: change.percent > 0 ? "income" : change.percent < 0 ? "neg" : "muted", text: ` ${sign(change.percent)}${Math.abs(change.percent).toFixed(2)}% ${periodLabel}` }))])),
+              el("div", { class: "hold-line hold-money" }, ...dots([
+                `Book ${h.cost_basis != null ? money(h.cost_basis, h.currency) : "\u2014"}`,
+                `Value ${h.value != null ? money(h.value, h.currency) : "\u2014"}`,
+                el("span", { class: gainCls, text: h.gain != null ? `P&L ${sign(h.gain)}${money(Math.abs(h.gain), h.currency)}` : "P&L \u2014" }),
+                el("span", { class: gainCls, text: pct != null ? `${sign(pct)}${Math.abs(pct).toFixed(1)}%` : "\u2014" })])),
+              h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade }),
+              h.live_note && el("div", { class: "hold-line hold-note", text: `No live price: ${h.live_note}` })));
         })));
       if (!activityCard && data.holdings.length > 0) {
         const accounts = [...new Map(data.holdings.map((h) => [h.account_id, `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`]))];
