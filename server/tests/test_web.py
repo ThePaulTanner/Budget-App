@@ -585,3 +585,9 @@ def test_positions_are_a_table_of_ticker_position_and_two_percent_pnl_columns():
     assert table.index('"Ticker"') < table.index('"Position"') < table.index('"All time %"') < table.index("`${periodLabel} %`")
     assert "h.changes[invPeriod]" in table and "openPosition" in app and "avg " not in table and "held`" not in table
     assert ".pos-table td.num" in css and ".hold-line" not in css
+
+
+def test_budget_pill_and_fold_arrow_take_less_room():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".row > .twisty { width: 22px; height: 22px;" in css
+    assert ".row > .budget-slot { width: 2.6rem;" in css and "button.budget-add, button.budget-edit { width: 2.6rem; height: 1.6rem;" in css
