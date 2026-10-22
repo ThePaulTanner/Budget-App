@@ -519,3 +519,8 @@ def test_account_sections_have_a_slim_coloured_header_band():
     css = (WEB_DIR / "app.css").read_text()
     assert ".acct-section > .section-head { gap: 8px; margin: calc(var(--pad) * -1) calc(var(--pad) * -1) 4px;" in css
     assert ".acct-section.credit { --sec: var(--c-liab); }" in css and "color-mix(in srgb, var(--sec) 16%, var(--surface))" in css
+
+
+def test_pinned_month_switcher_stays_on_one_line_on_very_narrow_phones():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".monthnav strong { font-size: .85rem; white-space: nowrap; }" in css

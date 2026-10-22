@@ -736,3 +736,8 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
 .acct-section > .section-head h2 { font-size: .95rem; line-height: 1.2; }
 .acct-section > .section-head .section-icon { width: 24px; height: 24px; border-radius: 0; background: transparent; color: var(--sec); }
 .acct-section > .section-head .section-icon svg { width: 20px; height: 20px; }
+@media (max-width: 360px) {
+  .monthnav { gap: 6px; }
+  .monthnav strong { font-size: .85rem; white-space: nowrap; }
+  .monthnav button { padding: .3rem .55rem; font-size: .85rem; }
+}
