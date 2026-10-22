@@ -400,18 +400,13 @@
     return Object.entries(totals).sort(([a], [b]) => (a === baseCurrency ? -1 : b === baseCurrency ? 1 : a.localeCompare(b)))
       .map(([cur, value]) => money(value, cur)).join(" \u00B7 ") + (kind === "credit" || kind === "loan" ? " owed" : "");
   }
-  function ownersCell(a) {
-    const names = (a.owner_ids || []).map(personName).filter(Boolean);
-    if (names.length === 0) return el("span", { class: "muted", text: "No owner yet" });
-    return el("span", {}, names.join(" & "), names.length > 1 && el("span", { class: "pill", text: "Shared" }));
-  }
   function accountSection(kind, label, iconId, rows, itemsById) {
     const credit = kind === "credit";
     const showOwner = people.length > 0;
     const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
     // The bank is its own column: one cell spans all of that bank's accounts in this section, so it
     // is shown once. Banks are ordered by what they hold, and each bank's accounts the same way.
-    const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-owner"],
+    const headers = [["Bank", "col-bankname"], ["Account", "col-account"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
       [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", !(credit || kind === "loan")]].filter(Boolean);
@@ -436,8 +431,7 @@
         el("td", { class: "col-account" },
           el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
           a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
-          showOwner && el("div", { class: "muted narrow-only", text: ownerText(a) || "" })),
-        showOwner && el("td", { class: "col-owner" }, ownersCell(a)),
+          showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" })),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
         credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
         credit && el("td", { class: `num col-extra${used != null && used >= 80 ? " neg" : ""}`, text: used != null ? `${used}%` : "\u2014" }),

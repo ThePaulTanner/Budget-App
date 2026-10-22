@@ -368,3 +368,12 @@ def test_accounts_do_not_show_value_or_balance_column_headings():
     section = app[start:app.index("async function viewAccounts", start)]
     assert '"num col-balance", !(credit || kind === "loan")' in section
     assert 'unlabelled ? el("span", { class: "sr", text }) : text' in section
+
+
+def test_accounts_show_the_owner_as_a_small_line_under_the_name_not_a_column():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert 'class: "muted acct-owner"' in section and 'class: "col-owner"' not in section
+    assert '["Owner", "col-owner"]' not in section and "function ownersCell" not in app
+    assert ".acct-owner { font-size: .74rem;" in (WEB_DIR / "app.css").read_text()
