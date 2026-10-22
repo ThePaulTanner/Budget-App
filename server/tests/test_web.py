@@ -343,12 +343,14 @@ def test_overview_has_no_credit_card_section():
     assert "paymentsSummary" not in app and "/api/payments-due" not in overview
 
 
-def test_account_section_total_is_a_small_line_below_the_table():
+def test_account_section_total_sits_at_the_right_of_the_coloured_header():
     app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
-    assert section.index('class: "acct-table bank-grouped"') < section.index('class: "section-total muted"')
-    assert "`Total: ${sectionTotals(rows, kind)}`" in section
+    assert section.index('class: "head-total"') < section.index('class: "acct-table bank-grouped"')
+    assert "`Total: ${sectionTotals(rows, kind)}`" in section and 'class: "section-total muted"' not in section
+    assert ".acct-section > .section-head .head-total { margin-left: auto;" in css
 
 
 def test_page_shows_its_release_under_the_name_and_notices_a_newer_server(web):

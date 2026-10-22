@@ -464,13 +464,13 @@
     return el("section", { class: `card acct-section ${kind}` },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
-        el("div", { class: "grow" }, el("h2", { text: label }))),
+        el("div", { class: "grow" }, el("h2", { text: label })),
+        el("div", { class: "head-total", text: `Total: ${sectionTotals(rows, kind)}` })),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls, unlabelled]) => el("th", { scope: "col", class: cls },
           // The amounts speak for themselves, so "Value" and "Balance" are not shown; screen readers still hear them.
           unlabelled ? el("span", { class: "sr", text }) : text)))),
-        el("tbody", {}, body))),
-      el("p", { class: "section-total muted", text: `Total: ${sectionTotals(rows, kind)}` }));
+        el("tbody", {}, body))));
   }
 
   // A line under the page title in a person's view; empty for the household.

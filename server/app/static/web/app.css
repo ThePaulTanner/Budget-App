@@ -765,3 +765,6 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
   .topbar { left: 0; }
   .content { grid-column: auto; }
 }
+
+/* Accounts: the section's total sits at the right end of its coloured header. */
+.acct-section > .section-head .head-total { margin-left: auto; padding-left: 12px; text-align: right; font-size: .85rem; font-weight: 650; font-variant-numeric: tabular-nums; }
