@@ -693,3 +693,4 @@ def test_every_other_top_level_budget_category_has_a_slightly_different_shade():
     page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
     assert 'for (const [index, c] of rows.entries())' in page and 'class: `cat-block${index % 2 === 1 ? " alt" : ""}`' in page
     assert ".cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }" in css
+    assert ".card-head { flex-wrap: wrap; }" in css and ".card-head .head-total { font-size: .66rem; }" in css
