@@ -2768,17 +2768,16 @@
   const menuButton = $("menu-button");
   const menuList = $("menu-list");
 
-  // The reconnect count comes from the banks list, on every screen.
   // The release this page was loaded as. The server may move on while a tab stays open (an update lands on the NAS),
   // and then the page's script is older than the server. The label under the title shows what the page runs, and
-  // turns into a Reload button once the server reports a newer release.
+  // turns into a Reload button once the server reports a different release.
   const pageRelease = (document.querySelector('meta[name="release"]') || {}).content || "";
   let releaseCheckedAt = 0;
   function showRelease(serverRelease) {
     const label = $("release");
     if (!label) return;
     if (serverRelease && pageRelease && serverRelease !== pageRelease) {
-      label.replaceChildren(el("button", { type: "button", class: "link release-reload", text: `v${pageRelease} \u00B7 update ${serverRelease} ready, tap to reload`,
+      label.replaceChildren(el("button", { type: "button", class: "link release-reload", text: `v${pageRelease} \u00B7 server is on ${serverRelease}, tap to reload`,
         onclick: () => location.reload() }));
     } else {
       label.textContent = pageRelease ? `v${pageRelease}` : "";
@@ -2790,6 +2789,7 @@
     try { showRelease((await api("/api/version")).version); } catch (err) { if (err instanceof SignedOut) throw err; }
   }
   showRelease("");
+  // The reconnect count comes from the banks list, on every screen.
   async function refreshStatus() {
     checkRelease().catch(() => {});
     try {
