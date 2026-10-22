@@ -1182,8 +1182,8 @@
     // Every row has the same-sized slot for the button, so the bars line up whether or not a category has a budget.
     // A category with a budget gets Edit; one without gets a small + and target button that asks for the monthly amount.
     const editButton = (b, category) => el("span", { class: "budget-slot" }, b
-      ? el("button", { type: "button", class: "secondary budget-edit", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
-        onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() })
+      ? el("button", { type: "button", class: "secondary budget-edit", title: `Edit the ${categoryLabel(b.category)} budget`, "aria-label": `Edit ${categoryLabel(b.category)} budget`,
+        onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() }, iconSvg("i-target", 16))
       : category && el("button", { type: "button", class: "secondary budget-add", title: `Add a budget for ${categoryLabel(category)}`, "aria-label": `Add a budget for ${categoryLabel(category)}`,
         onclick: (e) => { e.stopPropagation(); budgetDialog(null, category); }, onkeydown: (e) => e.stopPropagation() },
         el("span", { "aria-hidden": "true", text: "+" }), iconSvg("i-target", 16)));
