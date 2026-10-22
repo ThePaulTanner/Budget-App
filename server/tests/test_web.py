@@ -479,3 +479,9 @@ def test_unfolded_banks_stay_unfolded_when_the_list_reloads_and_other_accounts_f
     app = (WEB_DIR / "app.js").read_text()
     assert "const openBanks = new Set();" in app and "body.hidden = !openBanks.has(key);" in app
     assert 'foldButton(details, `the accounts at ${name}`, i.id)' in app and 'foldButton(details, "the other accounts", "other")' in app
+
+
+def test_settings_banks_no_longer_has_the_long_explanation_paragraph():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "Each bank lists its accounts" not in app and "switch hide on" not in app.lower()
+    assert "add the people in your household on the People tab first" in app
