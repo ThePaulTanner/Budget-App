@@ -892,7 +892,7 @@
           el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
             progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
           el("div", { class: "amount", text: money(c.spent, cur) }))),
-        el("p", {}, el("a", { href: "#/spending?tab=budgets", text: "See budgets and trends" }))]);
+        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
     view().replaceChildren(viewerNote(), spendCard);
   }
@@ -2623,12 +2623,11 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with five tabs. The old addresses (#/transactions, #/merchants, #/budgets) still open the right tab.
+  // Spending is one page with three tabs. The old addresses (#/transactions, #/merchants) still open the right tab.
   const SPENDING_TABS = [
     ["summary", "This month", viewSpendingSummary, "This month against your budgets"],
     ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
-    ["budgets", "Budgets", viewBudgets, "Limits and spending by month"],
   ];
   let spendingTab = "summary";
   const isSpendingTab = (key) => SPENDING_TABS.some(([k]) => k === key);
@@ -2679,11 +2678,12 @@
   const PAGES = {
     overview: ["Overview", "Net worth, and income and expenses over time"],
     accounts: ["Accounts", "Balances by bank and account"],
-    spending: ["Spending", "This month, transactions, merchants, budgets and cash flow"],
+    spending: ["Spending", "This month, transactions and merchants"],
+    budgets: ["Budgets", "Limits and spending by month"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],
   };
-  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
 
   const menuButton = $("menu-button");
   const menuList = $("menu-list");
@@ -2769,6 +2769,9 @@
     const asked = path.replace(/^\//, "");
     const params = new URLSearchParams(query || "");
     let name = asked in ROUTES || isSpendingTab(asked) ? asked : "overview";
+    // Old Spending tabs that became pages of their own: their bookmarks go to the new place.
+    if (name === "spending" && params.get("tab") === "budgets") name = "budgets";
+    if (name === "spending" && params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }
     if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
     if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
     renderSubtabs(name);
