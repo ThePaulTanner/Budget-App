@@ -363,7 +363,7 @@ def test_accounts_do_not_show_value_or_balance_column_headings():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
-    assert '"num col-balance", !(credit || kind === "loan")' in section
+    assert '"num col-balance", true' in section and '"Owed"' in section   # still announced to screen readers, just not shown
     assert 'unlabelled ? el("span", { class: "sr", text }) : text' in section
 
 

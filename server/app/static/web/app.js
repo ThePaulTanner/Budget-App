@@ -429,7 +429,7 @@
     const headers = [["Bank", "col-bankname"], ["Account", "col-account"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
-      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", !(credit || kind === "loan")]].filter(Boolean);
+      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", true]].filter(Boolean);
     const size = (a) => Math.abs(a.current_balance || 0);
     const banks = new Map();
     for (const a of rows) {
@@ -468,7 +468,7 @@
         el("div", { class: "head-total", text: `Total: ${sectionTotals(rows, kind)}` })),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls, unlabelled]) => el("th", { scope: "col", class: cls },
-          // The amounts speak for themselves, so "Value" and "Balance" are not shown; screen readers still hear them.
+          // The amounts speak for themselves (and the header says "owed" for credit and loans), so this column's title is not shown; screen readers still hear it.
           unlabelled ? el("span", { class: "sr", text }) : text)))),
         el("tbody", {}, body))));
   }
