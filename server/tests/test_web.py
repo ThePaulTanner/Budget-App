@@ -336,3 +336,10 @@ def test_page_is_compressed_and_its_assets_are_cached_by_release(web):
     assert script.headers["content-encoding"] == "gzip"
     assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
     assert web.get("/static/web/app.js").headers["cache-control"] == "no-cache"
+
+
+def test_account_sections_do_not_show_an_account_count():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("function accountSection")
+    section = app[start:app.index("async function viewAccounts", start)]
+    assert 'rows.length === 1 ? "" : "s"' not in section

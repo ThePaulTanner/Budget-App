@@ -451,7 +451,7 @@
     return el("section", { class: `card acct-section ${kind}` },
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
-        el("div", { class: "grow" }, el("h2", { text: label }), el("div", { class: "muted", text: `${rows.length} account${rows.length === 1 ? "" : "s"}` })),
+        el("div", { class: "grow" }, el("h2", { text: label })),
         el("div", { class: "section-total", text: sectionTotals(rows, kind) })),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
