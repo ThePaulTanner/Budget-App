@@ -543,3 +543,9 @@ def test_edit_budget_button_is_just_the_target_and_matches_the_add_pill():
     edit = page[page.index('class: "secondary budget-edit"'):page.index('class: "secondary budget-add"')]
     assert 'text: "Edit"' not in edit and 'iconSvg("i-target", 16)' in edit and '"aria-label": `Edit ' in edit
     assert "button.budget-add, button.budget-edit {" in css and "width: 3.4rem; height: 1.9rem;" in css
+
+
+def test_budgets_month_bar_has_a_locked_height():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".monthnav { box-sizing: border-box; height: 56px; padding-block: 0; flex-wrap: nowrap;" in css
+    assert "@media (max-width: 600px) { .monthnav { height: 48px; } }" in css

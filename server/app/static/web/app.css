@@ -749,3 +749,8 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
 /* Edit (just the target) and + target are the same size of pill. */
 button.budget-add, button.budget-edit { display: inline-flex; align-items: center; justify-content: center; gap: 3px; width: 3.4rem; height: 1.9rem; padding: 0; min-height: 0; line-height: 1; font-weight: 650; border-radius: 99px; }
 button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
+
+/* Budgets: the month bar has one fixed height, so it never grows or shrinks (wide or narrow, any month name). */
+.monthnav { box-sizing: border-box; height: 56px; padding-block: 0; flex-wrap: nowrap; align-items: center; overflow: hidden; }
+.monthnav strong { white-space: nowrap; }
+@media (max-width: 600px) { .monthnav { height: 48px; } }
