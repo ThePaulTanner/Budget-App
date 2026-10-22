@@ -1257,7 +1257,12 @@
             b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
           el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group));
     }
-    view().replaceChildren(viewerNote(true), nav, spendCard);
+    // The month bar and Add budget live in the page's pinned bar (like Investments' period choice), not in the scrolling page.
+    const bar = $("subtabs");
+    bar.replaceChildren(nav);
+    bar.hidden = false;
+    measureBars();
+    view().replaceChildren(viewerNote(true), spendCard);
     if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }
   }
 

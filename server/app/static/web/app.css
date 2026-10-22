@@ -845,3 +845,6 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
    paint a few pixels of page colour above themselves, so a rounding error in the measured height can't leave a sliver
    that scrolling content shows through. */
 .subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }
+
+/* Budgets: the month bar sits inside the pinned page bar (#subtabs), which holds the height. */
+#subtabs .monthnav { position: static; margin: 0; padding: 0; height: auto; overflow: visible; box-shadow: none; background: transparent; }

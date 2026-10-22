@@ -435,7 +435,7 @@ def test_cash_flow_controls_sit_at_the_top_of_the_chart_box_and_are_small():
 def test_spending_by_category_folds_sub_categories_and_starts_folded():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index('const group = el("div", { class: "sub-group", hidden: true }')
-    block = app[start:app.index("view().replaceChildren(viewerNote(true), nav, spendCard);", start)]
+    block = app[start:app.index("view().replaceChildren(viewerNote(true), spendCard);", start)]
     assert '"aria-expanded": "false"' in block and "group.hidden = !group.hidden" in block
     assert "e.stopPropagation();  // the row itself opens the transactions" in block
     assert ".sub-group[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
@@ -668,7 +668,7 @@ def test_budgets_page_has_no_twelve_month_chart():
     app = (WEB_DIR / "app.js").read_text()
     page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
     assert "barChart" not in page and "Last 12 months" not in page and "/api/spending/monthly" not in page
-    assert "view().replaceChildren(viewerNote(true), nav, spendCard);" in page
+    assert "view().replaceChildren(viewerNote(true), spendCard);" in page
     assert "barChart(monthly, cur)" in app   # the Spending page's own "Last 12 months" chart is unchanged
 
 
@@ -734,3 +734,11 @@ def test_pinned_bars_are_held_at_a_measured_height():
 def test_overview_cash_flow_has_no_table_view():
     app = (WEB_DIR / "app.js").read_text()
     assert "renderTable" not in app and "tableView" not in app and '["table", "Table"]' not in app
+
+
+def test_budgets_month_bar_lives_in_the_pinned_page_bar():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewBudgets")
+    body = app[start:app.index("\n  async function ", start + 10)]
+    assert 'bar.replaceChildren(nav)' in body and "measureBars();" in body
+    assert "view().replaceChildren(viewerNote(true), spendCard);" in body and "nav, spendCard" not in body
