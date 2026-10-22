@@ -251,12 +251,6 @@ def test_desktop_spending_tabs_and_positions_are_tidy():
     assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".row.holding .amount { display: flex;" in css
 
 
-def test_overview_cards_show_what_is_owed_so_rows_add_up_to_the_total():
-    js = (WEB_DIR / "app.js").read_text()
-    summary = js[js.index("function paymentsSummary"):js.index("// Every account and its balance")]
-    assert "money(c.current_balance, c.currency)" in summary and "Balance owed" in summary
-    assert "c.statement_balance ?? c.current_balance" not in summary
-
 def test_net_worth_chart_fades_the_estimated_days_and_says_so():
     js = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
@@ -294,12 +288,9 @@ def test_top_title_is_always_the_app_name_and_overview_cards_have_no_count():
     assert 'data.cards.length === 1 ? "" : "s"' not in app
 
 
-def test_banks_are_logos_alone_and_overview_cards_have_no_status_pill():
+def test_banks_are_logos_alone_on_money_and_accounts():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
-    start = app.index("function paymentsSummary")
-    summary = app[start:app.index("async function viewAccounts", start)]
-    assert "bankLogo(" in summary and "pill" not in summary
     assert ".money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute;" in css
     assert 'class: "bank-cell", title: name' in app
 
@@ -343,3 +334,10 @@ def test_account_sections_do_not_show_an_account_count():
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
     assert 'rows.length === 1 ? "" : "s"' not in section
+
+
+def test_overview_has_no_credit_card_section():
+    app = (WEB_DIR / "app.js").read_text()
+    overview = app[app.index("async function viewOverview"):]
+    overview = overview[:overview.index("\n  }\n")]
+    assert "paymentsSummary" not in app and "/api/payments-due" not in overview

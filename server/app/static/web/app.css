@@ -628,7 +628,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .money-table .bank-cell, .bank-grouped .bank-cell { align-items: center; justify-content: center; }
 .money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .money-table .col-bankname, .bank-grouped .col-bankname { width: 44px; min-width: 44px; padding: 0 6px; text-align: center; }
-.row-logo { flex: none; display: flex; }
 
 .subtabs .merch-tabs { margin-top: 8px; }
 

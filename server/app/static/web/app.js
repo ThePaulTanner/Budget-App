@@ -818,43 +818,6 @@
   const ytdDays = () => Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / 864e5) + 1;
   const NW_RANGES = [["1M", () => 30], ["3M", () => 90], ["YTD", ytdDays], ["All", () => 3650]];
 
-  // The Overview's credit card payments: what to pay, the minimum, and when, for every card.
-  function paymentsSummary(data, items = [], accounts = []) {
-    if (!data || data.cards.length === 0) return document.createDocumentFragment();  // nothing to show, and nothing printed
-    const stat = (label, value) => el("div", {}, el("div", { class: "muted", text: label }), el("strong", { text: value }));
-    const itemsById = new Map(items.map((i) => [i.id, i]));
-    const itemOfAccount = new Map(accounts.map((a) => [a.id, a.item_id]));
-    // One line per card: what is owed now on the right (these add up to "Balance owed" above), and on the left
-    // what to pay and by when. The minimum payment lives on the Money Management page.
-    const toPay = (c) => {
-      if (c.status === "nothing_owed" || c.status === "paid") return null;
-      if (c.due_date == null) return data.dues_available ? "No due date from your bank" : null;  // else the note below says so
-      const date = shortDate(c.due_date), past = c.days_until_due < 0;
-      if (c.status === "unknown") return `Was due ${date}, may have been paid`;
-      if (c.statement_balance == null) return past ? `Was due ${date}` : `Due ${date}`;
-      const amount = money(c.statement_balance, c.currency);
-      return past ? `${amount} was due ${date}` : `Pay ${amount} by ${date}`;
-    };
-    return el("section", { class: "card" },
-      el("div", { class: "section-head" },
-        el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg("i-card", 22)),
-        el("div", { class: "grow" }, el("h2", { text: "Credit cards" })),
-        el("a", { href: "#/money", text: "Details" })),
-      Object.entries(data.totals).map(([cur, t]) => el("div", { class: "stats" },
-        stat(`Balance owed (${cur})`, money(t.owed, cur)),
-        stat("Statements to pay", money(t.statement_due, cur)))),
-      data.cards.map((c) => {
-        const bank = c.institution || "Bank";
-        return el("a", { class: "row click", href: "#/money", title: bank },
-          el("span", { class: "row-logo" }, bankLogo(itemsById.get(itemOfAccount.get(c.account_id)), bank, 28)),
-          el("div", { class: "grow" },
-            el("div", {}, el("span", { class: "sr", text: `${bank} ` }), el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` })),
-            toPay(c) && el("div", { class: c.status === "overdue" ? "error" : "muted", text: toPay(c) })),
-          el("div", { class: "amount" }, money(c.current_balance, c.currency)));
-      }),
-      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet." }));
-  }
-
   // Every account and its balance, by kind, with each bank's logo.
   async function viewAccounts(id) {
     const [accounts, items] = await Promise.all([api(scoped("/api/accounts?include_hidden=false")), api("/api/items").catch(() => [])]);
@@ -873,9 +836,7 @@
   }
 
   async function viewOverview(id) {
-    const [summary, dues, log, items, accounts] = await Promise.all([
-      api(scoped("/api/summary")), api(scoped("/api/payments-due")).catch(() => null), api("/auth/login-log?limit=100").catch(() => null),
-      api("/api/items").catch(() => []), api(scoped("/api/accounts")).catch(() => [])]);
+    const [summary, log] = await Promise.all([api(scoped("/api/summary")), api("/auth/login-log?limit=100").catch(() => null)]);
     if (id !== navId) return;
     setAlert(log);
     baseCurrency = summary.base_currency;
@@ -903,7 +864,7 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       chartBox);
 
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard), paymentsSummary(dues, items, accounts));
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));
     drawChart();
   }
 
