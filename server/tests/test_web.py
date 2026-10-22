@@ -513,3 +513,9 @@ def test_header_controls_shrink_on_very_narrow_phones_instead_of_wrapping():
 def test_budgets_month_switcher_and_add_budget_stay_pinned_while_scrolling():
     css = (WEB_DIR / "app.css").read_text()
     assert ".monthnav { position: sticky; top: var(--topbar-h, 64px);" in css
+
+
+def test_account_sections_have_a_slim_coloured_header_band():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".acct-section > .section-head { gap: 8px; margin: calc(var(--pad) * -1) calc(var(--pad) * -1) 4px;" in css
+    assert ".acct-section.credit { --sec: var(--c-liab); }" in css and "color-mix(in srgb, var(--sec) 16%, var(--surface))" in css
