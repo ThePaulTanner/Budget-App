@@ -126,7 +126,7 @@ label.row { display: flex; margin: 0; color: var(--text); font-size: 1em; cursor
 .env.prod { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
 
 /* ---- sign-in ----------------------------------------------------------------- */
-.login { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: radial-gradient(900px 500px at 50% -10%, var(--accent-soft), transparent 70%), var(--bg); }
+.login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 16px; background: radial-gradient(900px 500px at 50% -10%, var(--accent-soft), transparent 70%), var(--bg); }
 .login-card { background: var(--surface); padding: 32px 28px; border-radius: 20px; width: min(420px, 100%); border: 1px solid var(--border); box-shadow: var(--shadow); }
 .login-title { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
 .login-title .logo { width: 40px; height: 40px; }
@@ -568,7 +568,7 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 /* Phone sign-in: no empty margin. The three boxes (the card, the box inside it, and the box of details
    inside that) fill the whole screen, with bigger fields and buttons to tap. */
 @media (max-width: 600px) {
-  .login { display: block; padding: 0; background: var(--surface); }
+  .login { display: block; min-height: 0; padding: 0; background: var(--surface); }   /* the card sets the height, so nothing is left blank below it */
   .login-card { display: flex; flex-direction: column; width: 100%; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none;
     padding: calc(env(safe-area-inset-top) + 22px) 14px calc(env(safe-area-inset-bottom) + 14px); }
   .login-title { margin-bottom: 14px; padding: 0 4px; }
@@ -826,3 +826,29 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
 }
 #tabs a, .brand, .menu-list a, a.icon-btn { -webkit-user-drag: none; }
 @media (max-width: 360px) { .subtabs .seg.period-seg button { font-size: .68rem; padding-inline: .1rem; } }
+
+/* A card title with a figure at its right end (Budgets: Spending by category / Total spent). */
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.card-head h2 { margin: 0; }
+.card-head .head-total { font-size: .95rem; font-weight: 650; font-variant-numeric: tabular-nums; margin-left: auto; text-align: right; }
+.card-head + .row { border-top: 0; }
+@media (max-width: 600px) {
+  .card-head { flex-wrap: nowrap; }
+  .card-head h2 { font-size: .98rem; white-space: nowrap; }
+  .card-head .head-total { font-size: .8rem; white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  .card-head { flex-wrap: wrap; }   /* a very large total drops to its own line instead of running off the card */
+  .card-head h2 { font-size: .8rem; }
+  .card-head .head-total { font-size: .66rem; }
+}
+
+/* Budgets: every other top-level category (and its sub-categories) is shaded very slightly. The block spans the same width as its rows. */
+.cat-block { margin: 0 calc(var(--pad) * -.5); padding: 0 calc(var(--pad) * .5); border-radius: 8px; }
+.cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.cat-block + .cat-block .row:first-child { border-top: 0; }
+
+/* The pinned bars under the top bar (Budgets' month bar, and the Spending / Settings / Investments bars) tuck 1px under it and
+   paint a few pixels of page colour above themselves, so a rounding error in the measured height can't leave a sliver
+   that scrolling content shows through. */
+.subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }

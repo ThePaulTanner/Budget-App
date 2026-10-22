@@ -563,7 +563,7 @@ def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_g
     box = app[app.index('class: "cur-box"'):app.index("const byAccount")]
     assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index("`All time")
     assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
-    assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur)")
+    assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur, true)")
     css = (WEB_DIR / "app.css").read_text()
     assert ".cur-line { display: flex; flex-wrap: wrap; justify-content: space-between;" in css and ".cur-line strong { margin-left: auto; text-align: right;" in css
     assert ".cur-box .muted { font-size: inherit; }" in css
@@ -670,3 +670,42 @@ def test_budgets_page_has_no_twelve_month_chart():
     assert "barChart" not in page and "Last 12 months" not in page and "/api/spending/monthly" not in page
     assert "view().replaceChildren(viewerNote(true), nav, spendCard);" in page
     assert "barChart(monthly, cur)" in app   # the Spending page's own "Last 12 months" chart is unchanged
+
+
+def test_sign_in_screen_has_no_blank_space_below_the_box_on_phones():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".login { min-height: 100vh; min-height: 100dvh; display: grid;" in css
+    assert ".login { display: block; min-height: 0; padding: 0; background: var(--surface); }" in css
+
+
+def test_budgets_spending_card_title_has_the_total_spent_at_its_right():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'el("h2", { text: "Spending by category" }), el("div", { class: "head-total", text: `Total spent ${money(spending.total, cur)}` })' in page
+    assert "Transfers, loan and card payments and income are left out" not in page
+    assert ".card-head { display: flex; align-items: baseline; justify-content: space-between;" in css and ".card-head + .row { border-top: 0; }" in css
+
+
+def test_every_other_top_level_budget_category_has_a_slightly_different_shade():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'for (const [index, c] of rows.entries())' in page and 'class: `cat-block${index % 2 === 1 ? " alt" : ""}`' in page
+    assert ".cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }" in css
+    assert ".card-head { flex-wrap: wrap; }" in css and ".card-head .head-total { font-size: .66rem; }" in css
+
+
+def test_pinned_bars_tuck_under_the_top_bar_so_scrolling_content_cannot_show_through():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }" in css
+
+
+def test_investments_page_amounts_use_a_plain_dollar_sign_not_us_dollar():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'currency === "USD" ? "en-US" : "en-CA"' in app and "const moneyShort = (value, currency) => {" in app
+    assert 'text: moneyShort(t.value, cur)' in inv and "Book ${moneyShort(b.book, cur)}" in inv and "Value ${moneyShort(v, cur)}" in inv
+    assert "gainText(b.gain, b.pct, cur, true)" in inv and "moneyShort(Math.abs(change.amount), currency)" in app
+    assert "money(t.value" not in inv and "money(b.book" not in inv
