@@ -1899,20 +1899,21 @@
           const sign = (n) => (n > 0 ? "+" : n < 0 ? MINUS : "");
           const avg = h.cost_basis != null && h.quantity > 0 ? h.cost_basis / h.quantity : null;
           const change = h.changes[invPeriod];
-          const periodLabel = CHANGE_PERIODS.find(([key]) => key === invPeriod)[1];
+          const periodLabel = (CHANGE_PERIODS.find(([key]) => key === invPeriod) || [, invPeriod])[1];
           const dots = (parts) => parts.filter(Boolean).flatMap((part, i) => (i === 0 ? [part] : [" \u00B7 ", part]));
           // Why there is no live price is only said when something is off; a live position just carries a small tag.
-          const tag = h.live && h.market_open ? "Live" : !h.live ? (h.price == null ? "No price" : "Bank price") : null;
+          const lastTrade = h.price_time ? `Last trade ${new Date(h.price_time).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
+          const tag = h.live ? (h.market_open ? "Live" : "Closed") : (h.price == null ? "No price" : "Bank price");
           return el("div", { class: "row click holding", role: "button", tabindex: 0, onclick: () => openPosition(h),
             onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPosition(h); } } },
             el("div", { class: "grow" },
               el("div", { class: "hold-head" }, el("strong", { text: h.ticker || h.name }), h.ticker && el("span", { class: "hold-name muted", text: h.name }),
-                tag && el("span", { class: "badge", title: h.live_note || "", text: tag })),
+                el("span", { class: "badge", title: h.live ? lastTrade : (h.live_note || ""), text: tag })),
               el("div", { class: "hold-line" }, ...dots([
                 `${h.quantity.toLocaleString("en-CA", { maximumFractionDigits: 4 })} held`,
                 `avg ${avg != null ? money(avg, h.currency) : "\u2014"}`,
                 el("span", {}, `now ${h.price != null ? money(h.price, h.currency) : "\u2014"}`,
-                  change && change.percent != null && el("span", { class: changeText(change, h.currency).cls, text: ` ${sign(change.percent)}${Math.abs(change.percent).toFixed(2)}% ${periodLabel}` }))])),
+                  change && change.percent != null && el("span", { class: change.percent > 0 ? "income" : change.percent < 0 ? "neg" : "muted", text: ` ${sign(change.percent)}${Math.abs(change.percent).toFixed(2)}% ${periodLabel}` }))])),
               el("div", { class: "hold-line hold-money" }, ...dots([
                 `Book ${h.cost_basis != null ? money(h.cost_basis, h.currency) : "\u2014"}`,
                 `Value ${h.value != null ? money(h.value, h.currency) : "\u2014"}`,

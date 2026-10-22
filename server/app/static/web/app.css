@@ -561,7 +561,7 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   input, select, textarea { font-size: 16px; }
 }
 
-/* Phone: a position's name gets the full row, its figures sit under it, and the long notes are smaller. */
+/* Phone: a position's name sits on its own line under the ticker, and the long notes are smaller. */
 @media (max-width: 600px) {
   .hold-name { display: block; margin: 0; }
   .inv-note { font-size: .85rem; }
@@ -593,8 +593,7 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 /* Phone: smaller table headings so a heading like "Statement balance" doesn't crowd the figures. */
 @media (max-width: 600px) { .money-table th { font-size: .66rem; letter-spacing: .02em; } }
 
-/* Desktop: the Spending tabs line up with the page content instead of stretching across a wide window, and a
-   position's figures sit in one row beside its name instead of a tall stack at the far edge. */
+/* Desktop: the Spending tabs line up with the page content instead of stretching across a wide window. */
 .subtabs { width: 100%; max-width: 1120px; margin-left: auto; margin-right: auto; box-sizing: border-box; }
 
 /* Net worth days that are estimates (before the first recorded day) are drawn fainter, with a marker where recording begins. */

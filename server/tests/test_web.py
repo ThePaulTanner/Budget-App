@@ -224,7 +224,7 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
 
 
-def test_phone_positions_get_the_full_row_for_their_name():
+def test_phone_positions_put_the_name_on_its_own_line():
     css = (WEB_DIR / "app.css").read_text()
     assert ".hold-name { display: block; margin: 0; }" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
 
@@ -424,3 +424,8 @@ def test_position_rows_are_ticker_and_name_then_held_and_price_then_the_money():
     row = app[start:app.index("if (!activityCard", start)]
     assert row.index("hold-name") < row.index("held") < row.index("avg ") < row.index("now ")
     assert row.index("now ") < row.index("`Book ") < row.index("`Value ") < row.index("P&L ")
+
+
+def test_a_closed_market_position_is_tagged_closed_with_its_last_trade_time():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'h.market_open ? "Live" : "Closed"' in app and "Last trade ${" in app
