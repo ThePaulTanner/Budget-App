@@ -1847,7 +1847,7 @@
     return el("div", { class: "row" },
       el("div", { class: "grow" },
         el("div", {}, el("strong", { text: invLabel(t) }), t.ticker && el("span", { class: "muted", text: `  ${t.ticker}` })),
-        el("div", { class: "muted", text: [shortDate(t.date), showAccount && `${t.account_name}${t.account_mask ? ` \u2022\u2022${t.account_mask}` : ""}`, detail].filter(Boolean).join(" \u00B7 ") })),
+        el("div", { class: "muted", text: [shortDate(t.date), showAccount && t.account_name, detail].filter(Boolean).join(" \u00B7 ") })),
       el("div", { class: `amount ${amount.cls}`, text: amount.text }));
   }
   // A list that loads 50 at a time with a "Show more" button. `query` is the extra URL parameters.
@@ -1877,6 +1877,14 @@
   async function viewInvestments(id) {
     let timer = null;
     let activityCard = null;  // built on the first paint and kept across the once-a-minute refresh
+    let banks = new Map();    // account id -> its bank's logo item and name, loaded once
+    const loadBanks = async () => {
+      try {
+        const [accounts, items] = await Promise.all([api(scoped("/api/accounts")), api("/api/items")]);
+        const byItem = new Map(items.map((i) => [i.id, i]));
+        banks = new Map(accounts.map((a) => [a.id, { item: byItem.get(a.item_id), name: a.institution || (byItem.get(a.item_id) || {}).institution }]));
+      } catch (err) { if (err instanceof SignedOut) throw err; }   // without them the initials badge is used
+    };
     const bookOf = (list, cur) => {
       const mine = list.filter((h) => h.currency === cur);
       const known = mine.filter((h) => h.cost_basis != null);
@@ -1939,11 +1947,12 @@
 
       const byAccount = new Map();
       for (const h of data.holdings) {
-        const key = `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`;
-        if (!byAccount.has(key)) byAccount.set(key, []);
-        byAccount.get(key).push(h);
+        if (!byAccount.has(h.account_id)) byAccount.set(h.account_id, []);
+        byAccount.get(h.account_id).push(h);
       }
-      const cards = [...byAccount].map(([name, holdings]) => el("section", { class: "card" }, el("h2", { text: name }),
+      const cards = [...byAccount].map(([accountId, holdings]) => el("section", { class: "card" },
+        // The bank's logo sits left of the account's name on one line (no account number).
+        el("h2", { class: "acct-title" }, bankLogo((banks.get(accountId) || {}).item, (banks.get(accountId) || {}).name, 24), el("span", { text: holdings[0].account_name })),
         [...new Set(holdings.map((h) => h.currency))].map((cur) => {
           const b = bookOf(holdings, cur);
           const v = holdings.filter((h) => h.currency === cur).reduce((sum, h) => sum + (h.value || 0), 0);
@@ -1957,7 +1966,7 @@
           const pctCell = (pct) => el("td", { class: `num ${pct == null || pct === 0 ? "" : pct > 0 ? "income" : "neg"}`, text: pct == null ? "\u2014" : `${sign(pct)}${Math.abs(pct).toFixed(2)}%` });
           const open = (h) => openPosition(h);
           return el("div", { class: "table-wrap" }, el("table", { class: "acct-table pos-table" },
-            el("thead", {}, el("tr", {}, [["Ticker", ""], ["Position", "num"], ["All time %", "num"], [`${periodLabel} %`, "num"]]
+            el("thead", {}, el("tr", {}, [["Ticker", ""], ["Position", "num"], ["Currency", ""], ["All time %", "num"], [`${periodLabel} %`, "num"]]
               .map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
             el("tbody", {}, holdings.map((h) => {
               const allTime = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
@@ -1965,12 +1974,13 @@
               return el("tr", { class: "click", tabindex: 0, onclick: () => open(h),
                 onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(h); } } },
                 el("td", { class: "pos-ticker", title: h.live_note || h.name }, el("strong", { text: h.ticker || h.name })),
-                el("td", { class: "num", text: h.value != null ? money(h.value, h.currency) : "\u2014" }),
+                el("td", { class: "num", text: h.value != null ? h.value.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014" }),
+                el("td", { class: "pos-cur muted", text: h.currency }),
                 pctCell(allTime), pctCell(change && change.percent != null ? change.percent : null));
             }))));
         })()));
       if (!activityCard && data.holdings.length > 0) {
-        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`]))];
+        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, h.account_name]))];
         const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }), accounts.map(([v, t]) => el("option", { value: v, text: t })));
         const typeSel = el("select", { "aria-label": "Type" }, el("option", { value: "", text: "Everything" }),
           [["buy", "Buys"], ["sell", "Sells"], ["cash", "Dividends and cash"], ["fee", "Fees"], ["transfer", "Transfers"]].map(([v, t]) => el("option", { value: v, text: t })));
@@ -1985,7 +1995,12 @@
       view().replaceChildren(viewerNote(), head, ...cards, activityCard);
     };
 
-    const load = async () => paint(await api(scoped("/api/holdings/live"), { timeout: 40000 }));
+    let banksLoaded = false;
+    const load = async () => {
+      const [data] = await Promise.all([api(scoped("/api/holdings/live"), { timeout: 40000 }), banksLoaded ? null : loadBanks()]);
+      banksLoaded = true;
+      paint(data);
+    };
     await load();
     if (id !== navId) return;
     timer = setInterval(() => {

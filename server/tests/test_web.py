@@ -600,3 +600,20 @@ def test_clicking_a_spending_category_opens_a_popup_of_its_transactions():
     assert "openSheet(" in fn and "closeSheet" in fn and "/api/transactions?" in fn and "!body.isConnected" in fn
     assert "detail.replaceChildren" not in page and "Click a budget or a category to see" not in page
     assert "pickable(c.category)" in page and "pickable(code)" in page
+
+
+def test_investments_shows_the_bank_logo_beside_the_account_name_without_the_account_number():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'class: "acct-title"' in inv and "bankLogo(" in inv and "holdings[0].account_name" in inv
+    assert "account_mask" not in inv and "\\u2022\\u2022" not in inv
+    assert "showAccount && t.account_name" in app
+
+
+def test_positions_table_has_currency_as_its_own_column_and_the_amount_has_no_currency_sign():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index('class: "acct-table pos-table"')
+    table = app[start:app.index("if (!activityCard", start)]
+    assert table.index('"Position"') < table.index('"Currency"') < table.index('"All time %"')
+    assert 'class: "pos-cur muted", text: h.currency' in table and "money(h.value" not in table
