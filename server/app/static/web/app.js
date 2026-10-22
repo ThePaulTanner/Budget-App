@@ -2798,17 +2798,26 @@
   }
 
   // The sticky tab bars sit just under the top bar (and under the Spending tabs), so their heights are measured, not guessed.
+  // The pinned bars (top bar and the page's own bar) are measured once and then held at that exact height, so
+  // nothing that happens while scrolling on a phone (the browser's toolbars sliding away, a resize that only
+  // changes the height) can change their size. They are measured again only when their content or the width changes.
+  // The bars are re-measured when something inside them changes size (their own, held size is not watched).
+  const barWatcher = window.ResizeObserver ? new ResizeObserver(() => measureBars()) : null;
   function measureBars() {
     const root = document.documentElement.style;
-    root.setProperty("--topbar-h", `${document.querySelector(".topbar").offsetHeight}px`);
-    root.setProperty("--subtabs-h", `${$("subtabs").hidden ? 0 : $("subtabs").offsetHeight}px`);
+    const top = document.querySelector(".topbar"), sub = $("subtabs");
+    top.style.height = "";
+    sub.style.height = "";
+    const topHeight = Math.ceil(top.getBoundingClientRect().height);
+    const subHeight = sub.hidden ? 0 : Math.ceil(sub.getBoundingClientRect().height);
+    top.style.height = `${topHeight}px`;
+    if (!sub.hidden) sub.style.height = `${subHeight}px`;
+    root.setProperty("--topbar-h", `${topHeight}px`);
+    root.setProperty("--subtabs-h", `${subHeight}px`);
+    if (barWatcher) for (const node of [...top.children, ...sub.children]) barWatcher.observe(node);
   }
-  if (window.ResizeObserver) {
-    const watcher = new ResizeObserver(measureBars);
-    watcher.observe(document.querySelector(".topbar"));
-    watcher.observe($("subtabs"));
-  }
-  window.addEventListener("resize", measureBars);
+  let barsWidth = window.innerWidth;
+  window.addEventListener("resize", () => { if (window.innerWidth !== barsWidth) { barsWidth = window.innerWidth; measureBars(); } });
 
   // Pressing a page choice (or any header control) and sliding away would start dragging the link, which looks like a highlight
   // without going anywhere. These are for clicking, not dragging, so the drag is cancelled.

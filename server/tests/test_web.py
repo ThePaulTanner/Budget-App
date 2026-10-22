@@ -721,3 +721,11 @@ def test_merchant_boxes_offer_a_saved_category():
     edit = js[js.index("async function openRename"):js.index("async function openMerge")]
     assert "Edit merchant" in edit and "optionalCategoryPicker(choices, d.category)" in edit and "category: category.value()" in edit
     assert "Set by its merchant" in js
+
+
+def test_pinned_bars_are_held_at_a_measured_height():
+    js = (WEB_DIR / "app.js").read_text()
+    measure = js[js.index("function measureBars()"):js.index("// Pressing a page choice")]
+    assert 'top.style.height = `${topHeight}px`' in measure and "sub.style.height" in measure
+    assert "window.innerWidth !== barsWidth" in measure  # a resize that only changes the height is ignored
+    assert 'addEventListener("resize", measureBars)' not in js
