@@ -694,3 +694,8 @@ def test_every_other_top_level_budget_category_has_a_slightly_different_shade():
     assert 'for (const [index, c] of rows.entries())' in page and 'class: `cat-block${index % 2 === 1 ? " alt" : ""}`' in page
     assert ".cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }" in css
     assert ".card-head { flex-wrap: wrap; }" in css and ".card-head .head-total { font-size: .66rem; }" in css
+
+
+def test_pinned_bars_tuck_under_the_top_bar_so_scrolling_content_cannot_show_through():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }" in css

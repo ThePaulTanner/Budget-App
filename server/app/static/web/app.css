@@ -847,3 +847,8 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
 .cat-block { margin: 0 calc(var(--pad) * -.5); padding: 0 calc(var(--pad) * .5); border-radius: 8px; }
 .cat-block.alt { background: color-mix(in srgb, var(--text) 4%, transparent); }
 .cat-block + .cat-block .row:first-child { border-top: 0; }
+
+/* The pinned bars under the top bar (Budgets' month bar, and the Spending / Settings / Investments bars) tuck 1px under it and
+   paint a few pixels of page colour above themselves, so a rounding error in the measured height can't leave a sliver
+   that scrolling content shows through. */
+.subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }
