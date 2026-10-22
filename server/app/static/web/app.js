@@ -1144,13 +1144,16 @@
     for (const b of budgets.budgets) {
       const left = b.remaining >= 0 ? `${money(b.remaining, cur)} left` : `${money(-b.remaining, cur)} over`;
       const inside = b.parent && budgeted.has(b.parent) ? ` \u00B7 also counted in ${categoryLabel(b.parent)}` : "";
-      budgetCard.append(el("div", { class: `row click${b.parent ? " sub" : ""}`, role: "button", tabindex: 0, ...pickable(b.category) },
+      // The title and the money are one line, the bar has the full width under them, and a note (when a sub-category
+      // budget also counts in its parent's) is a small line below the bar.
+      budgetCard.append(el("div", { class: `row click${b.parent ? " sub budget-sub" : ""}`, role: "button", tabindex: 0, ...pickable(b.category) },
         el("div", { class: "icon", text: icon(b.category), "aria-hidden": "true" }),
         el("div", { class: "grow" },
-          el("div", {}, el("strong", { text: categoryLabel(b.category) })),
+          el("div", { class: "budget-head" }, el("strong", { text: categoryLabel(b.category) }),
+            el("span", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} \u00B7 ${left}` })),
           progress(b.percent),
-          el("div", { class: "muted", text: `${money(b.spent, cur)} of ${money(b.monthly_limit, cur)} \u00B7 ${left}${inside}` })),
-        el("button", { type: "button", class: "secondary", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
+          inside && el("div", { class: "muted budget-note", text: inside.replace(/^ \u00B7 /, "") })),
+        el("button", { type: "button", class: "secondary budget-edit", text: "Edit", "aria-label": `Edit ${categoryLabel(b.category)} budget`,
           onclick: (e) => { e.stopPropagation(); budgetDialog(b); }, onkeydown: (e) => e.stopPropagation() })));
     }
 
