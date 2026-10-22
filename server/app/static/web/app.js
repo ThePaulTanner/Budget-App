@@ -919,7 +919,7 @@
     // The month's card is short, so the last twelve months sit under it instead of leaving the page empty.
     const trendCard = Array.isArray(monthly) && monthly.length > 0
       ? el("section", { class: "card" }, el("h3", { text: "Last 12 months" }), barChart(monthly, cur)) : null;
-    view().replaceChildren(viewerNote(), spendCard, trendCard);
+    view().replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean));   // replaceChildren would print a null as the word "null"
   }
 
   // ---------------------------------------------------------------- Transactions
@@ -1826,6 +1826,7 @@
   // ---------------------------------------------------------------- Investments
 
   const CHANGE_PERIODS = [["day", "Day"], ["open", "Since open"], ["1w", "1W"], ["1m", "1M"], ["3m", "3M"], ["ytd", "YTD"], ["1y", "1Y"]];
+  // Phrases that finish "since …" / "over …" after the figures (upperFirst turns one into the line's label), not whole sentences.
   const PERIOD_HELP = {
     day: "since yesterday's close", open: "since today's open", "1w": "over the last 7 days",
     "1m": "over the last month", "3m": "over the last 3 months", ytd: "since the start of the year", "1y": "over the last year",
@@ -1934,7 +1935,7 @@
                 b.known > 0 && el("span", { class: "cur-book muted", text: `Book ${money(b.book, cur)}` })),
               b.known > 0 && el("div", { class: "cur-line" }, el("span", { class: "muted", text: "All time " }),
                 el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }),
-                b.missing > 0 && el("span", { class: "muted", text: ` \u00B7 ${b.missing} no book value` })),
+                b.missing > 0 && el("span", { class: "muted", text: ` \u00B7 ${b.missing} without book value` })),
               c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: `${upperFirst(PERIOD_HELP[invPeriod])} ` }), el("strong", { class: c.cls, text: c.text }))
                 : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
           })),

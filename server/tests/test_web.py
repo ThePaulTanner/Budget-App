@@ -583,3 +583,11 @@ def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_g
     assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index('text: "All time "')
     assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
     assert box.index('text: "All time "') < box.index("gainText(b.gain, b.pct, cur)")
+
+
+def test_spending_summary_does_not_pass_a_missing_chart_card_to_replace_children():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3500]
+    assert "replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean))" in page
+    assert "without book value" in app and "N no book value" not in app
+    assert ".section-total" not in (WEB_DIR / "app.css").read_text()
