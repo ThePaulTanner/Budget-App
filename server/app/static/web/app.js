@@ -686,15 +686,15 @@
     box.addEventListener("close", () => { pending = ""; }, { once: true });  // also when something else closes it (sign-out)
     prefetchRegisterOptions().catch(() => {});  // so the tap goes straight to Face ID
     box.replaceChildren(el("div", { class: "setup" },
-      el("h2", { id: "passkey-setup-title", text: "Set up Face ID?" }),
-      el("p", {}, "Create a passkey on this device. Next time one look signs you in, with no password or code."),
+      el("h2", { id: "passkey-setup-title", text: "Set up a passkey?" }),
+      el("p", {}, "Create a passkey on this device. Next time you can sign in with it, with no password or code."),
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Create passkey", onclick: async (event) => {
           message.textContent = "";
           event.target.disabled = true;
-          try { await addPasskey(guessDevice(), pending); toast("Face ID is set up"); close(); }
+          try { await addPasskey(guessDevice(), pending); toast("Passkey is set up"); close(); }
           catch (err) {
-            if (err instanceof PasskeyExists) { toast("This device already has a passkey. Face ID sign-in is ready."); close(); return; }
+            if (err instanceof PasskeyExists) { toast("This device already has a passkey. Passkey sign-in is ready."); close(); return; }
             message.textContent = err.message;
             event.target.disabled = false;
           }
@@ -757,7 +757,7 @@
   // The browser says InvalidStateError when this device already holds a passkey the server knows about (we list those
   // so a second one is not made). So one exists here: remember that, and the sign-in page will lead with Face ID.
   class PasskeyExists extends Error {
-    constructor() { super("This device already has a passkey for HomeFinance, so Face ID sign-in is ready. Sign out and tap Sign in with Face ID."); }
+    constructor() { super("This device already has a passkey for HomeFinance, so passkey sign-in is ready. Sign out and tap Sign in with passkey."); }
   }
 
   async function addPasskey(name, password) {
@@ -2337,8 +2337,8 @@
     const passkeyPassword = el("input", { type: "password", autocomplete: "current-password", "aria-label": "Your password" });
     passkeyPassword.addEventListener("focus", () => { if (passkeysSupported()) prefetchRegisterOptions().catch(() => {}); });  // ready by the time you tap
     const passkeyMessage = el("p", { class: "error", role: "alert" });
-    const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys (Face ID)" }),
-      el("p", { class: "muted", text: "Sign in with Face ID or your device's unlock instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
+    const passkeysCard = el("section", { class: "card" }, el("h2", { text: "Passkeys" }),
+      el("p", { class: "muted", text: "Sign in with your device's unlock (Face ID, fingerprint or PIN) instead of a password and code. Each passkey is tied to this address. Your password and authenticator code keep working, and a passkey that syncs through iCloud works on your other Apple devices." }),
       passkeyList.length === 0 && el("p", { class: "empty", text: "No passkeys yet." }),
       passkeyList.map((p) => el("div", { class: "row" }, el("div", { class: "grow" },
         el("strong", { text: p.name }),

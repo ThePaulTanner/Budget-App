@@ -430,3 +430,11 @@ def test_a_closed_market_position_is_tagged_closed_with_its_last_trade_time():
     app = (WEB_DIR / "app.js").read_text()
     assert 'h.market_open ? "Live" : "Closed"' in app and "Last trade ${" in app
     assert 'h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade })' in app  # visible on a phone, not just a tooltip
+
+
+def test_the_sign_in_button_says_passkey_not_face_id():
+    html = (WEB_DIR / "index.html").read_text()
+    app = (WEB_DIR / "app.js").read_text()
+    assert ">Sign in with passkey<" in html and ">Sign in and set up a passkey<" in html
+    for text in ("Sign in with Face ID", "Set up Face ID?", "Face ID is set up", '"Passkeys (Face ID)"'):
+        assert text not in html and text not in app
