@@ -499,3 +499,9 @@ def test_investments_no_longer_shows_the_live_price_and_changes_assume_notes():
     assert "Prices refresh about every two minutes" not in app
     assert "Changes assume you held today" not in app
     assert "Live prices are turned off on the server" in app
+
+
+def test_header_controls_shrink_on_very_narrow_phones_instead_of_wrapping():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".topbar .titles { min-width: 5.5rem; }" in css
+    assert "@media (max-width: 360px)" in css and ".top-actions .viewer select { max-width: 5.25rem;" in css

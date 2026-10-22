@@ -702,3 +702,12 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
   .topbar .titles { order: 1; }
   .topbar .top-actions { order: 2; }
 }
+@media (max-width: 860px) {
+  .topbar .titles { min-width: 5.5rem; }
+  .top-actions .viewer select { max-width: 7.5rem; text-overflow: ellipsis; }
+}
+@media (max-width: 360px) {
+  .top-actions .viewer select { max-width: 5.25rem; padding-inline: .5rem; }
+  .top-actions { gap: 4px; }
+  .topbar h1 { font-size: 1.05rem; }
+}
