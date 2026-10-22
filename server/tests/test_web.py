@@ -435,7 +435,7 @@ def test_cash_flow_controls_sit_at_the_top_of_the_chart_box_and_are_small():
 def test_spending_by_category_folds_sub_categories_and_starts_folded():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index('const group = el("div", { class: "sub-group", hidden: true }')
-    block = app[start:app.index("const trendCard", start)]
+    block = app[start:app.index("view().replaceChildren(viewerNote(true), nav, spendCard);", start)]
     assert '"aria-expanded": "false"' in block and "group.hidden = !group.hidden" in block
     assert "e.stopPropagation();  // the row itself opens the transactions" in block
     assert ".sub-group[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
@@ -659,3 +659,11 @@ def test_investments_page_has_no_activity_list_and_budgets_cannot_go_to_a_future
     budgets = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
     assert 'disabled: month >= latest' in budgets and "if (month < latest)" in budgets
     assert "const month = budgetMonth > latest ? latest : budgetMonth;" in budgets
+
+
+def test_budgets_page_has_no_twelve_month_chart():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert "barChart" not in page and "Last 12 months" not in page and "/api/spending/monthly" not in page
+    assert "view().replaceChildren(viewerNote(true), nav, spendCard);" in page
+    assert "barChart(monthly, cur)" in app   # the Spending page's own "Last 12 months" chart is unchanged

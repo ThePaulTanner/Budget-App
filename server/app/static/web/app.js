@@ -1087,8 +1087,8 @@
     const thisMonth = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "2-digit" });   // YYYY-MM in the device's time
     const latest = currentMonth && currentMonth > thisMonth ? currentMonth : thisMonth;
     const month = budgetMonth > latest ? latest : budgetMonth;
-    const [budgets, spending, monthly, choices] = await Promise.all([
-      api(`/api/budgets?month=${month}`), api(`/api/spending?month=${month}`), api("/api/spending/monthly?months=12"), categoryChoices()]);
+    const [budgets, spending, choices] = await Promise.all([
+      api(`/api/budgets?month=${month}`), api(`/api/spending?month=${month}`), categoryChoices()]);
     if (id !== navId) return;
     const cur = budgets.currency;
     const reload = () => guard(viewBudgets(++navId));
@@ -1245,8 +1245,7 @@
           b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
         el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group);
     }
-    const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, trendCard));
+    view().replaceChildren(viewerNote(true), nav, spendCard);
     if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }
   }
 
