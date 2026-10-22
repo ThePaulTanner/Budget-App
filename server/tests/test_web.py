@@ -363,7 +363,7 @@ def test_accounts_do_not_show_value_or_balance_column_headings():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
-    assert '"num col-balance", !(credit || kind === "loan")' in section
+    assert '"num col-balance", true' in section and '"Owed"' in section   # still announced to screen readers, just not shown
     assert 'unlabelled ? el("span", { class: "sr", text }) : text' in section
 
 
@@ -585,3 +585,47 @@ def test_positions_are_a_table_of_ticker_position_and_two_percent_pnl_columns():
     assert table.index('"Ticker"') < table.index('"Position"') < table.index('"All time %"') < table.index("`${periodLabel} %`")
     assert "h.changes[invPeriod]" in table and "openPosition" in app and "avg " not in table and "held`" not in table
     assert ".pos-table td.num" in css and ".hold-line" not in css
+
+
+def test_budget_pill_and_fold_arrow_take_less_room():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".row > .twisty { width: 22px; height: 22px;" in css
+    assert ".row > .budget-slot { width: 2.6rem;" in css and "button.budget-add, button.budget-edit { width: 2.6rem; height: 1.6rem;" in css
+
+
+def test_clicking_a_spending_category_opens_a_popup_of_its_transactions():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    fn = page[page.index("async function showTransactions"):page.index("const pickable")]
+    assert "openSheet(" in fn and "closeSheet" in fn and "/api/transactions?" in fn and "!body.isConnected" in fn
+    assert "detail.replaceChildren" not in page and "Click a budget or a category to see" not in page
+    assert "pickable(c.category)" in page and "pickable(code)" in page
+
+
+def test_investments_shows_the_bank_logo_beside_the_account_name_without_the_account_number():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'class: "acct-title"' in inv and "bankLogo(" in inv and "holdings[0].account_name" in inv
+    assert "account_mask" not in inv and "\\u2022\\u2022" not in inv
+    assert "showAccount && t.account_name" in app
+
+
+def test_positions_table_has_currency_as_its_own_column_and_the_amount_has_no_currency_sign():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index('class: "acct-table pos-table"')
+    table = app[start:app.index("if (!activityCard", start)]
+    assert table.index('"Position"') < table.index('"Currency"') < table.index('"All time %"')
+    assert 'class: "pos-cur muted", text: h.currency' in table and "money(h.value" not in table
+
+
+def test_a_transaction_in_the_category_popup_opens_the_category_editor_and_the_popup_comes_back():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    fn = page[page.index("async function showTransactions"):page.index("const pickable")]
+    assert "editFromPopup(tx, names, category)" in fn and 'role: "button"' in fn and "Tap a transaction to change its category." in fn
+    assert ".filter(Boolean))" in fn   # no stray "false" text when there is nothing to list
+    edit = page[page.index("function editFromPopup"):page.index("const pickable")]
+    assert "openTransaction(tx, choices, names" in edit and 'addEventListener("close", back)' in edit
+    assert "budgetPopup = category; reload();" in edit and "showTransactions(category)" in edit
+    assert "if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }" in page

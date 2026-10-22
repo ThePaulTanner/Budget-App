@@ -789,4 +789,24 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
 .pos-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pos-table td.num.income, .pos-table td.num.neg { font-weight: 600; }
 .pos-table .pos-ticker { width: 100%; }
-@media (max-width: 480px) { .pos-table td, .pos-table th { padding: 6px 5px; font-size: .8rem; } }
+@media (max-width: 480px) {
+  .pos-table td, .pos-table th { padding: 6px 4px; font-size: .78rem; }
+  .pos-table th { font-size: .6rem; letter-spacing: .02em; }
+  .pos-table td.pos-cur { font-size: .68rem; letter-spacing: 0; }
+}
+
+/* Spending by category: the fold arrow and the add/edit budget pill take less room (smaller, and closer to the amount). */
+.row > .twisty { width: 22px; height: 22px; font-size: .85rem; margin-left: -4px; }
+.row > .budget-slot { width: 2.6rem; margin-left: -4px; }
+button.budget-add, button.budget-edit { width: 2.6rem; height: 1.6rem; gap: 2px; }
+button.budget-add .ico, button.budget-edit .ico { width: 14px; height: 14px; }
+
+/* Investments: the bank's logo beside the account's name; the currency is its own column of the positions table. */
+.acct-title { display: flex; align-items: center; gap: 8px; }
+.acct-title .bank-logo { flex: none; border-radius: 6px; }
+.pos-table td.pos-cur { font-size: .78rem; letter-spacing: .04em; }
+@media (max-width: 360px) {
+  .pos-table td, .pos-table th { padding: 6px 2px; font-size: .72rem; }
+  .pos-table th { font-size: .54rem; }
+  .pos-table td.pos-cur { font-size: .6rem; }
+}

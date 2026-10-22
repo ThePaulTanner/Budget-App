@@ -429,7 +429,7 @@
     const headers = [["Bank", "col-bankname"], ["Account", "col-account"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
-      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", !(credit || kind === "loan")]].filter(Boolean);
+      [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", true]].filter(Boolean);
     const size = (a) => Math.abs(a.current_balance || 0);
     const banks = new Map();
     for (const a of rows) {
@@ -468,7 +468,7 @@
         el("div", { class: "head-total", text: `Total: ${sectionTotals(rows, kind)}` })),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls, unlabelled]) => el("th", { scope: "col", class: cls },
-          // The amounts speak for themselves, so "Value" and "Balance" are not shown; screen readers still hear them.
+          // The amounts speak for themselves (and the header says "owed" for credit and loans), so this column's title is not shown; screen readers still hear it.
           unlabelled ? el("span", { class: "sr", text }) : text)))),
         el("tbody", {}, body))));
   }
@@ -1074,6 +1074,7 @@
   // ---------------------------------------------------------------- Budgets
 
   let budgetMonth = null;
+  let budgetPopup = null;   // a category whose transactions popup should reopen once the page has reloaded (after a category change)
 
   async function viewBudgets(id) {
     if (!budgetMonth) {
@@ -1124,21 +1125,18 @@
         message);
     }
 
-    // Clicking a budget or a spending row lists the transactions behind that amount in the box under the chart.
-    const detail = el("section", { class: "card" });
-    let picked = null;
-    const markPicked = () => view().querySelectorAll("[data-pick]").forEach((r) => r.classList.toggle("picked", r.dataset.pick === picked));
+    // Clicking a category (or sub-category) opens a popup listing the transactions behind its total for the month.
     async function showTransactions(category) {
-      picked = category;
-      markPicked();
       const label = categoryLabel(category);
-      detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }), el("p", { class: "empty", text: "Loading…" }));
+      const title = `${label} in ${monthLabel(month)}`;
+      const body = el("div", {}, el("p", { class: "empty", text: "Loading…" }));
+      openSheet(el("h2", { text: title }), body, el("div", { class: "actions" }, el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
       try {
         const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
         const q = new URLSearchParams({ category, start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, "0")}`, limit: "200" });
         if (viewer != null) q.set("person_id", String(viewer));
         const [page, accounts] = await Promise.all([api(`/api/transactions?${q}`), api(scoped("/api/accounts"))]);
-        if (id !== navId || picked !== category) return;
+        if (id !== navId || !body.isConnected) return;   // moved to another page, or another popup replaced this one
         const names = Object.fromEntries(accounts.map((a) => [a.id, `${a.institution ? a.institution + " " : ""}${a.name}`]));
         const net = page.transactions.reduce((sum, t) => sum + (t.currency === cur ? t.amount : 0), 0);
         const rows = [];
@@ -1146,23 +1144,38 @@
         for (const tx of page.transactions) {
           if (tx.date !== day) { day = tx.date; rows.push(el("div", { class: "dayhead", text: dayLabel(tx.date) })); }
           const amount = signed(tx.amount, tx.currency);
-          rows.push(el("div", { class: "row" },
+          const open = () => editFromPopup(tx, names, category);
+          rows.push(el("div", { class: "row click", role: "button", tabindex: 0, onclick: open,
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } } },
             el("div", { class: "icon", text: icon(tx.category), "aria-hidden": "true" }),
             el("div", { class: "grow" },
               el("div", {}, el("strong", { text: tx.display_name }), tx.pending && el("span", { class: "badge", text: "Pending" })),
               el("div", { class: "muted", text: `${categoryLabel(tx.subcategory || tx.category)} \u00B7 ${names[tx.account_id] || ""}` })),
             el("div", { class: `amount ${amount.cls}`, text: amount.text })));
         }
-        detail.replaceChildren(el("h2", { text: `${label} in ${monthLabel(month)}` }),
+        body.replaceChildren(...[
           el("p", { class: "muted", text: page.total === 0 ? "No transactions." : (page.total > page.transactions.length ? `${page.total} transactions. The newest ${page.transactions.length} add up to ${money(net, cur)}.` : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total.`) }),
+          page.total > 0 && el("p", { class: "muted", text: "Tap a transaction to change its category." }),
           ...rows,
-          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", text: "Search all transactions" })));
+          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", onclick: closeSheet, text: "Search all transactions" }))].filter(Boolean));   // replaceChildren would print a false as the word "false"
       } catch (err) {
-        if (err instanceof SignedOut) showLogin(); else detail.replaceChildren(el("h2", { text: "Transactions" }), el("p", { class: "error", text: err.message }));
+        if (err instanceof SignedOut) { closeSheet(); showLogin(); } else if (body.isConnected) body.replaceChildren(el("p", { class: "error", text: err.message }));
       }
     }
-    detail.append(el("h2", { text: "Transactions" }), el("p", { class: "empty", text: "Click a budget or a category to see the transactions behind its amount." }));
-    const pickable = (category) => ({ "data-pick": category, onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
+    // A transaction opens the usual detail sheet (category picker, reset, rule offer). When that sheet closes the popup comes back:
+    // as it was if nothing changed, or after the page has reloaded with the new totals if the category was changed.
+    function editFromPopup(tx, names, category) {
+      const sheet = $("sheet");
+      let changed = false;
+      const back = () => {
+        sheet.removeEventListener("close", back);
+        if ($("shell").hidden || id !== navId) return;   // signed out, or moved to another page
+        if (changed) { budgetPopup = category; reload(); } else showTransactions(category);
+      };
+      sheet.addEventListener("close", back);
+      openTransaction(tx, choices, names, () => { changed = true; });
+    }
+    const pickable = (category) => ({ onclick: () => showTransactions(category), onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showTransactions(category); } } });
 
     // Budgets live on the rows of "Spending by category": a budgeted category's bar is measured against its limit
     // (so the end of the bar is the max), and once spending passes the limit the bar runs on in red past a red line.
@@ -1228,7 +1241,8 @@
         el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group);
     }
     const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, el("div", { class: "stack" }, trendCard, detail)));
+    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, trendCard));
+    if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }
   }
 
   // ---------------------------------------------------------------- Cash flow
@@ -1851,7 +1865,7 @@
     return el("div", { class: "row" },
       el("div", { class: "grow" },
         el("div", {}, el("strong", { text: invLabel(t) }), t.ticker && el("span", { class: "muted", text: `  ${t.ticker}` })),
-        el("div", { class: "muted", text: [shortDate(t.date), showAccount && `${t.account_name}${t.account_mask ? ` \u2022\u2022${t.account_mask}` : ""}`, detail].filter(Boolean).join(" \u00B7 ") })),
+        el("div", { class: "muted", text: [shortDate(t.date), showAccount && t.account_name, detail].filter(Boolean).join(" \u00B7 ") })),
       el("div", { class: `amount ${amount.cls}`, text: amount.text }));
   }
   // A list that loads 50 at a time with a "Show more" button. `query` is the extra URL parameters.
@@ -1881,6 +1895,14 @@
   async function viewInvestments(id) {
     let timer = null;
     let activityCard = null;  // built on the first paint and kept across the once-a-minute refresh
+    let banks = new Map();    // account id -> its bank's logo item and name, loaded once
+    const loadBanks = async () => {
+      try {
+        const [accounts, items] = await Promise.all([api(scoped("/api/accounts")), api("/api/items")]);
+        const byItem = new Map(items.map((i) => [i.id, i]));
+        banks = new Map(accounts.map((a) => [a.id, { item: byItem.get(a.item_id), name: a.institution || (byItem.get(a.item_id) || {}).institution }]));
+      } catch (err) { if (err instanceof SignedOut) throw err; }   // without them the initials badge is used
+    };
     const bookOf = (list, cur) => {
       const mine = list.filter((h) => h.currency === cur);
       const known = mine.filter((h) => h.cost_basis != null);
@@ -1943,11 +1965,12 @@
 
       const byAccount = new Map();
       for (const h of data.holdings) {
-        const key = `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`;
-        if (!byAccount.has(key)) byAccount.set(key, []);
-        byAccount.get(key).push(h);
+        if (!byAccount.has(h.account_id)) byAccount.set(h.account_id, []);
+        byAccount.get(h.account_id).push(h);
       }
-      const cards = [...byAccount].map(([name, holdings]) => el("section", { class: "card" }, el("h2", { text: name }),
+      const cards = [...byAccount].map(([accountId, holdings]) => el("section", { class: "card" },
+        // The bank's logo sits left of the account's name on one line (no account number).
+        el("h2", { class: "acct-title" }, bankLogo((banks.get(accountId) || {}).item, (banks.get(accountId) || {}).name, 24), el("span", { text: holdings[0].account_name })),
         [...new Set(holdings.map((h) => h.currency))].map((cur) => {
           const b = bookOf(holdings, cur);
           const v = holdings.filter((h) => h.currency === cur).reduce((sum, h) => sum + (h.value || 0), 0);
@@ -1961,7 +1984,7 @@
           const pctCell = (pct) => el("td", { class: `num ${pct == null || pct === 0 ? "" : pct > 0 ? "income" : "neg"}`, text: pct == null ? "\u2014" : `${sign(pct)}${Math.abs(pct).toFixed(2)}%` });
           const open = (h) => openPosition(h);
           return el("div", { class: "table-wrap" }, el("table", { class: "acct-table pos-table" },
-            el("thead", {}, el("tr", {}, [["Ticker", ""], ["Position", "num"], ["All time %", "num"], [`${periodLabel} %`, "num"]]
+            el("thead", {}, el("tr", {}, [["Ticker", ""], ["Position", "num"], ["Currency", ""], ["All time %", "num"], [`${periodLabel} %`, "num"]]
               .map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
             el("tbody", {}, holdings.map((h) => {
               const allTime = h.gain != null && h.cost_basis > 0 ? (h.gain / h.cost_basis) * 100 : null;
@@ -1969,12 +1992,13 @@
               return el("tr", { class: "click", tabindex: 0, onclick: () => open(h),
                 onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(h); } } },
                 el("td", { class: "pos-ticker", title: h.live_note || h.name }, el("strong", { text: h.ticker || h.name })),
-                el("td", { class: "num", text: h.value != null ? money(h.value, h.currency) : "\u2014" }),
+                el("td", { class: "num", text: h.value != null ? h.value.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014" }),
+                el("td", { class: "pos-cur muted", text: h.currency }),
                 pctCell(allTime), pctCell(change && change.percent != null ? change.percent : null));
             }))));
         })()));
       if (!activityCard && data.holdings.length > 0) {
-        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, `${h.account_name}${h.account_mask ? ` \u2022\u2022${h.account_mask}` : ""}`]))];
+        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, h.account_name]))];
         const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }), accounts.map(([v, t]) => el("option", { value: v, text: t })));
         const typeSel = el("select", { "aria-label": "Type" }, el("option", { value: "", text: "Everything" }),
           [["buy", "Buys"], ["sell", "Sells"], ["cash", "Dividends and cash"], ["fee", "Fees"], ["transfer", "Transfers"]].map(([v, t]) => el("option", { value: v, text: t })));
@@ -1989,7 +2013,12 @@
       view().replaceChildren(viewerNote(), head, ...cards, activityCard);
     };
 
-    const load = async () => paint(await api(scoped("/api/holdings/live"), { timeout: 40000 }));
+    let banksLoaded = false;
+    const load = async () => {
+      const [data] = await Promise.all([api(scoped("/api/holdings/live"), { timeout: 40000 }), banksLoaded ? null : loadBanks()]);
+      banksLoaded = true;
+      paint(data);
+    };
     await load();
     if (id !== navId) return;
     timer = setInterval(() => {
