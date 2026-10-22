@@ -492,3 +492,10 @@ def test_header_keeps_title_and_controls_on_one_line_and_smaller():
     assert ".top-actions { flex: none; flex-wrap: nowrap;" in css
     assert ".top-actions .icon-btn { width: 32px; height: 32px; }" in css
     assert ".topbar .titles { min-width: 0; flex: 1 1 0; }" in css
+
+
+def test_investments_no_longer_shows_the_live_price_and_changes_assume_notes():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "Prices refresh about every two minutes" not in app
+    assert "Changes assume you held today" not in app
+    assert "Live prices are turned off on the server" in app

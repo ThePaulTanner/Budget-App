@@ -1871,7 +1871,7 @@
       const seg = el("div", { class: "seg", role: "group", "aria-label": "Compare against" },
         CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
           onclick: () => { invPeriod = key; paint(data); } })));
-      const newest = data.holdings.filter((h) => h.price_time).map((h) => h.price_time).sort().pop();
+      // Only say something when prices are off or failing; the usual "live, about every two minutes" note is gone.
       const statusLine = !status.enabled
         ? "Live prices are turned off on the server. Showing your bank's last prices."
         : status.message
@@ -1880,7 +1880,7 @@
             : `Live prices unavailable (${status.message}). Showing your bank's last prices.`)
           : status.live_positions === 0
             ? "No position has a live price. Showing your bank's last prices."
-            : `Live prices for ${status.live_positions} of ${status.positions} positions${newest ? ` (last trade ${new Date(newest).toLocaleTimeString("en-CA")})` : ""}. Prices refresh about every two minutes while this page is open; Yahoo Finance may delay them by up to 15 minutes.`;
+            : "";
       const head = el("section", { class: "card" }, el("h3", { text: "Total value" }),
         totals.length === 0 ? el("p", { class: "empty", text: "No investment holdings yet. They appear once an investment account is linked and synced." })
           : totals.map(([cur, t]) => {
@@ -1894,8 +1894,7 @@
                 : el("div", { class: "muted", text: "No change available for this period yet." }));
           }),
         el("div", { class: "toolbar" }, seg),
-        el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }),
-        el("p", { class: "muted inv-note", text: "Changes assume you held today's quantity for the whole period, so a position bought recently shows what it would have done, not what you earned." }));
+        statusLine && el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }));
 
       const byAccount = new Map();
       for (const h of data.holdings) {
