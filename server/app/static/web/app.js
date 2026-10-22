@@ -1074,17 +1074,21 @@
   // ---------------------------------------------------------------- Budgets
 
   let budgetMonth = null;
+  let currentMonth = null;  // this month (YYYY-MM): the Budgets month can go back, but never forward past it
   let budgetPopup = null;   // a category whose transactions popup should reopen once the page has reloaded (after a category change)
 
   async function viewBudgets(id) {
     if (!budgetMonth) {
       const summary = await api("/api/summary");
       budgetMonth = summary.month;
+      currentMonth = summary.month;
       baseCurrency = summary.base_currency;
     }
-    const month = budgetMonth;
-    const [budgets, spending, monthly, choices] = await Promise.all([
-      api(`/api/budgets?month=${month}`), api(`/api/spending?month=${month}`), api("/api/spending/monthly?months=12"), categoryChoices()]);
+    const thisMonth = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "2-digit" });   // YYYY-MM in the device's time
+    const latest = currentMonth && currentMonth > thisMonth ? currentMonth : thisMonth;
+    const month = budgetMonth > latest ? latest : budgetMonth;
+    const [budgets, spending, choices] = await Promise.all([
+      api(`/api/budgets?month=${month}`), api(`/api/spending?month=${month}`), categoryChoices()]);
     if (id !== navId) return;
     const cur = budgets.currency;
     const reload = () => guard(viewBudgets(++navId));
@@ -1092,7 +1096,8 @@
     const nav = el("div", { class: "monthnav" },
       el("button", { type: "button", "aria-label": "Previous month", text: "‹", onclick: () => { budgetMonth = addMonths(month, -1); reload(); } }),
       el("strong", { text: monthLabel(month) }),
-      el("button", { type: "button", "aria-label": "Next month", text: "›", onclick: () => { budgetMonth = addMonths(month, 1); reload(); } }),
+      el("button", { type: "button", "aria-label": "Next month", text: "›", disabled: month >= latest,
+        title: month >= latest ? "Budgets can't be viewed for a future month" : "", onclick: () => { if (month < latest) { budgetMonth = addMonths(month, 1); reload(); } } }),
       el("button", { type: "button", class: "primary", text: "Add budget", onclick: () => budgetDialog(null) }));
 
     function budgetDialog(existing, preset = null) {
@@ -1240,8 +1245,7 @@
           b ? budgetBar(c.spent, b.monthly_limit) : progress((Math.max(c.spent, 0) / maxSpent) * 100, true), b && budgetNote(b)),
         el("div", { class: "amount", text: money(c.spent, cur) }), editButton(b, c.category), twisty), group);
     }
-    const trendCard = el("section", { class: "card" }, el("h2", { text: "Last 12 months" }), barChart(monthly, cur));
-    view().replaceChildren(viewerNote(true), nav, el("div", { class: "grid" }, spendCard, trendCard));
+    view().replaceChildren(viewerNote(true), nav, spendCard);
     if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }
   }
 
@@ -1894,7 +1898,16 @@
 
   async function viewInvestments(id) {
     let timer = null;
-    let activityCard = null;  // built on the first paint and kept across the once-a-minute refresh
+    let lastData = null;      // the latest figures, so choosing a period repaints without another request
+    // The period choice is a pinned bar just under the page choices (the page's own bar, like Spending's tabs), not part of the scrolling page.
+    const seg = el("div", { class: "seg period-seg", role: "group", "aria-label": "Compare against" },
+      CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
+        onclick: () => { invPeriod = key; syncSeg(); if (lastData) paint(lastData); } })));
+    const syncSeg = () => seg.querySelectorAll("button").forEach((btn, i) => btn.setAttribute("aria-pressed", String(CHANGE_PERIODS[i][0] === invPeriod)));
+    const bar = $("subtabs");
+    bar.replaceChildren(seg);
+    bar.hidden = false;
+    measureBars();
     let banks = new Map();    // account id -> its bank's logo item and name, loaded once
     const loadBanks = async () => {
       try {
@@ -1931,9 +1944,7 @@
     const paint = (data) => {
       const totals = Object.entries(data.totals);
       const status = data.status;
-      const seg = el("div", { class: "seg", role: "group", "aria-label": "Compare against" },
-        CHANGE_PERIODS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invPeriod), text: label,
-          onclick: () => { invPeriod = key; paint(data); } })));
+      lastData = data;
       // Only say something when prices are off or failing; the usual "live, about every two minutes" note is gone.
       const statusLine = !status.enabled
         ? "Live prices are turned off on the server. Showing your bank's last prices."
@@ -1960,7 +1971,6 @@
               c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: upperFirst(PERIOD_HELP[invPeriod]) }), el("strong", { class: c.cls, text: c.text }))
                 : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
           })),
-        el("div", { class: "toolbar" }, seg),
         statusLine && el("p", { class: `${status.message || !status.enabled ? "error" : "muted"} inv-note`, text: statusLine }));
 
       const byAccount = new Map();
@@ -1997,20 +2007,7 @@
                 pctCell(allTime), pctCell(change && change.percent != null ? change.percent : null));
             }))));
         })()));
-      if (!activityCard && data.holdings.length > 0) {
-        const accounts = [...new Map(data.holdings.map((h) => [h.account_id, h.account_name]))];
-        const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }), accounts.map(([v, t]) => el("option", { value: v, text: t })));
-        const typeSel = el("select", { "aria-label": "Type" }, el("option", { value: "", text: "Everything" }),
-          [["buy", "Buys"], ["sell", "Sells"], ["cash", "Dividends and cash"], ["fee", "Fees"], ["transfer", "Transfers"]].map(([v, t]) => el("option", { value: v, text: t })));
-        const activity = investmentActivity(() => Object.fromEntries([["account_id", accountSel.value], ["type", typeSel.value]].filter(([, v]) => v)), true, id);
-        accountSel.addEventListener("change", () => activity.load(true));
-        typeSel.addEventListener("change", () => activity.load(true));
-        activityCard = el("section", { class: "card" }, el("h2", { text: "Activity" }),
-          el("p", { class: "muted", text: "Buys, sells, dividends and fees with their dates, as your bank reports them (about the last two years). Click a position above to see just its history." }),
-          el("div", { class: "toolbar" }, accountSel, typeSel), activity.node);
-        activity.load(true);
-      }
-      view().replaceChildren(viewerNote(), head, ...cards, activityCard);
+      view().replaceChildren(viewerNote(), head, ...cards);   // a position's own buys, sells and dividends are in its detail sheet
     };
 
     let banksLoaded = false;
@@ -2778,6 +2775,13 @@
     watcher.observe($("subtabs"));
   }
   window.addEventListener("resize", measureBars);
+
+  // Pressing a page choice (or any header control) and sliding away would start dragging the link, which looks like a highlight
+  // without going anywhere. These are for clicking, not dragging, so the drag is cancelled.
+  document.addEventListener("dragstart", (e) => {
+    const node = e.target && (e.target.closest ? e.target : e.target.parentElement);
+    if (node && node.closest("#tabs, .topbar, .sidebar, .menu-list, .seg, .tabs-sub, .subtabs, button")) e.preventDefault();
+  });
 
   // On a phone the page choice (Overview, Accounts, ...) sits at the top, inside the top bar, so it stays put
   // and never competes with the browser's own bottom toolbar. On a larger screen it is the side bar's menu.

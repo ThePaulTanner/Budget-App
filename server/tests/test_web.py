@@ -435,7 +435,7 @@ def test_cash_flow_controls_sit_at_the_top_of_the_chart_box_and_are_small():
 def test_spending_by_category_folds_sub_categories_and_starts_folded():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index('const group = el("div", { class: "sub-group", hidden: true }')
-    block = app[start:app.index("const trendCard", start)]
+    block = app[start:app.index("view().replaceChildren(viewerNote(true), nav, spendCard);", start)]
     assert '"aria-expanded": "false"' in block and "group.hidden = !group.hidden" in block
     assert "e.stopPropagation();  // the row itself opens the transactions" in block
     assert ".sub-group[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
@@ -549,7 +549,7 @@ def test_investments_total_has_a_box_for_each_currency_in_smaller_type():
     assert 'class: "cur-boxes"' in page and 'class: "cur-box"' in page and 'class: "cur-value"' in page
     assert ".cur-box { padding: 8px 12px; border: 1px solid var(--border-strong);" in css and ".cur-value { font-size: 1.45rem;" in css
     assert "Change since yesterday" not in app and 'day: "since yesterday\'s close"' in app
-    assert ".toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }" in css
+    assert ".subtabs .seg.period-seg button { padding: .32rem .5rem; font-size: .82rem; white-space: nowrap; }" in css
 
 
 def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_not_empty():
@@ -560,7 +560,7 @@ def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_no
 
 def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_gain_figures():
     app = (WEB_DIR / "app.js").read_text()
-    box = app[app.index('class: "cur-box"'):app.index('el("div", { class: "toolbar" }, seg)')]
+    box = app[app.index('class: "cur-box"'):app.index("const byAccount")]
     assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index("`All time")
     assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
     assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur)")
@@ -581,7 +581,7 @@ def test_positions_are_a_table_of_ticker_position_and_two_percent_pnl_columns():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
     start = app.index('class: "acct-table pos-table"')
-    table = app[start:app.index("if (!activityCard", start)]
+    table = app[start:app.index("view().replaceChildren(viewerNote(), head, ...cards)", start)]
     assert table.index('"Ticker"') < table.index('"Position"') < table.index('"All time %"') < table.index("`${periodLabel} %`")
     assert "h.changes[invPeriod]" in table and "openPosition" in app and "avg " not in table and "held`" not in table
     assert ".pos-table td.num" in css and ".hold-line" not in css
@@ -614,7 +614,7 @@ def test_investments_shows_the_bank_logo_beside_the_account_name_without_the_acc
 def test_positions_table_has_currency_as_its_own_column_and_the_amount_has_no_currency_sign():
     app = (WEB_DIR / "app.js").read_text()
     start = app.index('class: "acct-table pos-table"')
-    table = app[start:app.index("if (!activityCard", start)]
+    table = app[start:app.index("view().replaceChildren(viewerNote(), head, ...cards)", start)]
     assert table.index('"Position"') < table.index('"Currency"') < table.index('"All time %"')
     assert 'class: "pos-cur muted", text: h.currency' in table and "money(h.value" not in table
 
@@ -629,3 +629,44 @@ def test_a_transaction_in_the_category_popup_opens_the_category_editor_and_the_p
     assert "openTransaction(tx, choices, names" in edit and 'addEventListener("close", back)' in edit
     assert "budgetPopup = category; reload();" in edit and "showTransactions(category)" in edit
     assert "if (budgetPopup) { const again = budgetPopup; budgetPopup = null; showTransactions(again); }" in page
+
+
+def test_a_press_that_slides_away_does_not_leave_the_page_choices_highlighted():
+    css = (WEB_DIR / "app.css").read_text()
+    assert "-webkit-user-select: none; user-select: none;" in css and "-webkit-tap-highlight-color: transparent" in css
+    assert "@media (hover: none)" in css and '#tabs a:not([aria-current="page"]):hover { background: transparent;' in css
+    touch = css[css.index("@media (hover: none)"):css.index("-webkit-user-drag: none; }")]
+    assert '.icon-btn:not(.current):not([aria-current="page"]):hover { background: var(--surface); }' in touch   # the current icon button keeps its accent fill
+    assert '.tabs-sub button:not([aria-pressed="true"]):hover { color: var(--muted); }' in touch and ".tabs-sub button:hover { background" not in touch
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'document.addEventListener("dragstart"' in app and 'closest("#tabs, .topbar, .sidebar, .menu-list, .seg, .tabs-sub, .subtabs, button")' in app
+    assert "-webkit-user-drag: none" in css
+
+
+def test_investments_period_filter_is_the_pinned_bar_under_the_page_choices():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'class: "seg period-seg"' in inv and 'const bar = $("subtabs");' in inv and "bar.replaceChildren(seg);" in inv and "bar.hidden = false;" in inv
+    assert "lastData = data;" in inv and "paint(lastData)" in inv
+    head = inv[inv.index('const head = el("section"'):inv.index("const byAccount")]
+    assert "seg" not in head   # no longer inside the scrolling Total value card
+
+
+def test_investments_page_has_no_activity_list_and_budgets_cannot_go_to_a_future_month():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewInvestments")
+    inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'text: "Activity"' not in inv and "activityCard" not in inv and "Click a position above" not in inv
+    assert "investmentActivity(() => ({ account_id: h.account_id, security_id: h.security_id }), false, id)" in inv   # a position's own history stays in its sheet
+    budgets = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'disabled: month >= latest' in budgets and "if (month < latest)" in budgets
+    assert "const month = budgetMonth > latest ? latest : budgetMonth;" in budgets
+
+
+def test_budgets_page_has_no_twelve_month_chart():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert "barChart" not in page and "Last 12 months" not in page and "/api/spending/monthly" not in page
+    assert "view().replaceChildren(viewerNote(true), nav, spendCard);" in page
+    assert "barChart(monthly, cur)" in app   # the Spending page's own "Last 12 months" chart is unchanged
