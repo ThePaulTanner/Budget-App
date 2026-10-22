@@ -741,3 +741,6 @@ button.twisty:hover { background: var(--surface-2); color: var(--text); }
   .monthnav strong { font-size: .85rem; white-space: nowrap; }
   .monthnav button { padding: .3rem .55rem; font-size: .85rem; }
 }
+@media (max-width: 360px) {
+  .monthnav strong { overflow: hidden; text-overflow: ellipsis; }
+}

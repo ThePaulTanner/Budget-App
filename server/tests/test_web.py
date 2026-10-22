@@ -524,3 +524,4 @@ def test_account_sections_have_a_slim_coloured_header_band():
 def test_pinned_month_switcher_stays_on_one_line_on_very_narrow_phones():
     css = (WEB_DIR / "app.css").read_text()
     assert ".monthnav strong { font-size: .85rem; white-space: nowrap; }" in css
+    assert ".monthnav strong { overflow: hidden; text-overflow: ellipsis; }" in css
