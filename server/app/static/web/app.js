@@ -2756,7 +2756,7 @@
   placeTabs();
 
   const PAGES = {
-    overview: ["Overview", "Net worth and credit card payments"],
+    overview: ["Overview", "Your net worth over time"],
     accounts: ["Accounts", "Balances by bank and account"],
     spending: ["Spending", "This month, transactions, merchants, budgets and cash flow"],
     money: ["Money Management", "Credit card payments and due dates"],
@@ -2769,7 +2769,29 @@
   const menuList = $("menu-list");
 
   // The reconnect count comes from the banks list, on every screen.
+  // The release this page was loaded as. The server may move on while a tab stays open (an update lands on the NAS),
+  // and then the page's script is older than the server. The label under the title shows what the page runs, and
+  // turns into a Reload button once the server reports a newer release.
+  const pageRelease = (document.querySelector('meta[name="release"]') || {}).content || "";
+  let releaseCheckedAt = 0;
+  function showRelease(serverRelease) {
+    const label = $("release");
+    if (!label) return;
+    if (serverRelease && pageRelease && serverRelease !== pageRelease) {
+      label.replaceChildren(el("button", { type: "button", class: "link release-reload", text: `v${pageRelease} \u00B7 update ${serverRelease} ready, tap to reload`,
+        onclick: () => location.reload() }));
+    } else {
+      label.textContent = pageRelease ? `v${pageRelease}` : "";
+    }
+  }
+  async function checkRelease() {
+    if (Date.now() - releaseCheckedAt < 60000) return;  // at most once a minute
+    releaseCheckedAt = Date.now();
+    try { showRelease((await api("/api/version")).version); } catch (err) { if (err instanceof SignedOut) throw err; }
+  }
+  showRelease("");
   async function refreshStatus() {
+    checkRelease().catch(() => {});
     try {
       const items = await api("/api/items");
       setBanner(items.filter((i) => i.needs_reauth).map((i) => i.institution || "Unknown bank"));
