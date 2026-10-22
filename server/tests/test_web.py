@@ -575,3 +575,11 @@ def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_no
     app = (WEB_DIR / "app.js").read_text()
     page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3000]
     assert '/api/spending/monthly?months=12' in page and 'text: "Last 12 months"' in page and "spendCard, trendCard" in page
+
+
+def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_gain_figures():
+    app = (WEB_DIR / "app.js").read_text()
+    box = app[app.index('class: "cur-box"'):app.index('el("div", { class: "toolbar" }, seg)')]
+    assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index('text: "All time "')
+    assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
+    assert box.index('text: "All time "') < box.index("gainText(b.gain, b.pct, cur)")

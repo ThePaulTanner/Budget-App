@@ -1833,6 +1833,7 @@
   let invPeriod = "day";
   let syncPolls = 0;  // first-sync checks on the Settings screen since you last navigated or linked
 
+  const upperFirst = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   function changeText(change, currency) {
     if (!change) return null;
     const sign = change.amount > 0 ? "+" : change.amount < 0 ? MINUS : "";
@@ -1928,11 +1929,13 @@
             const b = bookOf(data.holdings, cur);
             return el("div", { class: "cur-box", role: "group", "aria-label": `${cur} total` },
               el("div", { class: "cur-name", text: cur }),
-              el("div", { class: "cur-value", text: money(t.value, cur) }),
-              b.known > 0 && el("div", { class: "cur-line muted" }, `Book ${money(b.book, cur)} \u00B7 `,
-                el("span", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: `All time ${gainText(b.gain, b.pct, cur)}` }),
-                b.missing > 0 && ` \u00B7 ${b.missing} no book value`),
-              c ? el("div", { class: `cur-line ${c.cls}` }, el("strong", { text: c.text }), el("span", { class: "muted", text: ` ${PERIOD_HELP[invPeriod]}` }))
+              // The value and the (small) book value share a line; each gain line is its label first, then the figures.
+              el("div", { class: "cur-top" }, el("span", { class: "cur-value", text: money(t.value, cur) }),
+                b.known > 0 && el("span", { class: "cur-book muted", text: `Book ${money(b.book, cur)}` })),
+              b.known > 0 && el("div", { class: "cur-line" }, el("span", { class: "muted", text: "All time " }),
+                el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }),
+                b.missing > 0 && el("span", { class: "muted", text: ` \u00B7 ${b.missing} no book value` })),
+              c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: `${upperFirst(PERIOD_HELP[invPeriod])} ` }), el("strong", { class: c.cls, text: c.text }))
                 : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
           })),
         el("div", { class: "toolbar" }, seg),

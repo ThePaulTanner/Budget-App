@@ -781,3 +781,9 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
   .toolbar .seg { width: 100%; }
   .toolbar .seg button { flex: 1 1 auto; padding: .3rem .2rem; font-size: .76rem; }
 }
+.cur-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+.cur-book { font-size: .8rem; }
+@media (max-width: 360px) {
+  .cur-value { font-size: 1.25rem; }
+  .cur-book, .cur-line { font-size: .73rem; }
+}
