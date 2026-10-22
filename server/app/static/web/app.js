@@ -1930,85 +1930,6 @@
 
   // ---------------------------------------------------------------- Merchants
 
-  // ---- Money Management: credit card statements, minimums and due dates ------------------------
-
-  const DUE_PILLS = {
-    overdue: ["Overdue", "bad"], due_soon: ["Due soon", "warn"], upcoming: ["Upcoming", ""],
-    paid: ["Statement paid", "good"], nothing_owed: ["Nothing owed", "good"], unknown: ["Unconfirmed", ""],
-  };
-
-  function dueText(card) {
-    const days = card.days_until_due;
-    if (card.due_date == null) return "Your bank has not shared a due date.";
-    if (card.status === "paid" || card.status === "nothing_owed") return `Next payment date ${shortDate(card.due_date)}.`;
-    if (days < 0) return `Was due ${shortDate(card.due_date)}, ${-days} day${days === -1 ? "" : "s"} ago.`;
-    if (days === 0) return "Due today.";
-    if (days === 1) return `Due tomorrow, ${dayLabel(card.due_date)}.`;
-    return `Due ${dayLabel(card.due_date)}, in ${days} days.`;
-  }
-
-  async function viewMoney(id) {
-    const [data, items, accounts] = await Promise.all([api(scoped("/api/payments-due")), api("/api/items").catch(() => []), api(scoped("/api/accounts")).catch(() => [])]);
-    if (id !== navId) return;
-    const itemsById = new Map(items.map((i) => [i.id, i]));
-    const itemOfAccount = new Map(accounts.map((a) => [a.id, a.item_id]));
-    const empty = data.cards.length === 0
-      ? el("section", { class: "card" }, el("h2", { text: "Credit card payments" }),
-        el("p", { class: "empty", text: "No credit cards yet. They appear once a bank with a credit card is linked and synced." }))
-      : null;
-
-    // One table. Each bank gets a heading row, so the bank is shown once for all its cards, and every
-    // column holds a single kind of figure. The less important columns drop away on narrower screens.
-    const dueRelative = (c) => (c.days_until_due === 0 ? "today" : c.days_until_due > 0 ? `in ${c.days_until_due} day${c.days_until_due === 1 ? "" : "s"}` : `${-c.days_until_due} day${c.days_until_due === -1 ? "" : "s"} ago`);
-    const dash = () => el("span", { class: "muted", text: "\u2014" });
-    const headers = [["Bank", "col-bankname"], ["Card", "col-account"], ["Status", "col-bank"], ["Due date", "col-due"], ["Due in", "col-extra col-wide"],
-      ["Statement balance", "num col-balance"], ["Minimum", "num col-extra"], ["Balance now", "num col-extra"],
-      ["Available credit", "num col-extra col-wide"], ["Last payment", "num col-extra col-wide"], ["Paid on", "col-extra col-wide"],
-      ["Bank data updated", "col-extra col-wide"]];
-    const bankKey = (c) => itemOfAccount.get(c.account_id) || c.institution || "";
-    const banks = new Map();
-    for (const c of data.cards) {
-      if (!banks.has(bankKey(c))) banks.set(bankKey(c), []);
-      banks.get(bankKey(c)).push(c);
-    }
-    // The bank, and when its data was last refreshed, are shared by all its cards: each is one cell
-    // spanning the bank's rows, so it is shown once.
-    const body = [];
-    for (const [key, cards] of banks) {
-      const item = itemsById.get(key);
-      const name = cards[0].institution || (item && item.institution) || "Bank";
-      const stamp = cards.filter((c) => c.dues_known && c.dues_updated_at).map((c) => c.dues_updated_at).sort().pop();
-      cards.forEach((c, index) => {
-        const [label, tone] = DUE_PILLS[c.status];
-        const cur = c.currency;
-        const settled = c.status === "paid" || c.status === "nothing_owed";
-        const bad = c.status === "overdue" ? "neg" : "";
-        body.push(el("tr", { class: `${c.status === "overdue" ? "overdue" : ""}${index === 0 ? " bank-first" : ""}` },
-          index === 0 && el("td", { class: "col-bankname shared", rowspan: cards.length },
-            el("div", { class: "bank-cell", title: name }, bankLogo(item, name, 28), el("strong", { text: name }))),
-          el("td", { class: "col-account" }, el("strong", { text: c.name }), c.mask && el("span", { class: "muted", text: `  \u2022\u2022${c.mask}` }),
-            el("div", { class: "narrow-only" }, el("span", { class: `pill nomargin ${tone}`, text: label }))),
-          el("td", { class: "col-bank" }, el("span", { class: `pill nomargin ${tone}`, text: label })),
-          el("td", { class: `col-due ${bad}` }, c.due_date ? shortDate(c.due_date) : dash()),
-          el("td", { class: `col-extra col-wide ${bad}` }, c.due_date && !settled ? dueRelative(c) : dash()),
-          el("td", { class: "num col-balance" }, c.statement_balance == null ? dash() : money(c.statement_balance, cur)),
-          el("td", { class: "num col-extra" }, c.minimum_payment == null ? dash() : money(c.minimum_payment, cur)),
-          el("td", { class: "num col-extra" }, money(c.current_balance, cur)),
-          el("td", { class: "num col-extra col-wide" }, c.available_credit == null ? dash() : money(c.available_credit, cur)),
-          el("td", { class: "num col-extra col-wide" }, c.last_payment_amount == null ? dash() : money(c.last_payment_amount, cur)),
-          el("td", { class: "col-extra col-wide" }, c.last_payment_date ? shortDate(c.last_payment_date) : dash()),
-          index === 0 && el("td", { class: "col-extra col-wide shared muted", rowspan: cards.length, text: stamp ? ago(stamp) : "\u2014" })));
-      });
-    }
-    const rows = data.cards.length === 0 ? [] : [el("section", { class: "card acct-section" },
-      el("div", { class: "table-wrap" }, el("table", { class: "acct-table money-table" },
-        el("thead", {}, el("tr", {}, headers.map(([text, cls]) => el("th", { scope: "col", class: cls, text })))),
-        el("tbody", {}, body))),
-      el("p", { class: "muted", text: "Statement balance is what to pay to avoid interest. Balance now includes charges since the statement closed." }),
-      !data.dues_available && el("p", { class: "muted", text: "Your banks have not shared statement balances or due dates yet. Not every bank does. Banks linked before this page existed may need to be removed and linked again from Settings so Plaid can ask for it. Balances here are still current." }))];
-    view().replaceChildren(viewerNote(), ...(empty ? [empty] : []), ...rows);
-  }
-
   const MERCH_PERIODS = [["month", "Month"], ["3m", "3M"], ["12m", "12M"], ["all", "All"]];
   const FIELD_LABELS = { name: "the description", merchant_name: "the bank's merchant name" };
   let merchPeriod = "12m";
@@ -2754,11 +2675,10 @@
     overview: ["Overview", "Your net worth over time"],
     accounts: ["Accounts", "Balances by bank and account"],
     spending: ["Spending", "This month, transactions, merchants, budgets and cash flow"],
-    money: ["Money Management", "Credit card payments and due dates"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],
   };
-  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, money: viewMoney, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, investments: viewInvestments, settings: viewSettings };
 
   const menuButton = $("menu-button");
   const menuList = $("menu-list");

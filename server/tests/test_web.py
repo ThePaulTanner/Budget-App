@@ -288,11 +288,11 @@ def test_top_title_is_always_the_app_name_and_overview_cards_have_no_count():
     assert 'data.cards.length === 1 ? "" : "s"' not in app
 
 
-def test_banks_are_logos_alone_on_money_and_accounts():
+def test_banks_are_logos_alone_on_accounts():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
     assert ".money-table .bank-cell strong, .bank-grouped .bank-cell strong { position: absolute;" in css
-    assert 'class: "bank-cell", title: name' in app
+    assert 'class: "bank-cell", title: a.institution' in app
 
 
 def test_merchants_tabs_live_in_the_fixed_bar_not_the_scrolling_page():
@@ -384,3 +384,10 @@ def test_accounts_page_does_not_show_the_account_number():
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
     assert "a.mask" not in section
+
+
+def test_there_is_no_money_page():
+    app = (WEB_DIR / "app.js").read_text()
+    html = (WEB_DIR / "index.html").read_text()
+    assert "viewMoney" not in app and "DUE_PILLS" not in app and "#/money" not in html
+    assert 'data-tab="money"' not in html and "money: [" not in app
