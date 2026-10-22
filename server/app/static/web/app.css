@@ -656,12 +656,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 .cf-page-heading { margin: 0 0 10px; font-size: 1.1rem; }
 
 /* A position: ticker with its name (small), then what is held and at what price, then the money. */
-.hold-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.hold-name { font-size: .78rem; }
-.hold-line { margin-top: 3px; font-size: .88rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.hold-line .income, .hold-line .neg { font-weight: 600; }
-.hold-note { font-size: .78rem; }
-@media (max-width: 600px) { .hold-line { font-size: .8rem; } .hold-name { font-size: .74rem; } }
 
 /* The cash flow controls live at the top of the chart's box, small. */
 .cf-card .cf-controls { gap: 6px 8px; margin: 0 0 10px; }
@@ -789,3 +783,10 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
   .cur-value { font-size: 1.25rem; }
   .cur-box .cur-book, .cur-line { font-size: .7rem; }
 }
+
+/* Investments: the positions of an account as a small table. */
+.pos-table td, .pos-table th { padding: 7px 8px; }
+.pos-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pos-table td.num.income, .pos-table td.num.neg { font-weight: 600; }
+.pos-table .pos-ticker { width: 100%; }
+@media (max-width: 480px) { .pos-table td, .pos-table th { padding: 6px 5px; font-size: .8rem; } }

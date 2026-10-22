@@ -224,11 +224,6 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
 
 
-def test_a_position_row_keeps_its_name_beside_the_ticker_and_wraps_when_needed():
-    css = (WEB_DIR / "app.css").read_text()
-    assert ".hold-head { display: flex; flex-wrap: wrap;" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
-
-
 def test_phone_sign_in_fills_the_screen():
     css = (WEB_DIR / "app.css").read_text()
     assert "min-height: 100dvh" in css and ".login-outer { flex: 1 1 auto;" in css and ".login-inner { flex: 1 1 auto;" in css
@@ -248,7 +243,7 @@ def test_phone_filters_sit_two_to_a_line_under_the_search_box():
 
 def test_desktop_spending_tabs_and_positions_are_tidy():
     css = (WEB_DIR / "app.css").read_text()
-    assert ".subtabs { width: 100%; max-width: 1120px;" in css and ".hold-line {" in css
+    assert ".subtabs { width: 100%; max-width: 1120px;" in css
 
 
 def test_net_worth_chart_fades_the_estimated_days_and_says_so():
@@ -420,20 +415,6 @@ def test_old_budgets_and_cash_flow_tab_addresses_go_to_their_new_pages():
     assert 'params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }' in app
 
 
-def test_position_rows_are_ticker_and_name_then_held_and_price_then_the_money():
-    app = (WEB_DIR / "app.js").read_text()
-    start = app.index('class: "hold-head"')
-    row = app[start:app.index("if (!activityCard", start)]
-    assert row.index("hold-name") < row.index("held") < row.index("avg ") < row.index("now ")
-    assert row.index("now ") < row.index("`Book ") < row.index("`Value ") < row.index("P&L ")
-
-
-def test_a_closed_market_position_is_tagged_closed_with_its_last_trade_time():
-    app = (WEB_DIR / "app.js").read_text()
-    assert 'h.market_open ? "Live" : "Closed"' in app and "Last trade ${" in app
-    assert 'h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade })' in app  # visible on a phone, not just a tooltip
-
-
 def test_the_sign_in_button_says_passkey_not_face_id():
     html = (WEB_DIR / "index.html").read_text()
     app = (WEB_DIR / "app.js").read_text()
@@ -594,3 +575,13 @@ def test_spending_summary_does_not_pass_a_missing_chart_card_to_replace_children
     assert "replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean))" in page
     assert "without book value" in app and "N no book value" not in app
     assert ".section-total" not in (WEB_DIR / "app.css").read_text()
+
+
+def test_positions_are_a_table_of_ticker_position_and_two_percent_pnl_columns():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    start = app.index('class: "acct-table pos-table"')
+    table = app[start:app.index("if (!activityCard", start)]
+    assert table.index('"Ticker"') < table.index('"Position"') < table.index('"All time %"') < table.index("`${periodLabel} %`")
+    assert "h.changes[invPeriod]" in table and "openPosition" in app and "avg " not in table and "held`" not in table
+    assert ".pos-table td.num" in css and ".hold-line" not in css
