@@ -458,12 +458,15 @@ def test_spending_by_category_folds_sub_categories_and_starts_folded():
     assert ".sub-group[hidden] { display: none; }" in (WEB_DIR / "app.css").read_text()
 
 
-def test_budget_rows_put_title_and_money_above_a_full_width_bar_and_indent_sub_budgets():
+def test_budgets_sit_on_the_spending_by_category_rows_with_a_red_line_when_over():
     app = (WEB_DIR / "app.js").read_text()
-    start = app.index('class: "budget-head"')
-    row = app[start:app.index('class: "secondary budget-edit"', start)]
-    assert row.index("categoryLabel(b.category)") < row.index("of ${money(b.monthly_limit, cur)}") < row.index("progress(b.percent)")
-    assert " sub budget-sub" in app and ".row.budget-sub { padding-left: 4rem; }" in (WEB_DIR / "app.css").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
+    assert 'el("h2", { text: "Budgets" })' not in page and "budgetCard" not in page
+    assert 'text: "Add budget"' in page and page.index('text: "Add budget"') < page.index('"Spending by category"')
+    assert "budgetBar(c.spent, b.monthly_limit)" in page and "budgetBar(spent, sb.monthly_limit)" in page
+    assert "const scale = Math.max(limit, spent, 0.01);" in app and 'className = "limit-line"' in app
+    assert ".progress.budgeted .limit-line" in css and "var(--red) var(--limit)" in css
 
 
 def test_settings_banks_start_folded_with_an_arrow_to_open_their_accounts():
@@ -485,3 +488,23 @@ def test_settings_banks_no_longer_has_the_long_explanation_paragraph():
     app = (WEB_DIR / "app.js").read_text()
     assert "Each bank lists its accounts" not in app and "switch hide on" not in app.lower()
     assert "add the people in your household on the People tab first" in app
+
+
+def test_header_keeps_title_and_controls_on_one_line_and_smaller():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".top-actions { flex: none; flex-wrap: nowrap;" in css
+    assert ".top-actions .icon-btn { width: 32px; height: 32px; }" in css
+    assert ".topbar .titles { min-width: 0; flex: 1 1 0; }" in css
+
+
+def test_investments_no_longer_shows_the_live_price_and_changes_assume_notes():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "Prices refresh about every two minutes" not in app
+    assert "Changes assume you held today" not in app
+    assert "Live prices are turned off on the server" in app
+
+
+def test_header_controls_shrink_on_very_narrow_phones_instead_of_wrapping():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".topbar .titles { min-width: 5.5rem; }" in css
+    assert "@media (max-width: 360px)" in css and ".top-actions .viewer select { max-width: 5.25rem;" in css
