@@ -1919,6 +1919,7 @@
                 `Value ${h.value != null ? money(h.value, h.currency) : "\u2014"}`,
                 el("span", { class: gainCls, text: h.gain != null ? `P&L ${sign(h.gain)}${money(Math.abs(h.gain), h.currency)}` : "P&L \u2014" }),
                 el("span", { class: gainCls, text: pct != null ? `${sign(pct)}${Math.abs(pct).toFixed(1)}%` : "\u2014" })])),
+              h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade }),
               h.live_note && el("div", { class: "hold-line hold-note", text: `No live price: ${h.live_note}` })));
         })));
       if (!activityCard && data.holdings.length > 0) {

@@ -429,3 +429,4 @@ def test_position_rows_are_ticker_and_name_then_held_and_price_then_the_money():
 def test_a_closed_market_position_is_tagged_closed_with_its_last_trade_time():
     app = (WEB_DIR / "app.js").read_text()
     assert 'h.market_open ? "Live" : "Closed"' in app and "Last trade ${" in app
+    assert 'h.live && !h.market_open && lastTrade && el("div", { class: "hold-line hold-note", text: lastTrade })' in app  # visible on a phone, not just a tooltip
