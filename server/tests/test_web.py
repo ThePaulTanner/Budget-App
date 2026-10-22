@@ -580,9 +580,12 @@ def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_no
 def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_gain_figures():
     app = (WEB_DIR / "app.js").read_text()
     box = app[app.index('class: "cur-box"'):app.index('el("div", { class: "toolbar" }, seg)')]
-    assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index('text: "All time "')
+    assert box.index('class: "cur-value"') < box.index('class: "cur-book muted"') < box.index("`All time")
     assert box.index("upperFirst(PERIOD_HELP[invPeriod])") < box.index("text: c.text")
-    assert box.index('text: "All time "') < box.index("gainText(b.gain, b.pct, cur)")
+    assert box.index("`All time") < box.index("gainText(b.gain, b.pct, cur)")
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".cur-line { display: flex; flex-wrap: wrap; justify-content: space-between;" in css and ".cur-line strong { margin-left: auto; text-align: right;" in css
+    assert ".cur-box .muted { font-size: inherit; }" in css
 
 
 def test_spending_summary_does_not_pass_a_missing_chart_card_to_replace_children():

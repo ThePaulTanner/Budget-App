@@ -773,7 +773,9 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
 .cur-box { padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
 .cur-name { font-size: .7rem; font-weight: 700; letter-spacing: .07em; color: var(--muted); }
 .cur-value { font-size: 1.45rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
-.cur-line { font-size: .8rem; line-height: 1.35; }
+.cur-line { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 10px; font-size: .8rem; line-height: 1.35; }
+.cur-line > span { white-space: nowrap; }
+.cur-line strong { margin-left: auto; text-align: right; white-space: nowrap; }
 /* The period choice (Day, Since open, 1W ... 1Y) stays on one line, in smaller type. */
 .toolbar .seg button { padding: .3rem .6rem; font-size: .82rem; white-space: nowrap; }
 @media (max-width: 480px) {
@@ -781,8 +783,9 @@ button.budget-add .ico, button.budget-edit .ico { color: var(--accent); }
   .toolbar .seg button { flex: 1 1 auto; padding: .3rem .2rem; font-size: .76rem; }
 }
 .cur-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
-.cur-book { font-size: .8rem; }
+.cur-box .muted { font-size: inherit; }   /* .muted alone would force .9rem and make the labels bigger than their figures */
+.cur-box .cur-book { font-size: .8rem; }
 @media (max-width: 360px) {
   .cur-value { font-size: 1.25rem; }
-  .cur-book, .cur-line { font-size: .73rem; }
+  .cur-box .cur-book, .cur-line { font-size: .7rem; }
 }

@@ -1933,10 +1933,9 @@
               // The value and the (small) book value share a line; each gain line is its label first, then the figures.
               el("div", { class: "cur-top" }, el("span", { class: "cur-value", text: money(t.value, cur) }),
                 b.known > 0 && el("span", { class: "cur-book muted", text: `Book ${money(b.book, cur)}` })),
-              b.known > 0 && el("div", { class: "cur-line" }, el("span", { class: "muted", text: "All time " }),
-                el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) }),
-                b.missing > 0 && el("span", { class: "muted", text: ` \u00B7 ${b.missing} without book value` })),
-              c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: `${upperFirst(PERIOD_HELP[invPeriod])} ` }), el("strong", { class: c.cls, text: c.text }))
+              b.known > 0 && el("div", { class: "cur-line" }, el("span", { class: "muted", text: `All time${b.missing > 0 ? ` \u00B7 ${b.missing} without book value` : ""}` }),
+                el("strong", { class: b.gain > 0 ? "income" : b.gain < 0 ? "neg" : "", text: gainText(b.gain, b.pct, cur) })),
+              c ? el("div", { class: "cur-line" }, el("span", { class: "muted", text: upperFirst(PERIOD_HELP[invPeriod]) }), el("strong", { class: c.cls, text: c.text }))
                 : el("div", { class: "cur-line muted", text: "No change available for this period yet." }));
           })),
         el("div", { class: "toolbar" }, seg),
