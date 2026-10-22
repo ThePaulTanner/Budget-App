@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 SCHEMA = """
 CREATE TABLE users (
@@ -158,7 +158,8 @@ CREATE TABLE merchants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   auto INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  category TEXT
 );
 CREATE UNIQUE INDEX merchants_name ON merchants(lower(name));
 CREATE TABLE merchant_aliases (
@@ -392,6 +393,11 @@ UPDATE sessions SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     # prices; those rows are marked `estimated`.
     13: """
 ALTER TABLE networth ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;
+""",
+
+    # A merchant can carry a default category for all its transactions.
+    14: """
+ALTER TABLE merchants ADD COLUMN category TEXT;
 """}
 
 

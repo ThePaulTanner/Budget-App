@@ -513,6 +513,15 @@
     };
   }
 
+  // The same picker with a first choice for "no saved category" (value() is then null).
+  function optionalCategoryPicker(choices, current) {
+    const picker = categoryPicker(current && !choices.includes(current) ? [...choices, current] : choices, current);
+    const select = picker.node.firstChild;
+    select.prepend(el("option", { value: "", text: "Automatic (rules, then your bank)" }));
+    if (!current) select.value = "";
+    return { node: picker.node, value: () => (select.value === "" ? null : picker.value() || null) };
+  }
+
   function openSheet(...content) {
     const sheet = $("sheet");
     const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
@@ -1008,7 +1017,7 @@
   function openTransaction(tx, choices, accountName, onChange) {
     const picker = categoryPicker(choices.includes(tx.category) ? choices : [...choices, tx.category].filter(Boolean), tx.category);
     const amount = signed(tx.amount, tx.currency);
-    const sourceLabel = { rule: "Set by a rule", manual: "Changed by you", plaid: "From your bank (Plaid)" }[tx.category_source] || "From your bank (Plaid)";
+    const sourceLabel = { rule: "Set by a rule", merchant: "Set by its merchant", manual: "Changed by you", plaid: "From your bank (Plaid)" }[tx.category_source] || "From your bank (Plaid)";
     const message = el("p", { class: "error", role: "alert" });
     const offer = el("div");
 
@@ -2119,15 +2128,19 @@
     show();
   }
 
-  function openAddMerchant(done) {
+  async function openAddMerchant(done) {
+    let choices;
+    try { choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
     const name = el("input", { maxlength: 80, placeholder: "e.g. Corner Store", "aria-label": "Merchant name" });
+    const category = optionalCategoryPicker(choices, null);
     const message = el("p", { class: "error", role: "alert" });
     openSheet(el("h2", { text: "Add a merchant" }),
       el("p", { class: "muted", text: "Creates an empty merchant. Attach bank text to it afterwards with Name it." }),
-      el("label", {}, "Name", name), message,
+      el("label", {}, "Name", name),
+      el("h3", { text: "Category (optional)" }), category.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Add", onclick: async () => {
-          try { await api("/api/merchants", { method: "POST", body: { name: name.value } }); closeSheet(); toast("Merchant added."); done(); }
+          try { await api("/api/merchants", { method: "POST", body: { name: name.value, category: category.value() } }); closeSheet(); toast("Merchant added."); done(); }
           catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
         } }),
         el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
@@ -2135,8 +2148,9 @@
 
   // Give some bank text a name. `done` runs after it is saved.
   async function openNameDialog({ pattern = "", field = "name", kind = "equals", name = "" }, done) {
-    let existing = [];
-    try { existing = (await api("/api/merchants?period=all")).merchants.map((m) => m.name); } catch (err) { if (err instanceof SignedOut) { showLogin(); return; } }
+    let existing = [], choices = [];
+    try { existing = (await api("/api/merchants?period=all")).merchants.map((m) => m.name); choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) { showLogin(); return; } }
+    const categoryPick = optionalCategoryPicker(choices, null);
     const patternInput = el("input", { value: pattern, maxlength: 200, "aria-label": "Bank text" });
     const kindSel = el("select", { "aria-label": "How to match" },
       [["equals", "is exactly"], ["contains", "contains"]].map(([v, l]) => el("option", { value: v, selected: v === kind, text: l })));
@@ -2172,12 +2186,15 @@
       el("div", { class: "toolbar" }, el("span", { class: "muted", text: "When" }), fieldSel, kindSel),
       el("label", {}, "Bank text", patternInput),
       previewBox,
-      el("label", {}, "Merchant name (pick an existing one to combine them)", nameInput), datalist, message,
+      el("label", {}, "Merchant name (pick an existing one to combine them)", nameInput), datalist,
+      el("h3", { text: "Category for this merchant (optional)" }),
+      el("p", { class: "muted", text: "Saved with the merchant, so all its transactions use it unless a rule or a change you made by hand says otherwise. Leave it on Automatic to keep what the merchant has now." }),
+      categoryPick.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save name", onclick: async () => {
           message.textContent = "";
           try {
-            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value } });
+            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value, ...(categoryPick.value() ? { category: categoryPick.value() } : {}) } });
             closeSheet();
             toast(`${r.updated_transactions} transaction${r.updated_transactions === 1 ? "" : "s"} now tracked as ${r.merchant.name}.`);
             done();
@@ -2209,7 +2226,8 @@
         stat("Average charge", d.average_transaction == null ? "\u2014" : money(d.average_transaction, cur)),
         stat("All time", money(d.lifetime.spent, cur)),
         stat("First seen", d.first_date ? shortDate(d.first_date) : "\u2014"),
-        stat("Last seen", d.last_date ? shortDate(d.last_date) : "\u2014")),
+        stat("Last seen", d.last_date ? shortDate(d.last_date) : "\u2014"),
+        stat("Category", d.category ? categoryLabel(d.category) : "Automatic")),
       d.spent === 0 && d.outflow > 0 && el("p", { class: "muted", text: `This is not counted as spending (payments, transfers and income are left out), but ${money(d.outflow, cur)} left your accounts.` }),
       el("h3", { text: "Spending by month" }), barChart(d.monthly, cur),
       d.categories.length > 0 && [el("h3", { text: "Categories" }), d.categories.slice(0, 4).map((c) =>
@@ -2229,7 +2247,7 @@
       }), el("p", {}, el("a", { href: `#/spending?tab=transactions&merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
       message,
       el("div", { class: "actions" },
-        el("button", { type: "button", text: "Rename", onclick: () => openRename(d, () => { done(); again(); }) }),
+        el("button", { type: "button", text: "Edit", onclick: () => openRename(d, () => { done(); again(); }) }),
         el("button", { type: "button", text: "Merge into\u2026", onclick: () => openMerge(d, done) }),
         // Deleting a merchant your bank named, with nothing of yours attached, would change nothing: it comes straight back.
         (!d.auto || d.alias_list.some((a) => a.source === "user")) && el("button", { type: "button", class: "danger", text: d.auto ? "Delete" : "Delete or reset", onclick: async () => {
@@ -2242,15 +2260,21 @@
         el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
   }
 
-  function openRename(d, done) {
+  async function openRename(d, done) {
+    let choices;
+    try { choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
     const name = el("input", { value: d.name, maxlength: 80, "aria-label": "Merchant name" });
+    const category = optionalCategoryPicker(choices, d.category);
     const message = el("p", { class: "error", role: "alert" });
-    openSheet(el("h2", { text: "Rename merchant" }),
+    openSheet(el("h2", { text: "Edit merchant" }),
       el("p", { class: "muted", text: "The new name shows everywhere. Matching transactions stay attached, including future ones." }),
-      el("label", {}, "Name", name), message,
+      el("label", {}, "Name", name),
+      el("h3", { text: "Category" }),
+      el("p", { class: "muted", text: "All this merchant\u2019s transactions use it, including future ones, unless a rule or a change you made by hand says otherwise." }),
+      category.node, message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save", onclick: async () => {
-          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value } }); toast("Renamed."); done(); }
+          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value, category: category.value() } }); toast("Saved."); done(); }
           catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
         } }),
         el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));

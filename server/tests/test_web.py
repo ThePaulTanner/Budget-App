@@ -709,3 +709,15 @@ def test_investments_page_amounts_use_a_plain_dollar_sign_not_us_dollar():
     assert 'text: moneyShort(t.value, cur)' in inv and "Book ${moneyShort(b.book, cur)}" in inv and "Value ${moneyShort(v, cur)}" in inv
     assert "gainText(b.gain, b.pct, cur, true)" in inv and "moneyShort(Math.abs(change.amount), currency)" in app
     assert "money(t.value" not in inv and "money(b.book" not in inv
+
+
+def test_merchant_boxes_offer_a_saved_category():
+    js = (WEB_DIR / "app.js").read_text()
+    assert "function optionalCategoryPicker" in js
+    add = js[js.index("async function openAddMerchant"):js.index("async function openNameDialog")]
+    assert "optionalCategoryPicker(choices, null)" in add and "category: category.value()" in add
+    name = js[js.index("async function openNameDialog"):js.index("async function openMerchantById")]
+    assert "categoryPick.value()" in name
+    edit = js[js.index("async function openRename"):js.index("async function openMerge")]
+    assert "Edit merchant" in edit and "optionalCategoryPicker(choices, d.category)" in edit and "category: category.value()" in edit
+    assert "Set by its merchant" in js
