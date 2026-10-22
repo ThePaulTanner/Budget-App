@@ -224,9 +224,9 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
 
 
-def test_phone_positions_put_the_name_on_its_own_line():
+def test_a_position_row_keeps_its_name_beside_the_ticker_and_wraps_when_needed():
     css = (WEB_DIR / "app.css").read_text()
-    assert ".hold-name { display: block; margin: 0; }" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
+    assert ".hold-head { display: flex; flex-wrap: wrap;" in css and 'class: "row click holding"' in (WEB_DIR / "app.js").read_text()
 
 
 def test_phone_sign_in_fills_the_screen():

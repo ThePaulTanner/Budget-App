@@ -561,9 +561,8 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   input, select, textarea { font-size: 16px; }
 }
 
-/* Phone: a position's name sits on its own line under the ticker, and the long notes are smaller. */
+/* Phone: the long notes are smaller. */
 @media (max-width: 600px) {
-  .hold-name { display: block; margin: 0; }
   .inv-note { font-size: .85rem; }
 }
 
