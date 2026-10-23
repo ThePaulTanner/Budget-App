@@ -1276,7 +1276,7 @@
   // bookmark reopens the same view.
   const CF_RANGES = [["mtd", "Month to date"], ["6m", "6 months"], ["12m", "12 months"], ["ytd", "Year to date"], ["all", "All time"], ["custom", "Custom…"]];
   const CF_GROUPS = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
-  const CF_BAR_KEYS = [["income", "Income", "cf-inc", "rect"], ["expenses", "Expenses", "cf-exp", "rect"], ["net", "Net", "cf-net", "dot"]];
+  const CF_BAR_KEYS = [["income", "Income", "cf-inc", "rect"], ["expenses", "Expenses", "cf-exp", "rect"]];
   const CF_LINE_KEYS = [["cum_income", "Income so far", "cf-inc"], ["cum_expenses", "Expenses so far", "cf-exp"],
     ["cum_net", "Saved (income − expenses)", "cf-saved"], ["nw", "Net worth change, accounts shown", "cf-nw"]];
   const CF_DEFAULTS = { range: "mtd", group: null, start: null, end: null, week_start: "mon", accounts: null, exclude: [], pending: true, transfers: false, hidden: [] };
@@ -1495,9 +1495,9 @@
 
       // top: bars
       const top = niceTicks(-Math.max(0, ...bks.map((b) => (off.has("expenses") ? 0 : b.expenses))),
-        Math.max(0, ...bks.map((b) => (off.has("income") ? 0 : b.income)), ...bks.map((b) => (off.has("net") ? 0 : b.net))),
+        Math.max(0, ...bks.map((b) => (off.has("income") ? 0 : b.income))),
         narrow ? 4 : 5);
-      top.lo = Math.min(top.lo, ...bks.map((b) => (off.has("net") ? 0 : b.net)), ...bks.map((b) => (off.has("income") ? 0 : b.income)));
+      top.lo = Math.min(top.lo, ...bks.map((b) => (off.has("income") ? 0 : b.income)));
       top.hi = Math.max(top.hi, ...bks.map((b) => (off.has("expenses") ? 0 : -b.expenses)));
       const y1 = (v) => T + (1 - (v - top.lo) / (top.hi - top.lo || 1)) * (H1 - T - B);
       const s1 = svg("svg", { class: "chart cf-chart", width, height: H1, viewBox: `0 0 ${width} ${H1}`, tabindex: 0, role: "img",
@@ -1525,7 +1525,6 @@
           if (b.pending_expenses) s1.append(cfBar(x, barW, y1(-posted), y1(-b.expenses), true, `fill cf-exp cf-pending${part}`));
         }
       });
-      if (!off.has("net") && n <= 62) bks.forEach((b, i) => s1.append(svg("circle", { class: "cf-dot", cx: cx(i), cy: y1(b.net), r: 4 })));
       const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 54 : 66)))));
       bks.forEach((b, i) => {
         if (i % every) return;
@@ -1669,8 +1668,7 @@
           tipRow(sgn(b.net_worth - data.totals.net_worth_start, 0), "cf-nw", "line", "Net worth change"),
           el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: `Net worth of these accounts on ${shortDate(b.end)}` }), el("strong", { text: m0(b.net_worth) })));
       } else {
-        parts.push(tipRow(sgn(b.income), "cf-inc", "rect", `Income · ${b.income_count}`), tipRow(sgn(-b.expenses), "cf-exp", "rect", `Expenses · ${b.expense_count}`),
-          tipRow(sgn(b.net), "cf-net", "dot", "Net"));
+        parts.push(tipRow(sgn(b.income), "cf-inc", "rect", `Income · ${b.income_count}`), tipRow(sgn(-b.expenses), "cf-exp", "rect", `Expenses · ${b.expense_count}`));
         if (b.pending_income || b.pending_expenses) parts.push(el("div", { class: "muted cf-small", text: `Includes ${m2(b.pending_income + b.pending_expenses)} pending` }));
         if (side === "expense" && b.top_categories.length) {
           const cats = b.top_categories.slice(0, 3), other = b.expenses - cats.reduce((s, c) => s + c.amount, 0);

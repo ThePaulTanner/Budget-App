@@ -757,3 +757,9 @@ def test_dragging_down_does_not_stretch_the_pinned_bars():
     css = (WEB_DIR / "app.css").read_text()
     assert "html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }" in css
     assert "body { margin: 0; overscroll-behavior-y: none;" in css
+
+
+def test_income_and_expenses_chart_has_no_net_marker():
+    app = (WEB_DIR / "app.js").read_text()
+    assert '["net", "Net", "cf-net", "dot"]' not in app and "cf-dot" not in app
+    assert 'tipRow(sgn(b.net), "cf-net"' not in app
