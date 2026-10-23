@@ -783,3 +783,10 @@ def test_merchant_boxes_have_the_income_switch():
     assert "function incomeSwitch" in app and "Count money coming in as income" in app
     assert "income: income.value()" in app and "income: true" in app
     assert 'stat("Money in"' in app
+
+
+def test_cash_flow_has_a_switch_for_the_running_total_lines():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'el("span", {}, "Show running totals")' in app and "chartView, linesToggle, notes" in app
+    assert "for (const [k] of CF_LINE_KEYS) { if (linesBox.checked) h.delete(k); else h.add(k); }" in app
+    assert "linesBox.checked = CF_LINE_KEYS.some" in app

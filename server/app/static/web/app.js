@@ -1365,6 +1365,15 @@
     const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
     const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty));
     const notes = el("p", { class: "muted cf-notes" });
+    // One switch below the chart for all the running-total lines at once (the legend chips still switch each one).
+    const linesBox = el("input", { type: "checkbox", role: "switch", "aria-label": "Show the running totals" });
+    linesBox.addEventListener("change", () => {
+      const h = hidden();
+      for (const [k] of CF_LINE_KEYS) { if (linesBox.checked) h.delete(k); else h.add(k); }
+      cf.hidden = [...h]; renderLegends(); draw();
+    });
+    const linesToggle = el("label", { class: "switch-row cf-lines-toggle" },
+      el("span", { class: "switch" }, linesBox, el("span", { class: "track", "aria-hidden": "true" })), el("span", {}, "Show running totals"));
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
     // The range, grouping and filters shape this chart (and the figures above it), so they sit at the top of its box.
@@ -1372,7 +1381,7 @@
     const chartCard = el("section", { class: "card cf-card" },
       controls, customRow,
       el("div", { class: "card-head" }, el("div", {}, title1, legend1), el("div", { class: "actions" }, zoomBtn)),
-      chartView, notes);
+      chartView, linesToggle, notes);
     const listTitle = el("h2", { text: "" });
     const listSummary = el("p", { class: "muted" });
     const sideSeg = el("div", { class: "seg compact", role: "group", "aria-label": "Show" });
@@ -1484,6 +1493,7 @@
       svg("svg", { width: 16, height: 10, "aria-hidden": "true" }, swatch), label);
     }
     function renderLegends() {
+      linesBox.checked = CF_LINE_KEYS.some(([k]) => !hidden().has(k));
       legend1.replaceChildren(...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)), ...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
     }
 
