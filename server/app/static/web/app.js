@@ -1348,14 +1348,11 @@
         Object.assign(cf, { range: "custom", start: cStart.value, end: cEnd.value, group: null }); cfZoom = []; load();
       } }));
     const tiles = el("div", { class: "cf-tiles" });
-    const legend1 = el("div", { class: "cf-legend", role: "group", "aria-label": "Bars on the chart" });
-    const legend2 = el("div", { class: "cf-legend", role: "group", "aria-label": "Lines on the chart" });
+    const legend1 = el("div", { class: "cf-legend", role: "group", "aria-label": "Bars and lines on the chart" });
     const title1 = el("h2", { text: "Income and expenses" });
-    const title2 = el("h3", { text: "Running totals" });
     const plot1 = el("div", { class: "cf-plot" });
-    const plot2 = el("div", { class: "cf-plot" });
     const empty = el("p", { class: "cf-empty", hidden: true, text: "No transactions in this range." });
-    const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty), el("div", { class: "cf-panel2" }, title2, legend2, plot2));
+    const chartView = el("div", {}, el("div", { class: "cf-plotwrap" }, plot1, empty));
     const notes = el("p", { class: "muted cf-notes" });
     const zoomBtn = el("button", { type: "button", class: "secondary", hidden: true, text: "Reset zoom",
       onclick: () => { Object.assign(cf, cfZoom.pop()); cfZoom = []; load(); } });
@@ -1476,8 +1473,7 @@
       svg("svg", { width: 16, height: 10, "aria-hidden": "true" }, swatch), label);
     }
     function renderLegends() {
-      legend1.replaceChildren(...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)));
-      legend2.replaceChildren(...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
+      legend1.replaceChildren(...CF_BAR_KEYS.map(([k, l, c, s]) => legendChip(k, l, c, s)), ...CF_LINE_KEYS.map(([k, l, c]) => legendChip(k, l, c, "line")));
     }
 
     // ---- charts
@@ -1487,21 +1483,26 @@
       const width = Math.max(300, Math.round(plot1.clientWidth || 640));
       const narrow = width < 560;
       const L = narrow ? 48 : 60, R = 10, T = 10, B = 24;
-      const H1 = narrow ? 230 : 300, H2 = narrow ? 160 : 200;
+      const H1 = narrow ? 300 : 380;
       const bks = data.buckets, n = bks.length, slot = (width - L - R) / n;
       const cx = (i) => L + slot * (i + 0.5);
       const off = hidden();
       const barW = Math.max(2, Math.min(24, slot * 0.62));
 
-      // top: bars
-      const top = niceTicks(-Math.max(0, ...bks.map((b) => (off.has("expenses") ? 0 : b.expenses))),
-        Math.max(0, ...bks.map((b) => (off.has("income") ? 0 : b.income))),
-        narrow ? 4 : 5);
-      top.lo = Math.min(top.lo, ...bks.map((b) => (off.has("income") ? 0 : b.income)));
-      top.hi = Math.max(top.hi, ...bks.map((b) => (off.has("expenses") ? 0 : -b.expenses)));
+      // one chart, one scale: the period bars (income up, expenses down) and the running-total lines
+      const lineVals = {
+        cum_income: bks.map((b) => b.cum_income), cum_expenses: bks.map((b) => -b.cum_expenses),
+        cum_net: bks.map((b) => b.cum_net), nw: bks.map((b) => b.net_worth - data.totals.net_worth_start),
+      };
+      const visible = CF_LINE_KEYS.filter(([k]) => !off.has(k));
+      const shown = [0, ...bks.map((b) => (off.has("income") ? 0 : b.income)), ...bks.map((b) => (off.has("expenses") ? 0 : -b.expenses)),
+        ...visible.flatMap(([k]) => lineVals[k])];
+      const top = niceTicks(Math.min(...shown), Math.max(...shown), narrow ? 5 : 6);
+      top.lo = Math.min(top.lo, ...shown);
+      top.hi = Math.max(top.hi, ...shown);
       const y1 = (v) => T + (1 - (v - top.lo) / (top.hi - top.lo || 1)) * (H1 - T - B);
       const s1 = svg("svg", { class: "chart cf-chart", width, height: H1, viewBox: `0 0 ${width} ${H1}`, tabindex: 0, role: "img",
-        "aria-label": `Income ${m0(data.totals.income)}, expenses ${m0(data.totals.expenses)} from ${dayLabel(data.range.start)} to ${dayLabel(data.range.end)}. Use the arrow keys to move between periods and Enter to list one.` });
+        "aria-label": `Income ${m0(data.totals.income)}, expenses ${m0(data.totals.expenses)}, saved ${sgn(data.totals.net, 0)} and net worth change ${sgn(data.totals.net_worth_change, 0)} from ${dayLabel(data.range.start)} to ${dayLabel(data.range.end)}. Use the arrow keys to move between periods and Enter to list one.` });
       const band1 = svg("rect", { class: "cf-band", y: T, height: H1 - T - B, width: 0 });
       const pinBand1 = svg("rect", { class: "cf-pin", y: T, height: H1 - T - B, width: 0 });
       s1.append(pinBand1, band1);
@@ -1525,6 +1526,12 @@
           if (b.pending_expenses) s1.append(cfBar(x, barW, y1(-posted), y1(-b.expenses), true, `fill cf-exp cf-pending${part}`));
         }
       });
+      for (const [key, , cls] of visible) {
+        const pts = lineVals[key];
+        if (n === 1) { s1.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(0), cy: y1(pts[0]), r: 4 })); continue; }
+        s1.append(svg("path", { class: `cf-line ${cls}`, d: pts.map((v, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${y1(v).toFixed(1)}`).join(" ") }));
+        s1.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(n - 1), cy: y1(pts[n - 1]), r: 4 }));
+      }
       const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 54 : 66)))));
       bks.forEach((b, i) => {
         if (i % every) return;
@@ -1535,46 +1542,10 @@
       const drag1 = svg("rect", { class: "cf-drag", y: T, height: H1 - T - B, width: 0 });
       s1.append(drag1);
 
-      // bottom: running totals and net worth change, one scale
-      const lineVals = {
-        cum_income: bks.map((b) => b.cum_income), cum_expenses: bks.map((b) => -b.cum_expenses),
-        cum_net: bks.map((b) => b.cum_net), nw: bks.map((b) => b.net_worth - data.totals.net_worth_start),
-      };
-      const visible = CF_LINE_KEYS.filter(([k]) => !off.has(k));
-      const all = visible.flatMap(([k]) => lineVals[k]);
-      const bot = niceTicks(Math.min(0, ...all), Math.max(0, ...all), narrow ? 3 : 4);
-      const y2 = (v) => T + (1 - (v - bot.lo) / (bot.hi - bot.lo || 1)) * (H2 - T - B);
-      const s2 = svg("svg", { class: "chart cf-chart", width, height: H2, viewBox: `0 0 ${width} ${H2}`, role: "img",
-        "aria-label": `Running totals since ${dayLabel(data.range.start)}: saved ${sgn(data.totals.net, 0)}, net worth change ${sgn(data.totals.net_worth_change, 0)}.` });
-      const band2 = svg("rect", { class: "cf-band", y: T, height: H2 - T - B, width: 0 });
-      const pinBand2 = svg("rect", { class: "cf-pin", y: T, height: H2 - T - B, width: 0 });
-      const cross = svg("line", { class: "cf-cross", y1: T, y2: H2 - B, x1: -10, x2: -10 });
-      s2.append(pinBand2, band2);
-      for (const v of bot.ticks) {
-        s2.append(svg("line", { class: v === 0 ? "gl cf-zero" : "gl", x1: L, x2: width - R, y1: y2(v), y2: y2(v) }));
-        const label = svg("text", { x: L - 6, y: y2(v) + 4, "text-anchor": "end" });
-        label.textContent = compact(v);
-        s2.append(label);
-      }
-      for (const [key, , cls] of visible) {
-        const pts = lineVals[key];
-        if (n === 1) { s2.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(0), cy: y2(pts[0]), r: 4 })); continue; }
-        s2.append(svg("path", { class: `cf-line ${cls}`, d: pts.map((v, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${y2(v).toFixed(1)}`).join(" ") }));
-        s2.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(n - 1), cy: y2(pts[n - 1]), r: 4 }));
-      }
-      bks.forEach((b, i) => {
-        if (i % every) return;
-        const label = svg("text", { x: cx(i), y: H2 - 6, "text-anchor": "middle" });
-        label.textContent = b.short_label;
-        s2.append(label);
-      });
-      s2.append(cross);
-
       plot1.replaceChildren(s1);
-      plot2.replaceChildren(s2);
       empty.hidden = bks.some((b) => b.income_count || b.expense_count);
-      geo = { L, R, T, width, slot, cx, zero, s1, s2, band1, band2, pinBand1, pinBand2, cross, drag1, n };
-      wire(s1, true); wire(s2, false);
+      geo = { L, R, T, width, slot, cx, zero, s1, band1, pinBand1, drag1, n };
+      wire(s1, true);
       paintBands();
     }
 
@@ -1585,11 +1556,9 @@
         const a = Math.min(i, j), b = Math.max(i, j);
         rect.setAttribute("x", geo.L + geo.slot * a); rect.setAttribute("width", geo.slot * (b - a + 1));
       };
-      place(geo.band1, hover); place(geo.band2, hover);
-      place(geo.pinBand1, pinned ? pinned.i : null); place(geo.pinBand2, pinned ? pinned.i : null);
+      place(geo.band1, hover);
+      place(geo.pinBand1, pinned ? pinned.i : null);
       place(geo.drag1, drag && drag.moved ? drag.i : null, drag ? drag.j : null);
-      const x = hover == null ? -10 : geo.cx(hover);
-      geo.cross.setAttribute("x1", x); geo.cross.setAttribute("x2", x);
     }
 
     function indexAt(svgEl, clientX) {
@@ -1662,14 +1631,14 @@
       if (coarsePointer()) return;
       const b = data.buckets[i];
       const parts = [el("div", { class: "cf-tiphead", text: b.label + (b.partial ? " (partial)" : "") })];
-      if (side == null) {
-        parts.push(tipRow(sgn(b.cum_income, 0), "cf-inc", "line", "Income so far"), tipRow(sgn(-b.cum_expenses, 0), "cf-exp", "line", "Expenses so far"),
-          tipRow(sgn(b.cum_net, 0), "cf-saved", "line", "Saved"),
-          tipRow(sgn(b.net_worth - data.totals.net_worth_start, 0), "cf-nw", "line", "Net worth change"),
-          el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: `Net worth of these accounts on ${shortDate(b.end)}` }), el("strong", { text: m0(b.net_worth) })));
-      } else {
+      {
         parts.push(tipRow(sgn(b.income), "cf-inc", "rect", `Income · ${b.income_count}`), tipRow(sgn(-b.expenses), "cf-exp", "rect", `Expenses · ${b.expense_count}`));
         if (b.pending_income || b.pending_expenses) parts.push(el("div", { class: "muted cf-small", text: `Includes ${m2(b.pending_income + b.pending_expenses)} pending` }));
+        const hiddenNow = hidden();
+        const lineRows = [["cum_income", sgn(b.cum_income, 0), "Income so far"], ["cum_expenses", sgn(-b.cum_expenses, 0), "Expenses so far"],
+          ["cum_net", sgn(b.cum_net, 0), "Saved"], ["nw", sgn(b.net_worth - data.totals.net_worth_start, 0), "Net worth change"]]
+          .filter(([k]) => !hiddenNow.has(k));
+        if (lineRows.length) parts.push(el("div", { class: "cf-tipsect" }, lineRows.map(([k, v, l]) => tipRow(v, CF_LINE_KEYS.find((x) => x[0] === k)[2], "line", l))));
         if (side === "expense" && b.top_categories.length) {
           const cats = b.top_categories.slice(0, 3), other = b.expenses - cats.reduce((s, c) => s + c.amount, 0);
           parts.push(el("div", { class: "cf-tipsect" }, el("div", { class: "muted", text: "By category" }),
@@ -1818,7 +1787,6 @@
 
     function render() {
       title1.textContent = `Income and expenses per ${data.group}`;
-      title2.textContent = `Running totals since ${shortDate(data.range.start)}`;
       paintControls(); renderTiles(); renderLegends(); draw();
       notes.textContent = data.notes.join(" ");
     }

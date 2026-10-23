@@ -763,3 +763,16 @@ def test_income_and_expenses_chart_has_no_net_marker():
     app = (WEB_DIR / "app.js").read_text()
     assert '["net", "Net", "cf-net", "dot"]' not in app and "cf-dot" not in app
     assert 'tipRow(sgn(b.net), "cf-net"' not in app
+
+
+def test_cash_flow_is_one_chart_with_bars_and_running_lines():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "plot2" not in app and "legend2" not in app and "title2" not in app and "s2.append" not in app
+    draw = app[app.index("function draw()"):app.index("function paintBands()")]
+    assert "plot1.replaceChildren(s1);" in draw and "cf-line" in draw and "y1(v)" in draw
+    assert "CF_LINE_KEYS.map" in app[app.index("function renderLegends()"):app.index("// ---- charts")]
+
+
+def test_accounts_sections_have_tight_table_padding():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".acct-section .acct-table td { padding-block: 6px; }" in css and ".acct-section .acct-table th { padding-block: 4px; }" in css
