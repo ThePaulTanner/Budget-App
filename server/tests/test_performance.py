@@ -434,3 +434,27 @@ def test_warming_stops_quietly_when_prices_are_not_to_be_had(db):
     holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
     assert service(db, FakeQuotes(rest=True)).warm_once() == 0
     assert service(db, None).warm_once() == 0
+
+
+def test_every_warming_round_works_the_pages_out_again_so_they_never_expire_unrenewed(db, monkeypatch):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    d = days(100)
+    svc = service(db, FakeQuotes(bars={"AAA": bars(d, [100.0] * 100)}))
+    calls = []
+    real = perf.build
+    monkeypatch.setattr(perf, "build", lambda *a, **k: calls.append(1) or real(*a, **k))
+    svc.warm_once()
+    first = len(calls)
+    svc.warm_once()
+    assert len(calls) == 2 * first  # a second round rebuilds them all, instead of finding them still fresh
+
+
+def test_a_change_of_owner_makes_the_ready_pages_stale(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    db.run("INSERT INTO people(name, created_at) VALUES ('P','x'), ('Q','x')")
+    ids = [r["id"] for r in db.query("SELECT id FROM people ORDER BY id")]
+    db.run("INSERT INTO account_owners(account_id, person_id) VALUES ('a1', ?)", (ids[0],))
+    svc = service(db, None)
+    before = svc._fingerprint()
+    db.run("UPDATE account_owners SET person_id = ?", (ids[1],))
+    assert svc._fingerprint() != before

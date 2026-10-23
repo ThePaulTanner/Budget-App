@@ -655,21 +655,25 @@ class PerformanceService:
     def _fingerprint(self) -> str:
         row = self.db.query(
             "SELECT COUNT(*) AS n, COALESCE(MAX(h.updated_at), '') AS u, "
-            "(SELECT COUNT(*) FROM accounts WHERE hidden = 1) AS hidden, "
-            "(SELECT COUNT(*) FROM account_owners) AS owners FROM holdings h"
+            "COALESCE(SUM(CAST(h.quantity AS REAL)), 0) AS q, COALESCE(SUM(CAST(h.value AS REAL)), 0) AS v, "
+            "(SELECT COALESCE(group_concat(id), '') FROM accounts WHERE hidden = 1) AS hidden, "
+            "(SELECT COALESCE(group_concat(account_id || ':' || person_id), '') FROM account_owners) AS owners FROM holdings h"
         )[0]
-        return f"{row['n']}|{row['u']}|{row['hidden']}|{row['owners']}|{self.get_today().isoformat()}"
+        return f"{row['n']}|{row['u']}|{row['q']}|{row['v']}|{row['hidden']}|{row['owners']}|{self.get_today().isoformat()}"
 
-    def get(self, *, range_: str, benchmark: str, risk_free: float, person_id: int | None, scope: tuple[str, list[Any]]) -> dict[str, Any]:
-        """The page, from the ready answers when they are current. Raises DataUnavailable like `build`."""
+    def get(
+        self, *, range_: str, benchmark: str, risk_free: float, person_id: int | None, scope: tuple[str, list[Any]], refresh: bool = False
+    ) -> dict[str, Any]:
+        """The page, from the ready answers when they are current (`refresh` works it out again regardless, which
+        also renews each symbol's history once that has aged). Raises DataUnavailable like `build`."""
         quotes = self.get_quotes()
-        key = (range_, benchmark, round(risk_free, 6), person_id)
+        key = (range_, benchmark, round(risk_free, 4), person_id)  # 0.01 of a percent is as fine as the page asks
         stamp = self._fingerprint()
         with self._guard:
             lock = self._locks.setdefault(key, threading.Lock())
         with lock:  # a request waits for the same page being worked out, rather than fetching everything twice
             held = self._results.get(key)
-            if held is not None and held[1] == stamp and time.monotonic() - held[0] < RESULT_TTL:
+            if not refresh and held is not None and held[1] == stamp and time.monotonic() - held[0] < RESULT_TTL:
                 return held[2]
             result = build(
                 self.db, quotes, base=self.base, range_=range_, benchmark=benchmark, risk_free=risk_free,
@@ -677,7 +681,18 @@ class PerformanceService:
             )
             if result.get("available"):
                 self._results[key] = (time.monotonic(), stamp, result)
+                self._forget_old()
             return result
+
+    def _forget_old(self) -> None:
+        """Pages worked out on request (another person, an unusual rate) are dropped once they have expired, so the
+        kept pages cannot grow without limit. The household's warmed pages are always replaced, never dropped."""
+        now = time.monotonic()
+        with self._guard:
+            for key, (made, _, _) in list(self._results.items()):
+                if now - made >= RESULT_TTL * 2 and (key[3] is not None or key[2] != round(DEFAULT_RISK_FREE, 4)):
+                    del self._results[key]
+                    self._locks.pop(key, None)
 
     def warm_once(self) -> int:
         """Work out the household's pages for every period and benchmark. Returns how many were made.
@@ -691,7 +706,7 @@ class PerformanceService:
             if self._stop.is_set():
                 break
             try:
-                self.get(range_=range_, benchmark=benchmark, risk_free=DEFAULT_RISK_FREE, person_id=None, scope=("", []))
+                self.get(range_=range_, benchmark=benchmark, risk_free=DEFAULT_RISK_FREE, person_id=None, scope=("", []), refresh=True)
                 made += 1
             except DataUnavailable:
                 break
