@@ -896,3 +896,59 @@ dialog#sheet .sheet-body { margin-inline: -8px; padding-inline: 8px; }
   .bank-grouped .acct-owner { display: none; }
 }
 .col-acct-owner { width: 11rem; }
+
+/* ---- Investments: the tabs and their controls share the pinned bar; Performance page ---- */
+.subtabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.subtabs[hidden] { display: none; }
+@media (max-width: 760px) { .subtabs > .seg { flex: 1 1 100%; } }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+:root { --p-you: var(--chart); --p-bench: var(--muted); }
+svg.chart .line.p-you { stroke: var(--p-you); stroke-width: 2.6; }
+svg.chart .line.p-bench, svg .line.p-bench { stroke: var(--p-bench); stroke-width: 2; stroke-dasharray: 5 4; }
+svg .line.p-you { stroke: var(--p-you); stroke-width: 2.6; }
+svg.chart .area.p-you { fill: var(--p-you); opacity: .14; }
+svg.chart .area.p-bench { fill: var(--p-bench); opacity: .08; }
+svg.chart .dot.p-you { fill: var(--p-you); }
+svg.chart .dot.p-bench { fill: var(--p-bench); }
+svg.chart .bar.p-you, .swatch.p-you { fill: var(--p-you); background: var(--p-you); }
+svg.chart .bar.p-bench, .swatch.p-bench { fill: var(--p-bench); background: var(--p-bench); opacity: .75; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.perf-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 8px; font-size: .85rem; color: var(--muted); }
+.perf-chip { display: inline-flex; align-items: center; gap: 6px; }
+.perf-readout { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 0; font-size: .88rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.perf-readout strong { color: var(--text); }
+.perf-assume { display: grid; gap: 8px; }
+.perf-assume p { margin: 0; }
+.perf-rf { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.perf-rf input { width: 5.5rem; padding: .3rem .5rem; }
+.perf-rf select { max-width: 100%; }
+.perf-note { font-weight: 400; font-size: .85rem; }
+.perf-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.card .perf-tiles { margin-bottom: 8px; }
+.perf-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }
+.perf-tile .muted { display: block; font-size: .78rem; }
+.perf-tile strong { display: block; font-size: 1.3rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perf-table td, .perf-table th { padding-left: 8px; padding-right: 8px; }
+.perf-table tr.click td:first-child::after { content: " \24D8"; color: var(--muted-2); font-size: .8em; }
+.perf-table .tick { color: var(--accent); font-weight: 700; }
+.perf-table tr.perf-help td { border-top: 0; padding-top: 0; }
+.alloc { margin: 14px 0 0; }
+.alloc h4 { margin: 0 0 6px; font-size: .85rem; color: var(--muted); font-weight: 650; }
+.alloc-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--border); gap: 2px; }
+.alloc-bar i { display: block; min-width: 3px; }
+.alloc-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: .9rem; }
+.alloc-list li { display: flex; align-items: center; gap: 8px; }
+.alloc-list .num { font-variant-numeric: tabular-nums; color: var(--muted); }
+.alloc-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.perf-income { margin-bottom: 10px; }
+.guidance { display: grid; gap: 10px; }
+.guide { border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--radius-sm); padding: 10px 12px; }
+.guide p { margin: 4px 0 0; color: var(--muted); font-size: .92rem; }
+.guide-good { border-left-color: var(--cf-inc); }
+.guide-info { border-left-color: var(--cf-saved); }
+.guide-watch { border-left-color: var(--cf-exp); }
+.guide-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 8px; border-radius: 50%; font-size: .75rem; color: #fff; background: var(--muted); }
+.guide-good .guide-mark { background: var(--cf-inc); }
+.guide-info .guide-mark { background: var(--cf-saved); }
+.guide-watch .guide-mark { background: var(--cf-exp); }
+@media (max-width: 760px) { .perf-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .perf-tile strong { font-size: 1.15rem; } }

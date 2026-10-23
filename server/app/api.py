@@ -24,6 +24,7 @@ from . import passkeys
 from . import version as version_module
 from . import cashflow as cashflow_mod
 from . import merchants as merchants_mod
+from . import performance as performance_mod
 from . import rules as rules_mod
 from .auth import AuthContext, AuthError
 from .bootstrap import Services
@@ -1205,6 +1206,35 @@ def create_api_app(services: Services) -> FastAPI:
                 }
             )
         return {"totals": {c: num(v) for c, v in sorted(totals.items())}, "holdings": out}
+
+    @app.get("/api/performance")
+    def performance(
+        ctx: Auth,
+        range: Literal["1m", "3m", "6m", "ytd", "1y", "3y", "5y"] = "1y",
+        benchmark: Annotated[str, Query(max_length=20)] = "sp500",
+        risk_free: Annotated[float, Query(ge=0, le=20)] = 3.0,
+        person_id: int | None = None,
+    ):
+        """How the investments have done against a benchmark: growth, falls, monthly returns, risk and return
+        figures, what each position added, what the money is in, income and fees, and plain-language notes.
+        Today's positions are taken to have been held for the whole period (the same assumption as the live
+        changes), priced at Yahoo's daily closes. `risk_free` is a percent a year. The first call after a quiet
+        spell can take a while because each symbol's history is fetched; it is kept for hours after that."""
+        if services.quotes is None:
+            return {"available": False, "range": range, "message": "Market prices are switched off, so performance cannot be worked out."}
+        try:
+            return performance_mod.build(
+                db,
+                services.quotes,
+                base=base,
+                range_=range,
+                benchmark=benchmark,
+                risk_free=risk_free / 100,
+                today=date.fromisoformat(today_str()),
+                scope=scope_sql(person_id),
+            )
+        except performance_mod.DataUnavailable as exc:
+            return {"available": False, "range": range, "message": f"Market prices are not available right now ({exc}). Try again in a few minutes."}
 
     @app.get("/api/holdings/live")
     def holdings_live(ctx: Auth, person_id: int | None = None):
