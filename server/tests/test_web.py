@@ -751,3 +751,9 @@ def test_name_merchant_dialog_uses_compact_rows_and_explains_automatic():
     assert "Automatic uses a matching rule if there is one, otherwise the category from your bank." in dialog
     assert "Leave it on Automatic to keep" not in dialog
     assert ".field-row {" in (WEB_DIR / "app.css").read_text()
+
+
+def test_dragging_down_does_not_stretch_the_pinned_bars():
+    css = (WEB_DIR / "app.css").read_text()
+    assert "html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }" in css
+    assert "body { margin: 0; overscroll-behavior-y: none;" in css
