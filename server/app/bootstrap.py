@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .auth import AuthService
 from .backup import BackupScheduler
@@ -25,6 +26,7 @@ class Services:
     sync: SyncManager
     backups: BackupScheduler
     quotes: QuoteService | None = None
+    performance: Any = None  # PerformanceService, set up by the API app
 
 
 def build_services(

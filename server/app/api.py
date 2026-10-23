@@ -338,6 +338,9 @@ def ineligible_note(row) -> str | None:
 def create_api_app(services: Services) -> FastAPI:
     db, auth, settings = services.db, services.auth, services.settings
     base = settings.base_currency
+    services.performance = performance_mod.PerformanceService(
+        db, lambda: services.quotes, base, lambda: date.fromisoformat(today_str())
+    )
 
     def scope_sql(person_id: int | None, column: str = "a.id") -> tuple[str, list[Any]]:
         """The condition that limits a query to one person's accounts (empty for the household).
@@ -1218,20 +1221,15 @@ def create_api_app(services: Services) -> FastAPI:
         """How the investments have done against a benchmark: growth, falls, monthly returns, risk and return
         figures, what each position added, what the money is in, income and fees, and plain-language notes.
         Today's positions are taken to have been held for the whole period (the same assumption as the live
-        changes), priced at Yahoo's daily closes. `risk_free` is a percent a year. The first call after a quiet
-        spell can take a while because each symbol's history is fetched; it is kept for hours after that."""
+        changes), priced at Yahoo's daily closes. `risk_free` is a percent a year. The household's pages for every
+        period and benchmark are worked out in the background (start-up, then every 20 minutes, and again when the
+        holdings change), so this is normally a lookup. Another person's page, or an unusual risk-free rate, is
+        worked out on the first request (which can take a while: each symbol's history is fetched) and kept."""
         if services.quotes is None:
             return {"available": False, "range": range, "message": "Market prices are switched off, so performance cannot be worked out."}
         try:
-            return performance_mod.build(
-                db,
-                services.quotes,
-                base=base,
-                range_=range,
-                benchmark=benchmark,
-                risk_free=risk_free / 100,
-                today=date.fromisoformat(today_str()),
-                scope=scope_sql(person_id),
+            return services.performance.get(
+                range_=range, benchmark=benchmark, risk_free=risk_free / 100, person_id=person_id, scope=scope_sql(person_id),
             )
         except performance_mod.DataUnavailable as exc:
             return {"available": False, "range": range, "message": f"Market prices are not available right now ({exc}). Try again in a few minutes."}
