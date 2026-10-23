@@ -798,3 +798,10 @@ def test_pulling_down_stretches_the_space_above_the_content_and_springs_back():
     assert 'page.style.transform = px ? `translateY(${px}px)` : ""' in block
     assert "cubic-bezier" in block and 'document.addEventListener("touchend", release)' in block
     assert "{ passive: false }" in block and "Math.min(110, dy * 0.5)" in block
+
+
+def test_cog_count_refreshes_right_after_reconnecting_or_removing_a_bank():
+    app = (WEB_DIR / "app.js").read_text()
+    link = app[app.index("async function startLink"):app.index("// Colour scheme and accent")]
+    assert link.index("refreshStatus();") < link.index("done();")
+    assert "toast(`${name} removed.`); refreshStatus(); reload();" in app
