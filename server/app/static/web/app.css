@@ -845,3 +845,17 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
    paint a few pixels of page colour above themselves, so a rounding error in the measured height can't leave a sliver
    that scrolling content shows through. */
 .subtabs, .monthnav { top: calc(var(--topbar-h, 64px) - 1px); box-shadow: 0 -4px 0 0 var(--bg); }
+
+/* Budgets: the month bar sits inside the pinned page bar (#subtabs), which holds the height. */
+#subtabs .monthnav { position: static; margin: 0; padding: 0; height: auto; overflow: visible; box-shadow: none; background: transparent; }
+
+/* Compact dialog rows: labels sit beside their inputs, controls take the room their content needs, and a row wraps on a narrow phone. */
+.field-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0; }
+.field-row > label { display: flex; align-items: center; gap: 8px; flex: 1 1 11rem; margin: 0; min-width: 0; }
+.field-row > label.grow-2 { flex-grow: 2; }
+.field-row > label input, .field-row > label select, .field-row > label > div { flex: 1; min-width: 0; margin-top: 0; width: auto; }
+.field-row > label > div { display: flex; flex-direction: column; gap: 6px; }
+.field-row > select { width: auto; flex: 0 1 auto; min-width: 0; margin: 0; padding-inline: .6rem 1.6rem; }
+.field-row > span { white-space: nowrap; }
+@media (max-width: 600px) { .field-row > select { flex: 1 1 6.2rem; padding-inline: .45rem 1.2rem; font-size: .85rem; } .field-row > span { display: none; } }
+@media (max-width: 600px) { .field-row > select:first-of-type { flex: 1.5 1 8rem; } }
