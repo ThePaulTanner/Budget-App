@@ -841,3 +841,14 @@ def test_accounts_table_has_an_owner_column_on_a_computer():
     section = app[app.index("function accountSection"):app.index("// A line under the page title")]
     assert 'showOwner && ["Owner", "col-acct-owner"]' in section and 'el("td", { class: "col-acct-owner"' in section
     assert ".col-acct-owner { display: none; }" in css and ".bank-grouped .acct-owner { display: none; }" in css
+
+
+def test_transactions_is_its_own_top_level_tab():
+    app = (WEB_DIR / "app.js").read_text()
+    html = (WEB_DIR / "index.html").read_text()
+    tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
+    assert "viewTransactions" not in tabs
+    assert "transactions: viewTransactions" in app and 'transactions: ["Transactions"' in app
+    assert 'href="#/transactions" data-tab="transactions"' in html and ">Txns<" in html
+    assert 'params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }' in app
+    assert "#/spending?tab=transactions" not in app  # every link goes to the new page
