@@ -426,7 +426,7 @@
     const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
     // The bank is its own column: one cell spans all of that bank's accounts in this section, so it
     // is shown once. Banks are ordered by what they hold, and each bank's accounts the same way.
-    const headers = [["Bank", "col-bankname"], ["Account", "col-account"],
+    const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-acct-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
       [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", true]].filter(Boolean);
@@ -451,6 +451,8 @@
         el("td", { class: "col-account" },
           el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
           showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" })),
+        // On a computer the owner has a column of its own; on a phone it stays as the small line under the account name.
+        showOwner && el("td", { class: "col-acct-owner", text: ownerText(a) || "" }),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
         credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
         credit && el("td", { class: `num col-extra${used != null && used >= 80 ? " neg" : ""}`, text: used != null ? `${used}%` : "\u2014" }),
@@ -539,16 +541,15 @@
   function openSheet(...content) {
     const sheet = $("sheet");
     const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
-    // A trailing button row (Close, Save...) is pinned under the scrolling part, so on a phone it
-    // never has to be scrolled to.
+    // The title and the X sit in a header that never scrolls, and a trailing button row (Close, Save...) is pinned under the
+    // scrolling part, so neither has to be scrolled to and the scroll bar never runs up behind the title.
+    const title = nodes.length > 1 && nodes[0].tagName === "H2" ? nodes.shift() : null;
     const last = nodes[nodes.length - 1];
-    if (nodes.length > 1 && last.classList && last.classList.contains("actions")) {
-      nodes.pop();
-      sheet.replaceChildren(el("div", { class: "sheet-body" }, ...nodes), last);
-    } else {
-      sheet.replaceChildren(...nodes);
-    }
-    sheet.append(dialogX(closeSheet));
+    const actions = nodes.length > 1 && last.classList && last.classList.contains("actions") ? nodes.pop() : null;
+    sheet.replaceChildren(
+      el("div", { class: "sheet-head" }, title || el("span"), dialogX(closeSheet)),
+      el("div", { class: "sheet-body" }, ...nodes),
+      ...(actions ? [actions] : []));
     if (!sheet.open) sheet.showModal();
     return sheet;
   }

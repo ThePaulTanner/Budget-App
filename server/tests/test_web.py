@@ -820,7 +820,24 @@ def test_every_page_has_the_same_room_under_its_last_item():
 def test_popups_have_a_close_x_and_are_wide_on_a_computer():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
-    assert "const dialogX = (close) =>" in app and "sheet.append(dialogX(closeSheet));" in app and "dialogX(close)));" in app
+    assert "const dialogX = (close) =>" in app and "dialogX(close)));" in app
     assert ".dialog-x { display: none; }" in css and "dialog#sheet { width: min(820px, calc(100vw - 96px)); }" in css
     assert "dialog#sheet .sheet-body { margin-inline: -8px; padding-inline: 8px; }" in css
-    assert "dialog#sheet > h2:first-child, dialog#sheet .sheet-body > h2:first-child" in css  # a long title never runs under the X
+
+
+
+def test_popup_title_and_x_are_a_header_that_does_not_scroll():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    sheet = app[app.index("function openSheet"):app.index("const closeSheet")]
+    assert 'el("div", { class: "sheet-head" }, title || el("span"), dialogX(closeSheet))' in sheet
+    assert sheet.index("sheet-head") < sheet.index("sheet-body")  # the header comes first, outside the scrolling body
+    assert ".sheet-head { display: flex;" in css and "dialog#confirm .dialog-x { position: absolute;" in css
+
+
+def test_accounts_table_has_an_owner_column_on_a_computer():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    section = app[app.index("function accountSection"):app.index("// A line under the page title")]
+    assert 'showOwner && ["Owner", "col-acct-owner"]' in section and 'el("td", { class: "col-acct-owner"' in section
+    assert ".col-acct-owner { display: none; }" in css and ".bank-grouped .acct-owner { display: none; }" in css
