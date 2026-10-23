@@ -755,6 +755,7 @@ def create_api_app(services: Services) -> FastAPI:
             if db.run("DELETE FROM people WHERE id = ?", (person_id,)) == 0:
                 raise HTTPException(404, "person not found")
             db.run("DELETE FROM networth WHERE person_id = ?", (person_id,))
+            db.run("DELETE FROM networth_adjust WHERE person_id = ?", (person_id,))
         return {"ok": True}
 
     # -- transactions --------------------------------------------------------
@@ -1490,17 +1491,36 @@ def create_api_app(services: Services) -> FastAPI:
             "SELECT * FROM networth WHERE currency = ? AND date >= ? AND person_id = ? ORDER BY date",
             ((currency or base).upper(), since, person_id or 0),
         )
-        return [
-            {
-                "date": r["date"],
-                "assets": num(r["assets"]),
-                "liabilities": num(r["liabilities"]),
-                "investments": num(r["investments"]),
-                "net_worth": num(r["net_worth"]),
-                "estimated": bool(r["estimated"]),
-            }
-            for r in rows
-        ]
+        # An account linked after recording began is missing from the recorded days before it: what it would have
+        # added on those days (worked back from its transactions) is added here, and those days count as estimates.
+        extra = {
+            r["date"]: r
+            for r in db.query(
+                "SELECT * FROM networth_adjust WHERE currency = ? AND date >= ? AND person_id = ?",
+                ((currency or base).upper(), since, person_id or 0),
+            )
+        }
+        out = []
+        for r in rows:
+            assets, liabilities, investments = Decimal(r["assets"]), Decimal(r["liabilities"]), Decimal(r["investments"])
+            estimated = bool(r["estimated"])
+            adj = extra.get(r["date"]) if not estimated else None
+            if adj is not None:
+                assets += Decimal(adj["assets"])
+                liabilities += Decimal(adj["liabilities"])
+                investments += Decimal(adj["investments"])
+                estimated = True
+            out.append(
+                {
+                    "date": r["date"],
+                    "assets": num(assets),
+                    "liabilities": num(liabilities),
+                    "investments": num(investments),
+                    "net_worth": num(assets - liabilities) if adj is not None else num(r["net_worth"]),
+                    "estimated": estimated,
+                }
+            )
+        return out
 
     @app.get("/api/items")
     def items(ctx: Auth):

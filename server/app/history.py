@@ -8,6 +8,10 @@ day this module works backwards from today:
   day), each priced at that day's Yahoo close and converted to the account's currency at that day's rate, then scaled
   so today matches the bank's own balance. Cash moves with the account's cash flows.
 
+An account linked after recording began was not in the recorded days before its bank was linked. What it would have
+added on those days is worked out the same way and kept in `networth_adjust`; the networth endpoint adds it to the
+recorded rows and calls those days estimates, so the chart does not jump on the day a bank was added.
+
 These are estimates (`estimated = 1`): a deposit or transfer a bank never reported, or a security Yahoo does not know,
 makes them drift. They are rebuilt from scratch each time and never replace a recorded day.
 """
@@ -170,7 +174,14 @@ def rebuild_networth_history(db: Database, quotes: QuoteService | None, today: d
     today = today or date.fromisoformat(today_str())
     if quotes is not None and quotes.resting():
         raise Unavailable("market data is resting after an error")
-    accounts = [a for a in db.query("SELECT id, type, currency, current_balance FROM accounts WHERE hidden=0") if a["current_balance"] is not None]
+    accounts = [
+        a
+        for a in db.query(
+            "SELECT a.id, a.type, a.currency, a.current_balance, substr(i.created_at, 1, 10) AS added "
+            "FROM accounts a JOIN items i ON i.id = a.item_id WHERE a.hidden=0"
+        )
+        if a["current_balance"] is not None
+    ]
     if not accounts:
         return 0
     ids = [a["id"] for a in accounts]
@@ -204,17 +215,37 @@ def rebuild_networth_history(db: Database, quotes: QuoteService | None, today: d
         series[account["id"]] = built
 
     types = {a["id"]: (a["type"], a["currency"]) for a in accounts}
+    added = {a["id"]: date.fromisoformat(a["added"]) for a in accounts if a["added"]}
+    first_day = days[0]
     scopes: list[tuple[int, set[str]]] = [(0, set(ids))]
     for person in db.query("SELECT id FROM people"):
         owned = {r["account_id"] for r in db.query("SELECT account_id FROM account_owners WHERE person_id=?", (person["id"],))}
         scopes.append((person["id"], owned & set(ids)))
 
     written = 0
+    adjust: dict[tuple[date, str, int], dict[str, Decimal]] = {}
     with db.transaction():
         db.run("DELETE FROM networth WHERE estimated=1")
+        db.run("DELETE FROM networth_adjust")
         for person_id, owned in scopes:
             real = db.one("SELECT MIN(date) AS d FROM networth WHERE person_id=? AND estimated=0", (person_id,))
             boundary = date.fromisoformat(real["d"]) if real and real["d"] else today
+            # Recorded days before an account's bank was linked: add what that account would have been on them.
+            for account_id in owned:
+                kind, currency = types[account_id]
+                joined = added.get(account_id)
+                if joined is None or joined <= boundary:
+                    continue
+                for day in _days(boundary, min(joined - timedelta(days=1), today)):
+                    value = series[account_id].get(day, series[account_id][first_day])  # before the first transaction: unchanged
+                    parts = {"assets": Decimal(0), "liabilities": Decimal(0), "investments": Decimal(0)}
+                    if kind in LIABILITY_TYPES:
+                        parts["liabilities"] = value
+                    elif kind in ASSET_TYPES:
+                        parts["assets"] = value
+                        if kind == "investment":
+                            parts["investments"] = value
+                    adjust[(day, currency, person_id)] = {k: adjust.get((day, currency, person_id), {}).get(k, Decimal(0)) + v for k, v in parts.items()}
             for day in days:
                 if day >= boundary:
                     break
@@ -244,4 +275,9 @@ def rebuild_networth_history(db: Database, quotes: QuoteService | None, today: d
                         ),
                     )
                     written += 1
+        for (day, currency, person_id), t in adjust.items():
+            db.run(
+                "INSERT OR REPLACE INTO networth_adjust(date, currency, person_id, assets, liabilities, investments) VALUES (?,?,?,?,?,?)",
+                (day.isoformat(), currency, person_id, *(str(t[k].quantize(CENT, ROUND_HALF_UP)) for k in ("assets", "liabilities", "investments"))),
+            )
     return written

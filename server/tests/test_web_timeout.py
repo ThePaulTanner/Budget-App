@@ -127,6 +127,7 @@ def test_upgrade_signs_out_old_browser_sessions_once(tmp_path):
         db.run("INSERT INTO sessions(id, user_id, device_name, refresh_hash, created_at, last_used_at) VALUES (?,1,?,'h','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')", (sid, device))
     for column in ("kind", "active_at", "expires_at"):
         db.run(f"ALTER TABLE sessions DROP COLUMN {column}")
+    db.run("DROP TABLE networth_adjust")
     db.run("ALTER TABLE networth DROP COLUMN estimated")
     db.run("ALTER TABLE merchants DROP COLUMN is_income")
     db.run("ALTER TABLE merchants DROP COLUMN category")
