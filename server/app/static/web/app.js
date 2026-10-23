@@ -539,16 +539,15 @@
   function openSheet(...content) {
     const sheet = $("sheet");
     const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
-    // A trailing button row (Close, Save...) is pinned under the scrolling part, so on a phone it
-    // never has to be scrolled to.
+    // The title and the X sit in a header that never scrolls, and a trailing button row (Close, Save...) is pinned under the
+    // scrolling part, so neither has to be scrolled to and the scroll bar never runs up behind the title.
+    const title = nodes.length > 1 && nodes[0].tagName === "H2" ? nodes.shift() : null;
     const last = nodes[nodes.length - 1];
-    if (nodes.length > 1 && last.classList && last.classList.contains("actions")) {
-      nodes.pop();
-      sheet.replaceChildren(el("div", { class: "sheet-body" }, ...nodes), last);
-    } else {
-      sheet.replaceChildren(...nodes);
-    }
-    sheet.append(dialogX(closeSheet));
+    const actions = nodes.length > 1 && last.classList && last.classList.contains("actions") ? nodes.pop() : null;
+    sheet.replaceChildren(
+      el("div", { class: "sheet-head" }, title || el("span"), dialogX(closeSheet)),
+      el("div", { class: "sheet-body" }, ...nodes),
+      ...(actions ? [actions] : []));
     if (!sheet.open) sheet.showModal();
     return sheet;
   }
