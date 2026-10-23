@@ -805,3 +805,13 @@ def test_cog_count_refreshes_right_after_reconnecting_or_removing_a_bank():
     link = app[app.index("async function startLink"):app.index("// Colour scheme and accent")]
     assert link.index("refreshStatus();") < link.index("done();")
     assert "toast(`${name} removed.`); refreshStatus(); reload();" in app
+
+
+def test_accounts_column_titles_are_all_the_same_size():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".acct-table.bank-grouped thead th { font-size: .74rem; }" in css
+
+
+def test_every_page_has_the_same_room_under_its_last_item():
+    css = (WEB_DIR / "app.css").read_text()
+    assert "main { padding-bottom: 8px; }" in css and ".version-line { margin-bottom: 16px; }" in css
