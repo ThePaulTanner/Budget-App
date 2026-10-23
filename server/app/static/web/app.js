@@ -2330,6 +2330,7 @@
             toast(`${added.institution || "Bank"} connected. The first sync runs in the background.`);
           }
           syncPolls = 0;
+          refreshStatus();   // the count on the cog drops straight away, not at the next page change
           done();
         } catch (err) {
           if (err instanceof SignedOut) showLogin(); else toast(err.message, true);
@@ -2550,7 +2551,7 @@
               intro: "This deletes the bank's accounts, transactions and holdings from your server, and closes the connection at Plaid.",
               points: ["The Plaid bank slot it used is not given back.", "If the bank only needs attention, use Reconnect instead."],
               confirmText: "Remove bank", cancelText: "Keep it", danger: true }))) return;
-            try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); reload(); }
+            try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); refreshStatus(); reload(); }
             catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
           } })),
         details);
