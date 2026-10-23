@@ -917,10 +917,9 @@
 
   // The Spending page's first tab: this month's spending against the budgets, and the top categories.
   async function viewSpendingSummary(id) {
-    const [summary, spending, monthly] = await Promise.all([
+    const [summary, spending] = await Promise.all([
       api(scoped("/api/summary")),
-      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 })),  // no month = the current one, same as the summary
-      api(scoped("/api/spending/monthly?months=12")).catch(() => null)]);
+      api(scoped("/api/spending")).catch(() => ({ categories: [], total: 0 }))]);  // no month = the current one, same as the summary
     if (id !== navId) return;
     baseCurrency = summary.base_currency;
     const worth = summary.net_worth.find((n) => n.currency === baseCurrency) || summary.net_worth[0];
@@ -942,10 +941,7 @@
           el("div", { class: "amount", text: money(c.spent, cur) }))),
         el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
 
-    // The month's card is short, so the last twelve months sit under it instead of leaving the page empty.
-    const trendCard = Array.isArray(monthly) && monthly.length > 0
-      ? el("section", { class: "card" }, el("h3", { text: "Last 12 months" }), barChart(monthly, cur)) : null;
-    view().replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean));   // replaceChildren would print a null as the word "null"
+    view().replaceChildren(viewerNote(), spendCard);
   }
 
   // ---------------------------------------------------------------- Transactions
@@ -1890,7 +1886,16 @@
     return { node: el("div", {}, list, status, more), load };
   }
 
-  async function viewInvestments(id) {
+  let invTab = "holdings";
+  const INV_TABS = [["holdings", "Holdings"], ["performance", "Performance"]];
+  // The Investments tabs sit at the top of the pinned bar; each tab adds its own controls underneath.
+  const invTabs = () => el("div", { class: "seg", role: "group", "aria-label": "Investments sections" },
+    INV_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invTab), text: label,
+      onclick: () => { location.hash = `#/investments${key === "holdings" ? "" : `?tab=${key}`}`; } })));
+  const viewInvestments = (id) => (invTab === "performance" ? viewPerformance(id) : viewHoldings(id));
+
+  async function viewHoldings(id) {
+    $("page-sub").textContent = PAGES.investments[1];
     let timer = null;
     let lastData = null;      // the latest figures, so choosing a period repaints without another request
     // The period choice is a pinned bar just under the page choices (the page's own bar, like Spending's tabs), not part of the scrolling page.
@@ -1899,7 +1904,7 @@
         onclick: () => { invPeriod = key; syncSeg(); if (lastData) paint(lastData); } })));
     const syncSeg = () => seg.querySelectorAll("button").forEach((btn, i) => btn.setAttribute("aria-pressed", String(CHANGE_PERIODS[i][0] === invPeriod)));
     const bar = $("subtabs");
-    bar.replaceChildren(seg);
+    bar.replaceChildren(invTabs(), seg);
     bar.hidden = false;
     measureBars();
     let banks = new Map();    // account id -> its bank's logo item and name, loaded once
@@ -2017,6 +2022,303 @@
       load().catch((err) => { if (err instanceof SignedOut) showLogin(); });
     }, 60000);
     cleanups.push(() => clearInterval(timer));
+  }
+
+  // ---------------------------------------------------------------- Investments: Performance
+
+  const PERF_RANGES = [["1m", "1M"], ["3m", "3M"], ["6m", "6M"], ["ytd", "YTD"], ["1y", "1Y"], ["3y", "3Y"], ["5y", "5Y"]];
+  let perfRange = "1y";
+  let perfBench = "sp500";
+  let perfRiskFree = 3;   // percent a year; the server's default is 3
+
+  // Plain-language meaning of each figure, shown when you tap its name (and as a hover title).
+  const PERF_HELP = {
+    total_return: "How much the positions grew (or shrank) over the period, from the first day shown to the last.",
+    cagr: "Total return turned into a yearly rate, so periods of different lengths can be compared. Left blank under 30 days: it would mean nothing.",
+    volatility: "How much the value swings day to day, scaled to a year. Higher means a bumpier ride. Typical stock funds sit around 12–20%.",
+    sharpe: "Return above the risk-free rate for each unit of volatility. Higher is better; above 1 is good, below 0.5 is weak. It lets you compare a calm portfolio with a wild one fairly.",
+    sortino: "Like Sharpe, but only counts the bad swings (days that lose money). Better than Sharpe when most of the swings are upward.",
+    max_drawdown: "The biggest fall from a high point to the low after it. It is the worst loss someone who bought at the top would have sat through.",
+    calmar: "Yearly return divided by the biggest fall. Shows how much return you got for the worst pain.",
+    var_95: "On 95% of days the loss was smaller than this. A guide to a normally bad day, not the worst one.",
+    cvar_95: "The average loss on the worst 5% of days. A guide to how bad the bad days get.",
+    positive_days: "The share of days the value went up.",
+    positive_months: "The share of calendar months the value went up.",
+    beta: "How much your positions move when the benchmark moves 1%. Under 1 is calmer than the benchmark, over 1 swings more, near 0 moves on its own.",
+    alpha: "Yearly return beyond what the benchmark's moves explain (Jensen's alpha). Positive means the picks added something. Over short periods this is mostly noise.",
+    correlation: "How closely your positions follow the benchmark, from -1 to 1. Near 1 means they move together, so the benchmark adds little diversification.",
+    r_squared: "The share of your ups and downs explained by the benchmark. High means you hold something like the benchmark.",
+    tracking_error: "How far your returns stray from the benchmark's, as a yearly figure. Near 0 means you are tracking it closely.",
+    information_ratio: "Return above the benchmark for each unit of tracking error. Above 0.5 is good; it rewards beating the benchmark steadily.",
+    excess_return: "Your total return minus the benchmark's over the same days.",
+    up_capture: "Of the benchmark's good months, the share of the gain you kept. Over 100% is more than the benchmark.",
+    down_capture: "Of the benchmark's bad months, the share of the fall you took. Under 100% means you fell less. Aim for high up-capture and low down-capture.",
+  };
+
+  const pctPlain = (v, digits = 1) => (v == null ? "—" : `${(v * 100).toFixed(digits)}%`);
+  const pctSigned = (v, digits = 1) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? MINUS : ""}${Math.abs(v * 100).toFixed(digits)}%`);
+  const ratio = (v) => (v == null ? "—" : v.toFixed(2));
+  const tone = (v) => (v == null || v === 0 ? "" : v > 0 ? "income" : "neg");
+
+  // A two-line (you / benchmark) chart over dates. `valueText(v)` words a value for the readout and axis.
+  function perfLineChart({ dates, series, axis, readout, area = false, label }) {
+    const W = 640, H = 230, L = 52, R = 12, T = 12, B = 26;
+    const n = dates.length;
+    const wrap = el("div");
+    if (n < 2) return el("p", { class: "empty", text: "Not enough history for this chart yet." });
+    const x = (i) => L + (i / (n - 1)) * (W - L - R);
+    const all = series.flatMap((s) => s.values);
+    let lo = Math.min(...all), hi = Math.max(...all);
+    if (area) hi = Math.max(hi, 0);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08;
+    lo -= pad;
+    if (!area) hi += pad;
+    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const chart = svg("svg", { class: "chart perf-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": label });
+    for (let i = 0; i <= 3; i++) {
+      const v = lo + ((hi - lo) * i) / 3;
+      chart.append(svg("line", { class: "gl", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      const t = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+      t.textContent = axis(v);
+      chart.append(t);
+    }
+    const path = (values) => values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    for (const s of series) {
+      if (area) chart.append(svg("path", { class: `area ${s.cls}`, d: `${path(s.values)} L${x(n - 1)},${y(0)} L${L},${y(0)} Z` }));
+      chart.append(svg("path", { class: `line ${s.cls}`, d: path(s.values) }));
+    }
+    if (lo < 0 && hi > 0 && !area) chart.append(svg("line", { class: "gl zero", x1: L, x2: W - R, y1: y(0), y2: y(0) }));
+    for (const i of [0, Math.floor((n - 1) / 2), n - 1]) {
+      const t = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle" });
+      t.textContent = parseDay(dates[i]).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
+      chart.append(t);
+    }
+    const dots = series.map((s) => svg("circle", { r: 3.5, class: `dot ${s.cls}` }));
+    chart.append(...dots);
+    const caption = el("p", { class: "perf-readout" });
+    const key = el("div", { class: "perf-key" }, series.map((s) => el("span", { class: "perf-chip" },
+      svg("svg", { width: 22, height: 10, "aria-hidden": "true" }, svg("line", { x1: 1, x2: 21, y1: 5, y2: 5, class: `line ${s.cls}` })), s.name)));
+    function show(i) {
+      series.forEach((s, k) => { dots[k].setAttribute("cx", x(i)); dots[k].setAttribute("cy", y(s.values[i])); });
+      caption.replaceChildren(el("strong", { text: dayLabel(dates[i]) }), ...series.map((s) => el("span", {}, `${s.name} `, el("strong", { text: readout(s.values[i]) }))));
+    }
+    chart.addEventListener("pointermove", (event) => {
+      const box = chart.getBoundingClientRect();
+      const px = ((event.clientX - box.left) / box.width) * W;
+      show(Math.max(0, Math.min(n - 1, Math.round(((px - L) / (W - L - R)) * (n - 1)))));
+    });
+    chart.addEventListener("pointerleave", () => show(n - 1));
+    wrap.append(key, chart, caption);
+    show(n - 1);
+    return wrap;
+  }
+
+  // Monthly returns: a pair of bars per month (you, benchmark), gains up and falls down from one zero line.
+  function monthlyBars(rows, benchName) {
+    if (rows.length === 0) return el("p", { class: "empty", text: "No full months in this period yet." });
+    const W = 640, H = 210, L = 46, R = 8, T = 12, B = 26;
+    const peak = Math.max(0.01, ...rows.flatMap((r) => [Math.abs(r.portfolio ?? 0), Math.abs(r.benchmark ?? 0)]));
+    const y = (v) => T + (1 - (v + peak) / (2 * peak)) * (H - T - B);
+    const chart = svg("svg", { class: "chart perf-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Return for each month, you against the benchmark" });
+    for (const v of [-peak, 0, peak]) {
+      chart.append(svg("line", { class: v === 0 ? "gl zero" : "gl", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      const t = svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+      t.textContent = pctSigned(v, 0).replace("+", "");
+      chart.append(t);
+    }
+    const slot = (W - L - R) / rows.length;
+    const bar = (v, cls, at, width, tip) => {
+      if (v == null) return;
+      const top = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
+      const rect = svg("rect", { class: `bar ${cls}`, x: at, y: top, width, height: h, rx: 2 });
+      const title = svg("title");
+      title.textContent = tip;
+      rect.append(title);
+      chart.append(rect);
+    };
+    rows.forEach((r, i) => {
+      const left = L + i * slot + slot * 0.1, width = slot * 0.4;
+      const name = `${monthLabel(r.month)}${r.partial ? " (part month)" : ""}`;
+      bar(r.portfolio, "p-you", left, width, `${name}: you ${pctSigned(r.portfolio)}`);
+      bar(r.benchmark, "p-bench", left + width + 1, width, `${name}: ${benchName} ${pctSigned(r.benchmark)}`);
+      if (rows.length <= 14 || i % 2 === 0) {
+        const t = svg("text", { x: L + i * slot + slot / 2, y: H - 7, "text-anchor": "middle" });
+        t.textContent = shortMonth(r.month);
+        chart.append(t);
+      }
+    });
+    return chart;
+  }
+
+  const ALLOC_COLOURS = ["var(--chart)", "var(--c-assets)", "var(--c-liab)", "var(--c-inv)", "var(--muted)", "var(--muted-2)"];
+  function allocationBar(title, rows) {
+    return el("div", { class: "alloc" },
+      el("h4", { text: title }),
+      el("div", { class: "alloc-bar", role: "img", "aria-label": rows.map((r) => `${r.name} ${pctPlain(r.share)}`).join(", ") },
+        rows.map((r, i) => { const part = el("i", { title: `${r.name}: ${pctPlain(r.share)}` }); part.style.flex = String(Math.max(r.share, 0.002)); part.style.background = ALLOC_COLOURS[i % ALLOC_COLOURS.length]; return part; })),
+      el("ul", { class: "alloc-list" }, rows.map((r, i) => {
+        const swatch = el("i", { class: "alloc-swatch" });
+        swatch.style.background = ALLOC_COLOURS[i % ALLOC_COLOURS.length];
+        return el("li", {}, swatch, el("span", { class: "grow", text: r.name }), el("span", { class: "num", text: pctPlain(r.share) }));
+      })));
+  }
+
+  async function viewPerformance(id) {
+    $("page-sub").textContent = "How the positions have done against a benchmark";
+    let data = null;
+    const rangeSeg = el("div", { class: "seg wide period-seg", role: "group", "aria-label": "Period" },
+      PERF_RANGES.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === perfRange), text: label,
+        onclick: () => { perfRange = key; reload(); } })));
+    const benchSelect = el("select", { "aria-label": "Compare with", onchange: (e) => { perfBench = e.target.value; reload(); } });
+    const fillBench = (list) => {
+      benchSelect.replaceChildren(...list.map((b) => el("option", { value: b.key, text: b.name, selected: b.key === perfBench })));
+    };
+    fillBench([{ key: perfBench, name: perfBench === "sp500" ? "S&P 500" : perfBench }]);
+    const bar = $("subtabs");
+    bar.replaceChildren(invTabs(), rangeSeg);
+    bar.hidden = false;
+    measureBars();
+    const syncRange = () => rangeSeg.querySelectorAll("button").forEach((btn, i) => btn.setAttribute("aria-pressed", String(PERF_RANGES[i][0] === perfRange)));
+
+    const reload = async () => {
+      syncRange();
+      view().replaceChildren(viewerNote(), el("p", { class: "empty", text: "Working out performance…" }));
+      try { await load(); } catch (err) { if (err instanceof SignedOut) showLogin(); else if (id === navId) view().replaceChildren(el("p", { class: "empty error", role: "alert", text: err.message })); }
+    };
+
+    const metric = (key, label, text, cls = "") => el("div", { class: "perf-tile", title: PERF_HELP[key] || "" },
+      el("span", { class: "muted", text: label }), el("strong", { class: cls, text }));
+
+    const paint = () => {
+      const d = data;
+      if (!d.available) {
+        view().replaceChildren(viewerNote(), el("section", { class: "card" }, el("h3", { text: "Performance" }), el("p", { class: "empty", text: d.message || "Performance is not available right now." })));
+        return;
+      }
+      fillBench(d.benchmarks);
+      const bn = d.benchmark.name;
+      const m = d.metrics, bm = d.benchmark_metrics || {}, rel = d.relative || {};
+      const hasBench = !!d.benchmark_index;
+
+      const note = el("section", { class: "card perf-assume" },
+        el("p", { class: "muted", text: `${d.assumption} Price changes only: deposits, withdrawals and dividends are not counted, so this shows how the positions you hold now have behaved, not what your account actually earned.` }),
+        el("label", { class: "perf-rf" }, "Compare with", benchSelect),
+        el("label", { class: "perf-rf" }, "Risk-free rate",
+          el("input", { type: "number", min: 0, max: 20, step: 0.1, value: String(perfRiskFree), "aria-label": "Risk-free rate, percent a year",
+            onchange: (e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 20) { perfRiskFree = v; reload(); } } }),
+          el("span", { class: "muted perf-note", text: "% a year, used for Sharpe, Sortino and alpha" })),
+        hasBench && !d.benchmark.converted && el("p", { class: "error", text: `${bn} is quoted in ${d.benchmark.quoted_in} and no exchange rate was available, so it is shown unconverted.` }),
+        !hasBench && el("p", { class: "error", text: `No price history was available for ${bn}, so there is nothing to compare against.` }));
+
+      const cov = d.coverage;
+      const coverage = (cov.unpriced.length || cov.missing_rates.length || cov.started_later || cov.priced_share < 0.99) && el("section", { class: "card" },
+        el("h3", { text: "What is included" }),
+        el("p", { class: "muted", text: `${pctPlain(cov.priced_share, 0)} of your money (${cov.priced_positions} of ${cov.positions} positions) has price history.${cov.started_later ? ` The chart starts on ${shortDate(cov.start)}, when enough of it does, instead of ${shortDate(cov.requested_start)}.` : ""}` }),
+        cov.unpriced.length > 0 && el("p", { class: "muted", text: `Left out for lack of prices: ${cov.unpriced.join(", ")}.` }),
+        cov.missing_rates.length > 0 && el("p", { class: "error", text: `No exchange rate for ${cov.missing_rates.join(", ")}, so those positions are left out.` }));
+
+      const tiles = el("div", { class: "perf-tiles" },
+        metric("total_return", "Total return", pctSigned(m.total_return), tone(m.total_return)),
+        metric("cagr", "Per year", pctSigned(m.cagr), tone(m.cagr)),
+        metric("volatility", "Volatility", pctPlain(m.volatility)),
+        metric("sharpe", "Sharpe", ratio(m.sharpe)),
+        metric("max_drawdown", "Biggest fall", pctSigned(m.max_drawdown), tone(m.max_drawdown)),
+        hasBench && metric("excess_return", `vs ${bn}`, pctSigned(rel.excess_return), tone(rel.excess_return)));
+
+      const growth = el("section", { class: "card" }, el("h3", { text: "Growth of 100" }),
+        perfLineChart({ dates: d.dates, label: "Growth of 100: your positions against the benchmark",
+          series: [{ name: "You", cls: "p-you", values: d.portfolio }, ...(hasBench ? [{ name: bn, cls: "p-bench", values: d.benchmark_index }] : [])],
+          axis: (v) => v.toFixed(0), readout: (v) => v.toFixed(1) }),
+        el("p", { class: "muted small", text: "Both lines start at 100 on the first day, so the gap between them is the difference in growth." }));
+
+      const down = el("section", { class: "card" }, el("h3", { text: "Falls from the high" }),
+        perfLineChart({ dates: d.dates, area: true, label: "How far below its previous high each line was",
+          series: [{ name: "You", cls: "p-you", values: d.portfolio_drawdown }, ...(hasBench ? [{ name: bn, cls: "p-bench", values: d.benchmark_drawdown }] : [])],
+          axis: (v) => `${(v * 100).toFixed(0)}%`, readout: (v) => pctPlain(v) }),
+        m.drawdown && m.drawdown.peak && el("p", { class: "muted small", text: `Your biggest fall was ${pctPlain(Math.abs(m.drawdown.depth))}, from ${shortDate(m.drawdown.peak)} to ${shortDate(m.drawdown.trough)}${m.drawdown.recovered ? `, back at the old high by ${shortDate(m.drawdown.recovered)}.` : ", and it has not yet got back to that high."}` }));
+
+      const rows = [
+        ["Total return", "total_return", pctSigned, true], ["Per year", "cagr", pctSigned, true], ["Volatility", "volatility", pctPlain, false],
+        ["Sharpe ratio", "sharpe", ratio, true], ["Sortino ratio", "sortino", ratio, true], ["Biggest fall", "max_drawdown", pctSigned, true],
+        ["Return vs biggest fall (Calmar)", "calmar", ratio, true], ["Bad-day loss (95%)", "var_95", pctPlain, false], ["Worst-5%-day average loss", "cvar_95", pctPlain, false],
+        ["Days up", "positive_days", (v) => pctPlain(v, 0), true], ["Months up", "positive_months", (v) => pctPlain(v, 0), true],
+      ];
+      const score = el("section", { class: "card" }, el("h3", { text: "Scorecard" }),
+        el("p", { class: "muted small", text: "Tap a name for what it means. A tick marks the better figure." }),
+        el("div", { class: "table-wrap" }, el("table", { class: "acct-table perf-table" },
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Measure" }), el("th", { scope: "col", class: "num", text: "You" }), hasBench && el("th", { scope: "col", class: "num", text: bn }))),
+          el("tbody", {}, rows.map(([label, key, fmt, higher]) => {
+            const you = m[key], bench = bm[key];
+            const better = hasBench && you != null && bench != null && you !== bench ? (higher ? you > bench : you < bench) : null;
+            const help = el("tr", { class: "perf-help", hidden: true }, el("td", { colspan: hasBench ? 3 : 2, class: "muted small", text: PERF_HELP[key] }));
+            const head = el("tr", { class: "click", tabindex: 0, "aria-expanded": "false", onclick: () => { help.hidden = !help.hidden; head.setAttribute("aria-expanded", String(!help.hidden)); },
+              onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); head.click(); } } },
+              el("td", { text: label }),
+              el("td", { class: "num" }, better === true && el("span", { class: "tick", "aria-label": "better", text: "✓ " }), fmt(you)),
+              hasBench && el("td", { class: "num" }, better === false && el("span", { class: "tick", "aria-label": "better", text: "✓ " }), fmt(bench)));
+            return [head, help];
+          }).flat()))));
+
+      const vs = hasBench && el("section", { class: "card" }, el("h3", { text: `Against ${bn}` }),
+        el("div", { class: "perf-tiles" },
+          metric("beta", "Beta", ratio(rel.beta)), metric("alpha", "Alpha / year", pctSigned(rel.alpha), tone(rel.alpha)),
+          metric("correlation", "Correlation", ratio(rel.correlation)), metric("r_squared", "R²", ratio(rel.r_squared)),
+          metric("tracking_error", "Tracking error", pctPlain(rel.tracking_error)), metric("information_ratio", "Information ratio", ratio(rel.information_ratio)),
+          metric("up_capture", "Up capture", pctPlain(rel.up_capture, 0)), metric("down_capture", "Down capture", pctPlain(rel.down_capture, 0))),
+        el("p", { class: "muted small", text: "Hold or tap a figure for what it means. Beta, alpha and capture need a few months of history to be meaningful." }));
+
+      const months = el("section", { class: "card" }, el("h3", { text: "Month by month" }),
+        el("div", { class: "perf-key" }, el("span", { class: "perf-chip" }, el("i", { class: "swatch p-you" }), "You"), hasBench && el("span", { class: "perf-chip" }, el("i", { class: "swatch p-bench" }), bn)),
+        monthlyBars(d.monthly.slice(-24), bn),
+        m.best_month && el("p", { class: "muted small", text: `Best month ${monthLabel(m.best_month)} (${pctSigned(m.best_month_return)}), worst ${monthLabel(m.worst_month)} (${pctSigned(m.worst_month_return)}).` }));
+
+      const posTable = el("section", { class: "card" }, el("h3", { text: "Which positions drove it" }),
+        el("div", { class: "table-wrap" }, el("table", { class: "acct-table perf-table" },
+          el("thead", {}, el("tr", {}, [["Position", ""], ["Weight", "num"], ["Return", "num"], ["Added", "num"], ["Volatility", "num"], ["Fall", "num"]].map(([t, c]) => el("th", { scope: "col", class: c, text: t })))),
+          el("tbody", {}, d.positions.map((p) => el("tr", {},
+            el("td", { title: p.name }, el("strong", { text: p.ticker || p.name }), !p.priced && el("span", { class: "muted small", text: "  no price history" })),
+            el("td", { class: "num", text: pctPlain(p.weight) }),
+            el("td", { class: `num ${tone(p.return)}`, text: pctSigned(p.return) }),
+            el("td", { class: `num ${tone(p.contribution)}`, text: pctSigned(p.contribution) }),
+            el("td", { class: "num", text: pctPlain(p.volatility) }),
+            el("td", { class: `num ${tone(p.max_drawdown)}`, text: pctSigned(p.max_drawdown) })))))),
+        el("p", { class: "muted small", text: "Added is how many percentage points of the total return came from that position." }));
+
+      const c = d.concentration;
+      const spread = el("section", { class: "card" }, el("h3", { text: "How it is spread" }),
+        el("div", { class: "perf-tiles" },
+          el("div", { class: "perf-tile", title: "Share of the money in the single largest position." }, el("span", { class: "muted", text: "Largest position" }), el("strong", { text: pctPlain(c.top1, 0) })),
+          el("div", { class: "perf-tile", title: "Share in the three largest positions." }, el("span", { class: "muted", text: "Top 3" }), el("strong", { text: pctPlain(c.top3, 0) })),
+          el("div", { class: "perf-tile", title: "How many equal-sized positions would be as concentrated as this. Lower than the number you hold means a few dominate." }, el("span", { class: "muted", text: "Effective holdings" }), el("strong", { text: c.effective_holdings == null ? "—" : c.effective_holdings.toFixed(1) }))),
+        allocationBar("By type", d.allocation.by_type), d.allocation.by_currency.length > 1 && allocationBar("By currency", d.allocation.by_currency), d.allocation.by_account.length > 1 && allocationBar("By account", d.allocation.by_account));
+
+      const incomeCards = Object.entries(d.income || {});
+      const income = incomeCards.length > 0 && el("section", { class: "card" }, el("h3", { text: "Income and fees, last 12 months" }),
+        incomeCards.map(([k, v]) => el("div", { class: "perf-income" },
+          el("div", { class: "cur-name", text: k }),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "Dividends" }), el("div", { class: "amount income", text: `+${moneyShort(v.dividends, k)}` })),
+          v.interest > 0 && el("div", { class: "row" }, el("div", { class: "grow", text: "Interest" }), el("div", { class: "amount income", text: `+${moneyShort(v.interest, k)}` })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "Fees" }), el("div", { class: "amount", text: v.fees > 0 ? `${MINUS}${moneyShort(v.fees, k)}` : moneyShort(0, k) })),
+          v.dividend_yield != null && el("p", { class: "muted small", text: `Dividends are ${pctPlain(v.dividend_yield, 2)} of the value${v.fee_share ? `; fees ${pctPlain(v.fee_share, 2)}` : ""}.` }))));
+
+      const guide = d.guidance.length > 0 && el("section", { class: "card" }, el("h3", { text: "Things to consider" }),
+        el("div", { class: "guidance" }, d.guidance.map((g) => el("div", { class: `guide guide-${g.level}` },
+          el("strong", {}, el("span", { class: "guide-mark", "aria-hidden": "true", text: g.level === "good" ? "✓" : g.level === "watch" ? "!" : "i" }), el("span", { class: "visually-hidden", text: `${g.level}: ` }), g.title),
+          el("p", { text: g.text })))),
+        el("p", { class: "muted small", text: "General observations from the numbers above, not personal financial advice. Past results do not predict future ones." }));
+
+      view().replaceChildren(viewerNote(), note, tiles, growth, down, score, ...(vs ? [vs] : []), months, posTable, spread, ...(income ? [income] : []), ...(guide ? [guide] : []), ...(coverage ? [coverage] : []));
+    };
+
+    const load = async () => {
+      const q = new URLSearchParams({ range: perfRange, benchmark: perfBench, risk_free: String(perfRiskFree) });
+      const next = await api(scoped(`/api/performance?${q}`), { timeout: 120000 });
+      if (id !== navId) return;
+      data = next;
+      paint();
+    };
+    await load();
   }
 
   // ---------------------------------------------------------------- Merchants
@@ -2955,6 +3257,7 @@
     if (name === "spending" && params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }  // Transactions used to be a Spending tab
     if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
     if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
+    if (name === "investments") invTab = params.get("tab") === "performance" ? "performance" : "holdings";
     renderSubtabs(name);
     for (const a of document.querySelectorAll("#tabs a, #menu-list a")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");

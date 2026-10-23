@@ -545,17 +545,18 @@ def test_title_bar_and_sidebar_are_fixed_so_they_never_scroll():
 def test_investments_total_has_a_box_for_each_currency_in_smaller_type():
     app = (WEB_DIR / "app.js").read_text()
     css = (WEB_DIR / "app.css").read_text()
-    page = app[app.index("async function viewInvestments"):]
+    page = app[app.index("async function viewHoldings"):]
     assert 'class: "cur-boxes"' in page and 'class: "cur-box"' in page and 'class: "cur-value"' in page
     assert ".cur-box { padding: 8px 12px; border: 1px solid var(--border-strong);" in css and ".cur-value { font-size: 1.45rem;" in css
     assert "Change since yesterday" not in app and 'day: "since yesterday\'s close"' in app
     assert ".subtabs .seg.period-seg button { padding: .32rem .5rem; font-size: .82rem; white-space: nowrap; }" in css
 
 
-def test_spending_this_month_also_shows_the_last_twelve_months_so_the_page_is_not_empty():
+def test_spending_this_month_has_no_chart():
     app = (WEB_DIR / "app.js").read_text()
     page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3000]
-    assert '/api/spending/monthly?months=12' in page and 'text: "Last 12 months"' in page and "spendCard, trendCard" in page
+    assert "spending/monthly" not in page and "barChart" not in page and "trendCard" not in page
+    assert "view().replaceChildren(viewerNote(), spendCard);" in page
 
 
 def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_gain_figures():
@@ -569,10 +570,8 @@ def test_investments_box_has_book_value_beside_the_value_and_labels_before_the_g
     assert ".cur-box .muted { font-size: inherit; }" in css
 
 
-def test_spending_summary_does_not_pass_a_missing_chart_card_to_replace_children():
+def test_investments_wording_and_no_section_total_class():
     app = (WEB_DIR / "app.js").read_text()
-    page = app[app.index("async function viewSpendingSummary"):app.index("async function viewSpendingSummary") + 3500]
-    assert "replaceChildren(...[viewerNote(), spendCard, trendCard].filter(Boolean))" in page
     assert "without book value" in app and "N no book value" not in app
     assert ".section-total" not in (WEB_DIR / "app.css").read_text()
 
@@ -604,7 +603,7 @@ def test_clicking_a_spending_category_opens_a_popup_of_its_transactions():
 
 def test_investments_shows_the_bank_logo_beside_the_account_name_without_the_account_number():
     app = (WEB_DIR / "app.js").read_text()
-    start = app.index("async function viewInvestments")
+    start = app.index("async function viewHoldings")
     inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
     assert 'class: "acct-title"' in inv and "bankLogo(" in inv and "holdings[0].account_name" in inv
     assert "account_mask" not in inv and "\\u2022\\u2022" not in inv
@@ -645,9 +644,9 @@ def test_a_press_that_slides_away_does_not_leave_the_page_choices_highlighted():
 
 def test_investments_period_filter_is_the_pinned_bar_under_the_page_choices():
     app = (WEB_DIR / "app.js").read_text()
-    start = app.index("async function viewInvestments")
+    start = app.index("async function viewHoldings")
     inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
-    assert 'class: "seg period-seg"' in inv and 'const bar = $("subtabs");' in inv and "bar.replaceChildren(seg);" in inv and "bar.hidden = false;" in inv
+    assert 'class: "seg period-seg"' in inv and 'const bar = $("subtabs");' in inv and "bar.replaceChildren(invTabs(), seg);" in inv and "bar.hidden = false;" in inv
     assert "lastData = data;" in inv and "paint(lastData)" in inv
     head = inv[inv.index('const head = el("section"'):inv.index("const byAccount")]
     assert "seg" not in head   # no longer inside the scrolling Total value card
@@ -655,7 +654,7 @@ def test_investments_period_filter_is_the_pinned_bar_under_the_page_choices():
 
 def test_investments_page_has_no_activity_list_and_budgets_cannot_go_to_a_future_month():
     app = (WEB_DIR / "app.js").read_text()
-    start = app.index("async function viewInvestments")
+    start = app.index("async function viewHoldings")
     inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
     assert 'text: "Activity"' not in inv and "activityCard" not in inv and "Click a position above" not in inv
     assert "investmentActivity(() => ({ account_id: h.account_id, security_id: h.security_id }), false, id)" in inv   # a position's own history stays in its sheet
@@ -669,7 +668,6 @@ def test_budgets_page_has_no_twelve_month_chart():
     page = app[app.index("async function viewBudgets"):app.index("// ---------------------------------------------------------------- Cash flow")]
     assert "barChart" not in page and "Last 12 months" not in page and "/api/spending/monthly" not in page
     assert "view().replaceChildren(viewerNote(true), spendCard);" in page
-    assert "barChart(monthly, cur)" in app   # the Spending page's own "Last 12 months" chart is unchanged
 
 
 def test_sign_in_screen_has_no_blank_space_below_the_box_on_phones():
@@ -703,7 +701,7 @@ def test_pinned_bars_tuck_under_the_top_bar_so_scrolling_content_cannot_show_thr
 
 def test_investments_page_amounts_use_a_plain_dollar_sign_not_us_dollar():
     app = (WEB_DIR / "app.js").read_text()
-    start = app.index("async function viewInvestments")
+    start = app.index("async function viewHoldings")
     inv = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
     assert 'currency === "USD" ? "en-US" : "en-CA"' in app and "const moneyShort = (value, currency) => {" in app
     assert 'text: moneyShort(t.value, cur)' in inv and "Book ${moneyShort(b.book, cur)}" in inv and "Value ${moneyShort(v, cur)}" in inv
@@ -852,3 +850,19 @@ def test_transactions_is_its_own_top_level_tab():
     assert 'href="#/transactions" data-tab="transactions"' in html and ">Txns<" in html
     assert 'params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }' in app
     assert "#/spending?tab=transactions" not in app  # every link goes to the new page
+
+
+def test_investments_has_holdings_and_performance_tabs():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'INV_TABS = [["holdings", "Holdings"], ["performance", "Performance"]]' in app
+    assert 'invTab = params.get("tab") === "performance" ? "performance" : "holdings"' in app
+    start = app.index("async function viewPerformance")
+    perf = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert "/api/performance?" in perf and "bar.replaceChildren(invTabs(), rangeSeg);" in perf
+    # charts, the scorecard against the benchmark, guidance and the glossary-style help are all drawn
+    for needle in ("Growth of 100", "Falls from the high", "Scorecard", "Month by month", "Which positions drove it", "How it is spread", "Things to consider", "Risk-free rate"):
+        assert needle in perf
+    # the page says it is a price-only backtest
+    assert "not what your account actually earned" in perf
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".guide-watch" in css and ".perf-tiles" in css and "svg.chart .line.p-bench" in css
