@@ -82,6 +82,8 @@ class PlaidClient:
             body["access_token"] = access_token
         else:
             body["products"] = ["transactions"]
+            # Plaid's default is 90 days, fixed when the bank is first linked. The most it offers is two years.
+            body["transactions"] = {"days_requested": 730}
             body["optional_products"] = ["investments", "liabilities"]
         return self._post("/link/token/create", body)
 

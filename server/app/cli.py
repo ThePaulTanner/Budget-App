@@ -117,6 +117,7 @@ def _reset_networth(args: argparse.Namespace) -> int:
                 print("Nothing deleted.")
                 return 1
         services.db.run("DELETE FROM networth")
+        services.db.run("DELETE FROM networth_adjust")
     finally:
         services.db.close()
     print(f"Deleted {count} net-worth points. The chart starts again with the next sync.")

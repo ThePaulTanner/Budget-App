@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 SCHEMA = """
 CREATE TABLE users (
@@ -183,6 +183,15 @@ CREATE TABLE networth (
   investments TEXT NOT NULL,
   net_worth TEXT NOT NULL,
   estimated INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (date, currency, person_id)
+);
+CREATE TABLE networth_adjust (
+  date TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  person_id INTEGER NOT NULL DEFAULT 0,
+  assets TEXT NOT NULL,
+  liabilities TEXT NOT NULL,
+  investments TEXT NOT NULL,
   PRIMARY KEY (date, currency, person_id)
 );
 CREATE TABLE people (
@@ -404,6 +413,20 @@ ALTER TABLE merchants ADD COLUMN category TEXT;
     # A merchant can be marked so that money coming in from it counts as income.
     15: """
 ALTER TABLE merchants ADD COLUMN is_income INTEGER NOT NULL DEFAULT 0;
+""",
+
+    # An account linked after recording began was missing from the recorded days before it. What it would have
+    # added on those days is worked back from its transactions and kept here, to be added to the recorded rows.
+    16: """
+CREATE TABLE networth_adjust (
+  date TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  person_id INTEGER NOT NULL DEFAULT 0,
+  assets TEXT NOT NULL,
+  liabilities TEXT NOT NULL,
+  investments TEXT NOT NULL,
+  PRIMARY KEY (date, currency, person_id)
+);
 """}
 
 

@@ -12,8 +12,11 @@ Everything here is arithmetic on daily closes. Nothing leaves the NAS except tic
 
 from __future__ import annotations
 
+import logging
 import math
 import statistics
+import threading
+import time
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
@@ -22,6 +25,8 @@ from typing import Any, Callable
 from .history import Closes
 from .positions import bank_price_and_value, effective_currency
 from .quotes import QuoteError, QuoteService, Wanted
+
+log = logging.getLogger(__name__)
 
 TRADING_DAYS = 252
 FETCH_RANGE = "5y"  # one long history per symbol, kept for hours, and every period is cut from it
@@ -622,3 +627,108 @@ def guidance(r: dict[str, Any], top_equity_share: float | None, total_now: float
     if not notes:
         add("info", "Nothing stands out", "None of the usual warning signs show up in this period. Check again after a few months, and look at the longer periods too.")
     return notes
+
+
+# -- worked out ahead of time -------------------------------------------------------
+
+RESULT_TTL = 30 * 60.0  # a finished page is reused this long; the warmer renews it before it runs out
+WARM_EVERY = 20 * 60.0  # keeps each symbol's history fresh (quotes.py keeps them 6-12 hours) and the pages ready
+WARM_FIRST_AFTER = 30.0  # after start-up, once the server has settled
+
+
+class PerformanceService:
+    """The Performance page's answers, kept ready.
+
+    The slow part of a first request is fetching each symbol's history from Yahoo (one request a second), not the
+    arithmetic. So a background thread works out the household's pages for every period and benchmark on a timer,
+    and a request is then a lookup. Anything not ready (another person, an unusual risk-free rate) is worked out on
+    request and kept for a while. A page is also worked out again when the holdings change."""
+
+    def __init__(self, db: Any, get_quotes: Callable[[], QuoteService | None], base: str, get_today: Callable[[], date]) -> None:
+        self.db, self.get_quotes, self.base, self.get_today = db, get_quotes, base, get_today
+        self._results: dict[tuple, tuple[float, str, dict[str, Any]]] = {}
+        self._locks: dict[tuple, threading.Lock] = {}
+        self._guard = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _fingerprint(self) -> str:
+        row = self.db.query(
+            "SELECT COUNT(*) AS n, COALESCE(MAX(h.updated_at), '') AS u, "
+            "COALESCE(SUM(CAST(h.quantity AS REAL)), 0) AS q, COALESCE(SUM(CAST(h.value AS REAL)), 0) AS v, "
+            "(SELECT COALESCE(group_concat(id), '') FROM accounts WHERE hidden = 1) AS hidden, "
+            "(SELECT COALESCE(group_concat(account_id || ':' || person_id), '') FROM account_owners) AS owners FROM holdings h"
+        )[0]
+        return f"{row['n']}|{row['u']}|{row['q']}|{row['v']}|{row['hidden']}|{row['owners']}|{self.get_today().isoformat()}"
+
+    def get(
+        self, *, range_: str, benchmark: str, risk_free: float, person_id: int | None, scope: tuple[str, list[Any]], refresh: bool = False
+    ) -> dict[str, Any]:
+        """The page, from the ready answers when they are current (`refresh` works it out again regardless, which
+        also renews each symbol's history once that has aged). Raises DataUnavailable like `build`."""
+        quotes = self.get_quotes()
+        key = (range_, benchmark, round(risk_free, 4), person_id)  # 0.01 of a percent is as fine as the page asks
+        stamp = self._fingerprint()
+        with self._guard:
+            lock = self._locks.setdefault(key, threading.Lock())
+        with lock:  # a request waits for the same page being worked out, rather than fetching everything twice
+            held = self._results.get(key)
+            if not refresh and held is not None and held[1] == stamp and time.monotonic() - held[0] < RESULT_TTL:
+                return held[2]
+            result = build(
+                self.db, quotes, base=self.base, range_=range_, benchmark=benchmark, risk_free=risk_free,
+                today=self.get_today(), scope=scope,
+            )
+            if result.get("available"):
+                self._results[key] = (time.monotonic(), stamp, result)
+                self._forget_old()
+            return result
+
+    def _forget_old(self) -> None:
+        """Pages worked out on request (another person, an unusual rate) are dropped once they have expired, so the
+        kept pages cannot grow without limit. The household's warmed pages are always replaced, never dropped."""
+        now = time.monotonic()
+        with self._guard:
+            for key, (made, _, _) in list(self._results.items()):
+                if now - made >= RESULT_TTL * 2 and (key[3] is not None or key[2] != round(DEFAULT_RISK_FREE, 4)):
+                    del self._results[key]
+                    self._locks.pop(key, None)
+
+    def warm_once(self) -> int:
+        """Work out the household's pages for every period and benchmark. Returns how many were made.
+        Stops early when prices are not to be had (the next round tries again)."""
+        if self.get_quotes() is None:
+            return 0
+        made = 0
+        keys = [(r, b) for b in [DEFAULT_BENCHMARK, *[k for k in (*BENCHMARKS, BALANCED[0]) if k != DEFAULT_BENCHMARK]] for r in (*RANGES, "ytd")]  # year to date is worked out from the date, so it is not in RANGES
+        keys = sorted(keys, key=lambda rb: (rb[1] != DEFAULT_BENCHMARK, rb[0] != "1y"))  # the page's own first view first
+        for range_, benchmark in keys:
+            if self._stop.is_set():
+                break
+            try:
+                self.get(range_=range_, benchmark=benchmark, risk_free=DEFAULT_RISK_FREE, person_id=None, scope=("", []), refresh=True)
+                made += 1
+            except DataUnavailable:
+                break
+            except Exception:
+                log.exception("Could not get the %s performance page ready", range_)
+        return made
+
+    def start(self) -> None:
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._loop, name="performance", daemon=True)
+            self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _loop(self) -> None:
+        self._stop.wait(WARM_FIRST_AFTER)
+        while not self._stop.is_set():
+            try:
+                self.warm_once()
+            except Exception:
+                log.exception("Warming the performance pages failed")
+            self._stop.wait(WARM_EVERY)

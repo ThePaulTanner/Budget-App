@@ -397,3 +397,65 @@ def test_the_balanced_benchmark_without_one_leg_has_no_benchmark_line(db):
     quotes = FakeQuotes(bars={"AAA": bars(d, [100.0] * 100)}, symbols={"^GSPC": bars(d, [100.0] * 100), "USDCAD=X": bars(d, [1.0] * 100)})
     r = build(db, quotes, "3m", benchmark="balanced")
     assert r["available"] and r["benchmark_index"] is None
+
+
+# -- worked out ahead of time ---------------------------------------------------------
+
+
+def service(db, quotes):
+    return perf.PerformanceService(db, lambda: quotes, "CAD", lambda: TODAY)
+
+
+def test_warming_makes_every_household_page_ready_so_a_request_fetches_nothing(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    d = days(400)
+    quotes = FakeQuotes(bars={"AAA": bars(d, [100.0 + i / 10 for i in range(400)])},
+                        symbols={s: bars(d, [100.0 + i / 20 for i in range(400)]) for s in ("^GSPC", "^GSPTSE", "URTH", "AGG", "USDCAD=X")})
+    svc = service(db, quotes)
+    made = svc.warm_once()
+    assert made == (len(perf.RANGES) + 1) * (len(perf.BENCHMARKS) + 1)  # every period, year to date included
+    asked = len(quotes.asked)
+    for period in ("1y", "ytd"):
+        page = svc.get(range_=period, benchmark="sp500", risk_free=0.03, person_id=None, scope=("", []))
+        assert page["available"] and len(quotes.asked) == asked  # a lookup, no market data needed
+
+
+def test_a_ready_page_is_worked_out_again_when_the_holdings_change(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    d = days(100)
+    quotes = FakeQuotes(bars={"AAA": bars(d, [100.0] * 100), "BBB": bars(d, [50.0] * 100)})
+    svc = service(db, quotes)
+    args = dict(range_="3m", benchmark="bonds", risk_free=0.0, person_id=None, scope=("", []))
+    assert svc.get(**args)["positions"][0]["ticker"] == "AAA" and len(svc.get(**args)["positions"]) == 1
+    holding(db, "a1", "s_b", "BBB", "etf", 10, 500)
+    assert len(svc.get(**args)["positions"]) == 2
+
+
+def test_warming_stops_quietly_when_prices_are_not_to_be_had(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    assert service(db, FakeQuotes(rest=True)).warm_once() == 0
+    assert service(db, None).warm_once() == 0
+
+
+def test_every_warming_round_works_the_pages_out_again_so_they_never_expire_unrenewed(db, monkeypatch):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    d = days(100)
+    svc = service(db, FakeQuotes(bars={"AAA": bars(d, [100.0] * 100)}))
+    calls = []
+    real = perf.build
+    monkeypatch.setattr(perf, "build", lambda *a, **k: calls.append(1) or real(*a, **k))
+    svc.warm_once()
+    first = len(calls)
+    svc.warm_once()
+    assert len(calls) == 2 * first  # a second round rebuilds them all, instead of finding them still fresh
+
+
+def test_a_change_of_owner_makes_the_ready_pages_stale(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    db.run("INSERT INTO people(name, created_at) VALUES ('P','x'), ('Q','x')")
+    ids = [r["id"] for r in db.query("SELECT id FROM people ORDER BY id")]
+    db.run("INSERT INTO account_owners(account_id, person_id) VALUES ('a1', ?)", (ids[0],))
+    svc = service(db, None)
+    before = svc._fingerprint()
+    db.run("UPDATE account_owners SET person_id = ?", (ids[1],))
+    assert svc._fingerprint() != before

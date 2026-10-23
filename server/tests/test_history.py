@@ -258,3 +258,91 @@ def test_a_person_with_no_accounts_gets_no_history_and_nothing_breaks(db):
     db.run("INSERT INTO people(id, name, created_at) VALUES (1,'Sam','x')")
     rebuild_networth_history(db, None, today=TODAY)
     assert row(db, "2026-10-07") is not None and row(db, "2026-10-07", person=1) is None
+
+
+# -- a bank linked after recording began -----------------------------------------------
+
+
+def test_an_account_linked_later_is_worked_back_into_the_recorded_days_before_it(db):
+    account(db, "chq", "depository", 1000)
+    tx(db, "t1", "chq", "2026-10-02", 100)
+    # a second bank, linked on the 6th, with its own transactions from before then
+    db.run("INSERT INTO items(id, institution, access_token, needs_reauth, has_investments, created_at, logo_checked) VALUES ('item_new','New',x'00',0,0,'2026-10-06T12:00:00Z',1)")
+    db.run("INSERT INTO accounts(id, item_id, name, type, current_balance, currency, hidden, updated_at) VALUES ('sav','item_new','sav','depository','500','CAD',0,'x')")
+    tx(db, "s1", "sav", "2026-10-03", -200)  # 200 came in on the 3rd: before that the account held 300
+    # recording began on the 4th, before the second bank existed, so those days hold only the first account
+    for day in ("2026-10-04", "2026-10-05"):
+        db.run("INSERT INTO networth(date, currency, person_id, assets, liabilities, investments, net_worth) VALUES (?,'CAD',0,'1100','0','0','1100')", (day,))
+    db.run("INSERT INTO networth(date, currency, person_id, assets, liabilities, investments, net_worth) VALUES ('2026-10-06','CAD',0,'1600','0','0','1600')")
+    rebuild_networth_history(db, None, today=TODAY)
+    a = db.one("SELECT * FROM networth_adjust WHERE date='2026-10-04' AND person_id=0")
+    assert a["assets"] == "500.00" and db.one("SELECT 1 FROM networth_adjust WHERE date='2026-10-06'") is None  # 500 now, 300 before the 3rd
+
+
+def test_the_networth_endpoint_adds_the_backfill_and_calls_those_days_estimates(services, client, auth):
+    db = services.db
+    db.run("INSERT INTO networth(date, currency, person_id, assets, liabilities, investments, net_worth) VALUES ('2026-09-30','CAD',0,'1000','0','0','1000')")
+    db.run("INSERT INTO networth(date, currency, person_id, assets, liabilities, investments, net_worth) VALUES ('2026-10-02','CAD',0,'1500','100','0','1400')")
+    db.run("INSERT INTO networth_adjust(date, currency, person_id, assets, liabilities, investments) VALUES ('2026-09-30','CAD',0,'500.00','100.00','0.00')")
+    body = client.get("/api/networth?days=365", headers=auth).json()
+    first, last = body[0], body[-1]
+    assert (first["assets"], first["liabilities"], first["net_worth"], first["estimated"]) == (1500, 100, 1400, True)  # no step into the 2nd
+    assert last["estimated"] is False and last["net_worth"] == 1400
+
+
+def test_a_new_bank_or_older_transactions_rebuild_the_history_at_once(services, plaid, monkeypatch):
+    from tests.test_sync import ACCOUNTS, add_item, page
+
+    add_item(services)
+    plaid.accounts, plaid.pages = ACCOUNTS, [page()]
+    calls = []
+    monkeypatch.setattr("app.history.rebuild_networth_history", lambda db, quotes: calls.append(1) or 0)
+
+    def sync():
+        services.sync.sync_items(blocking=True)
+        services.sync._history_thread.join()
+
+    sync()
+    sync()
+    assert len(calls) == 1
+    services.db.run("INSERT INTO transactions(id, account_id, date, name, amount, currency, pending, plaid_category, updated_at) "
+                    "SELECT 'old1', id, '2020-01-01', 'old', '5', 'CAD', 0, 'OTHER', 'x' FROM accounts LIMIT 1")  # older history arrived
+    sync()
+    assert len(calls) == 2  # not hours later
+
+
+def test_a_new_link_asks_plaid_for_two_years_of_transactions():
+    from app.plaid import PlaidClient
+
+    sent = {}
+
+    class Spy(PlaidClient):
+        def __init__(self):
+            pass
+
+        def _post(self, path, body):
+            sent["body"] = body
+            return {}
+
+    Spy().link_token_create("1", ("CA",), None)
+    assert sent["body"]["transactions"] == {"days_requested": 730}
+    Spy().link_token_create("1", ("CA",), None, access_token="tok")
+    assert "transactions" not in sent["body"]  # a reconnect names no products
+
+
+def test_a_failed_rebuild_waits_out_its_retry_delay_instead_of_retrying_on_every_sync(services, plaid, monkeypatch):
+    from tests.test_sync import ACCOUNTS, add_item, page
+
+    add_item(services)
+    plaid.accounts, plaid.pages = ACCOUNTS, [page()]
+    calls = []
+
+    def waiting(db, quotes):
+        calls.append(1)
+        raise Unavailable("Yahoo is resting")
+
+    monkeypatch.setattr("app.history.rebuild_networth_history", waiting)
+    for _ in range(3):
+        services.sync.sync_items(blocking=True)
+        services.sync._history_thread.join()
+    assert len(calls) == 1  # the next try is 15 minutes on, not the next sync

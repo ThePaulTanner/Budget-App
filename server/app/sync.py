@@ -535,6 +535,7 @@ class SyncManager:
         self.db = db
         self.quotes = quotes  # market prices, for rebuilding net worth history
         self._history_next = 0.0  # when the net worth history may next rebuild on its own
+        self._history_stamp: tuple | None = None  # what the last rebuild was made from
         self._history_thread: threading.Thread | None = None
         self.keys = keys
         self.plaid = plaid
@@ -580,10 +581,25 @@ class SyncManager:
         hours unless you press Sync now, and again in 15 minutes if prices could not be had."""
         if self._history_thread is not None and self._history_thread.is_alive():
             return
+        # A bank linked or hidden, or older transactions arriving (a new bank's history comes in after its first sync),
+        # changes what the history is made of: rebuild then, not hours later.
+        stamp = self._history_inputs()
+        if stamp != self._history_stamp:
+            force = True
         if not force and time.time() < self._history_next:
             return
+        self._history_stamp = stamp
         self._history_thread = threading.Thread(target=self._rebuild_history_now, name="net-worth-history", daemon=True)
         self._history_thread.start()
+
+    def _history_inputs(self) -> tuple:
+        row = self.db.query(
+            "SELECT (SELECT COUNT(*) FROM items) AS items, (SELECT COUNT(*) FROM accounts) AS accounts, "
+            "(SELECT COUNT(*) FROM accounts WHERE hidden = 1) AS hidden, "
+            "COALESCE((SELECT MIN(date) FROM transactions), '') AS first_tx, "
+            "COALESCE((SELECT MIN(date) FROM investment_transactions), '') AS first_inv"
+        )[0]
+        return tuple(row)
 
     def _rebuild_history_now(self) -> None:
         from .history import Unavailable, rebuild_networth_history

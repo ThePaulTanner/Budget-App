@@ -53,11 +53,13 @@ def main() -> None:
         threading.Thread(target=hook.run, name="webhook", daemon=True).start()
     services.sync.start()
     services.backups.start()
+    services.performance.start()
     try:
         api.run()
     finally:
         if hook is not None:
             hook.should_exit = True
+        services.performance.stop()
         services.backups.stop()
         services.sync.stop()
         services.db.close()
