@@ -425,7 +425,7 @@ def build(
         entry: dict[str, Any] = {
             "ticker": p["ticker"], "name": p["name"], "type": p["type"], "currency": p["currency"],
             "weight": (p["now_base"] / total_now) if p["now_base"] and total_now > 0 else None,
-            "value": p["now_base"], "priced": p["closes"] is not None,
+            "value": round(p["now_base"], 2) if p["now_base"] is not None else None, "priced": p["closes"] is not None,
             "return": None, "contribution": None, "volatility": None, "max_drawdown": None,
         }
         if p["closes"] is not None:
@@ -446,7 +446,7 @@ def build(
         for p in positions:
             if p["now_base"]:
                 sums[key_of(p)] += p["now_base"]
-        return [{"name": k, "value": v, "share": v / total_now} for k, v in sorted(sums.items(), key=lambda kv: -kv[1])] if total_now > 0 else []
+        return [{"name": k, "value": round(v, 2), "share": v / total_now} for k, v in sorted(sums.items(), key=lambda kv: -kv[1])] if total_now > 0 else []
 
     type_names = {"equity": "Stocks", "etf": "ETFs", "mutual fund": "Mutual funds", "fixed income": "Bonds", "cash": "Cash", "derivative": "Derivatives", "other": "Other"}
     alloc = {
@@ -487,6 +487,8 @@ def build(
         v = values_by_currency.get(cur, 0.0)
         b["dividend_yield"] = b["dividends"] / v if v > 0 else None
         b["fee_share"] = b["fees"] / v if v > 0 else None
+        for field in ("dividends", "interest", "fees"):
+            b[field] = round(b[field], 2)
 
     priced_value = sum((p["now_base"] or 0.0) for p in priced)
     coverage = {

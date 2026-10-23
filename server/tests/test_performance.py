@@ -382,3 +382,18 @@ def test_performance_matches_the_fixture(seeded, services):
 
         pathlib.Path(__file__).parents[2].joinpath("api-fixtures/performance.json").write_text(json.dumps(body, indent=2) + "\n")
     assert_matches(body, fixture_float("performance.json"))
+
+
+def test_year_to_date_on_the_first_days_of_the_year_has_too_little_history(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    jan = date(2027, 1, 3)
+    r = perf.build(db, FakeQuotes(bars={"AAA": bars(days(100, jan), [100.0] * 100)}), base="CAD", range_="ytd", benchmark="sp500", risk_free=0.0, today=jan)
+    assert r["metrics"]["cagr"] is None and r["metrics"]["volatility"] is None
+
+
+def test_the_balanced_benchmark_without_one_leg_has_no_benchmark_line(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    d = days(100)
+    quotes = FakeQuotes(bars={"AAA": bars(d, [100.0] * 100)}, symbols={"^GSPC": bars(d, [100.0] * 100), "USDCAD=X": bars(d, [1.0] * 100)})
+    r = build(db, quotes, "3m", benchmark="balanced")
+    assert r["available"] and r["benchmark_index"] is None
