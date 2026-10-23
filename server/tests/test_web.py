@@ -783,3 +783,18 @@ def test_merchant_boxes_have_the_income_switch():
     assert "function incomeSwitch" in app and "Count money coming in as income" in app
     assert "income: income.value()" in app and "income: true" in app
     assert 'stat("Money in"' in app
+
+
+def test_cash_flow_has_a_switch_for_the_running_total_lines():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'el("span", {}, "Show running totals")' in app and "chartView, linesToggle, notes" in app
+    assert "for (const [k] of CF_LINE_KEYS) { if (linesBox.checked) h.delete(k); else h.add(k); }" in app
+    assert "linesBox.checked = CF_LINE_KEYS.some" in app
+
+
+def test_pulling_down_stretches_the_space_above_the_content_and_springs_back():
+    app = (WEB_DIR / "app.js").read_text()
+    block = app[app.index("A little give when the page is pulled down"):app.index("// Pressing a page choice")]
+    assert 'page.style.transform = px ? `translateY(${px}px)` : ""' in block
+    assert "cubic-bezier" in block and 'document.addEventListener("touchend", release)' in block
+    assert "{ passive: false }" in block and "Math.min(110, dy * 0.5)" in block
