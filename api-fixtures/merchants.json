@@ -14,6 +14,7 @@
       "other_currency_transactions": 0,
       "top_category": "GENERAL_MERCHANDISE",
       "category": null,
+      "income": false,
       "first_date": "2026-09-10",
       "last_date": "2026-09-14"
     },
@@ -29,6 +30,7 @@
       "other_currency_transactions": 0,
       "top_category": "FOOD_AND_DRINK",
       "category": null,
+      "income": false,
       "first_date": "2026-10-01",
       "last_date": "2026-10-01"
     },
@@ -44,6 +46,7 @@
       "other_currency_transactions": 0,
       "top_category": "FOOD_AND_DRINK",
       "category": null,
+      "income": false,
       "first_date": "2026-09-30",
       "last_date": "2026-09-30"
     },
@@ -59,6 +62,7 @@
       "other_currency_transactions": 0,
       "top_category": "ENTERTAINMENT",
       "category": null,
+      "income": false,
       "first_date": "2026-08-01",
       "last_date": "2026-10-01"
     },
@@ -74,6 +78,7 @@
       "other_currency_transactions": 0,
       "top_category": "OTHER",
       "category": null,
+      "income": false,
       "first_date": "2026-09-20",
       "last_date": "2026-10-01"
     },
@@ -89,6 +94,7 @@
       "other_currency_transactions": 0,
       "top_category": "LOAN_PAYMENTS",
       "category": null,
+      "income": false,
       "first_date": "2026-10-01",
       "last_date": "2026-10-01"
     },
@@ -104,6 +110,7 @@
       "other_currency_transactions": 0,
       "top_category": "INCOME",
       "category": null,
+      "income": false,
       "first_date": "2026-09-29",
       "last_date": "2026-09-29"
     },
@@ -119,6 +126,7 @@
       "other_currency_transactions": 0,
       "top_category": "LOAN_PAYMENTS",
       "category": null,
+      "income": false,
       "first_date": "2026-09-28",
       "last_date": "2026-09-28"
     }

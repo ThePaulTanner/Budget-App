@@ -522,6 +522,17 @@
     return { node: picker.node, value: () => (select.value === "" ? null : picker.value() || null) };
   }
 
+  // A switch for "money coming in from this merchant counts as income". Returns { node, value() }.
+  function incomeSwitch(on) {
+    const box = el("input", { type: "checkbox", role: "switch", checked: !!on, "aria-label": "Count money coming in as income" });
+    return {
+      node: el("label", { class: "switch-row" }, el("span", { class: "switch" }, box, el("span", { class: "track", "aria-hidden": "true" })),
+        el("span", {}, "Count money coming in as income")),
+      value: () => box.checked,
+    };
+  }
+  const INCOME_NOTE = "Off keeps it automatic: money back from a purchase reduces what you spent. On makes every deposit from this merchant income, such as a paycheque.";
+
   function openSheet(...content) {
     const sheet = $("sheet");
     const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
@@ -2081,14 +2092,16 @@
     try { choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
     const name = el("input", { maxlength: 80, placeholder: "e.g. Corner Store", "aria-label": "Merchant name" });
     const category = optionalCategoryPicker(choices, null);
+    const income = incomeSwitch(false);
     const message = el("p", { class: "error", role: "alert" });
     openSheet(el("h2", { text: "Add a merchant" }),
       el("p", { class: "muted", text: "Creates an empty merchant. Attach bank text to it afterwards with Name it." }),
       el("label", {}, "Name", name),
-      el("h3", { text: "Category (optional)" }), category.node, message,
+      el("h3", { text: "Category (optional)" }), category.node,
+      income.node, el("p", { class: "muted", text: INCOME_NOTE }), message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Add", onclick: async () => {
-          try { await api("/api/merchants", { method: "POST", body: { name: name.value, category: category.value() } }); closeSheet(); toast("Merchant added."); done(); }
+          try { await api("/api/merchants", { method: "POST", body: { name: name.value, category: category.value(), income: income.value() } }); closeSheet(); toast("Merchant added."); done(); }
           catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
         } }),
         el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));
@@ -2099,6 +2112,7 @@
     let existing = [], choices = [];
     try { existing = (await api("/api/merchants?period=all")).merchants.map((m) => m.name); choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) { showLogin(); return; } }
     const categoryPick = optionalCategoryPicker(choices, null);
+    const incomePick = incomeSwitch(false);
     const patternInput = el("input", { value: pattern, maxlength: 200, "aria-label": "Bank text" });
     const kindSel = el("select", { "aria-label": "How to match" },
       [["equals", "is exactly"], ["contains", "contains"]].map(([v, l]) => el("option", { value: v, selected: v === kind, text: l })));
@@ -2137,12 +2151,13 @@
       datalist,
       el("div", { class: "field-row" }, el("label", { class: "grow-2" }, "Merchant", nameInput), el("label", {}, "Category", categoryPick.node)),
       el("p", { class: "muted", text: "Pick an existing merchant name to combine them. Automatic uses a matching rule if there is one, otherwise the category from your bank." }),
+      incomePick.node, el("p", { class: "muted", text: `${INCOME_NOTE} Leave it off to keep what the merchant has now.` }),
       message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save name", onclick: async () => {
           message.textContent = "";
           try {
-            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value, ...(categoryPick.value() ? { category: categoryPick.value() } : {}) } });
+            const r = await api("/api/merchants/aliases", { method: "POST", body: { match_field: fieldSel.value, match_type: kindSel.value, pattern: patternInput.value, name: nameInput.value, ...(categoryPick.value() ? { category: categoryPick.value() } : {}), ...(incomePick.value() ? { income: true } : {}) } });
             closeSheet();
             toast(`${r.updated_transactions} transaction${r.updated_transactions === 1 ? "" : "s"} now tracked as ${r.merchant.name}.`);
             done();
@@ -2175,7 +2190,8 @@
         stat("All time", money(d.lifetime.spent, cur)),
         stat("First seen", d.first_date ? shortDate(d.first_date) : "\u2014"),
         stat("Last seen", d.last_date ? shortDate(d.last_date) : "\u2014"),
-        stat("Category", d.category ? categoryLabel(d.category) : "Automatic")),
+        stat("Category", d.category ? categoryLabel(d.category) : "Automatic"),
+        stat("Money in", d.income ? "Counted as income" : "Automatic")),
       d.spent === 0 && d.outflow > 0 && el("p", { class: "muted", text: `This is not counted as spending (payments, transfers and income are left out), but ${money(d.outflow, cur)} left your accounts.` }),
       el("h3", { text: "Spending by month" }), barChart(d.monthly, cur),
       d.categories.length > 0 && [el("h3", { text: "Categories" }), d.categories.slice(0, 4).map((c) =>
@@ -2213,16 +2229,18 @@
     try { choices = await categoryChoices(); } catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); return; }
     const name = el("input", { value: d.name, maxlength: 80, "aria-label": "Merchant name" });
     const category = optionalCategoryPicker(choices, d.category);
+    const income = incomeSwitch(d.income);
     const message = el("p", { class: "error", role: "alert" });
     openSheet(el("h2", { text: "Edit merchant" }),
       el("p", { class: "muted", text: "The new name shows everywhere. Matching transactions stay attached, including future ones." }),
       el("label", {}, "Name", name),
       el("h3", { text: "Category" }),
       el("p", { class: "muted", text: "All this merchant\u2019s transactions use it, including future ones, unless a rule or a change you made by hand says otherwise. Automatic uses a matching rule if there is one, otherwise the category from your bank." }),
-      category.node, message,
+      category.node,
+      el("h3", { text: "Money coming in" }), income.node, el("p", { class: "muted", text: INCOME_NOTE }), message,
       el("div", { class: "actions" },
         el("button", { type: "button", class: "primary", text: "Save", onclick: async () => {
-          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value, category: category.value() } }); toast("Saved."); done(); }
+          try { await api(`/api/merchants/${d.id}`, { method: "PATCH", body: { name: name.value, category: category.value(), income: income.value() } }); toast("Saved."); done(); }
           catch (err) { if (err instanceof SignedOut) { closeSheet(); showLogin(); } else message.textContent = err.message; }
         } }),
         el("button", { type: "button", class: "secondary", text: "Cancel", onclick: closeSheet })));

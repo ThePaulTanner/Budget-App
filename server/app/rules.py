@@ -1,7 +1,8 @@
 """Categorization rules.
 
 Priority for a transaction's category: a manual change wins over a rule, a rule wins over
-its merchant's saved category, and that wins over Plaid's own category. When several rules match, an `equals` rule beats a
+its merchant's saved category (or, for money coming in from a merchant marked as income, INCOME),
+and that wins over Plaid's own category. When several rules match, an `equals` rule beats a
 `contains` rule; among `contains` rules the longest pattern wins (more specific beats
 generic), then the newest rule.
 """
@@ -9,6 +10,7 @@ generic), then the newest rule.
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import Any, Iterable
 
 from .db import Database, placeholders
@@ -126,7 +128,7 @@ def assign_rules(db: Database, tx_ids: list[str] | None = None) -> int:
     rules = db.query("SELECT * FROM rules")
     select = (
         "SELECT t.id, t.account_id, t.name, t.merchant_name, t.rule_id, t.rule_category, "
-        "m.category AS merchant_category FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id"
+        "t.amount, m.category AS merchant_category, m.is_income AS merchant_income FROM transactions t LEFT JOIN merchants m ON m.id = t.merchant_id"
     )
     if tx_ids is None:
         rows = db.query(select)
@@ -141,7 +143,12 @@ def assign_rules(db: Database, tx_ids: list[str] | None = None) -> int:
             # A rule beats the merchant's own category (which has no rule id), and both beat Plaid's.
             rule = best_rule(rules, tx)
             new_id = rule["id"] if rule else None
-            new_category = rule["category"] if rule else tx["merchant_category"]
+            if rule:
+                new_category = rule["category"]
+            elif tx["merchant_income"] and Decimal(tx["amount"]) < 0:
+                new_category = "INCOME"  # money coming in from a merchant marked as an income source
+            else:
+                new_category = tx["merchant_category"]
             if new_id != tx["rule_id"] or new_category != tx["rule_category"]:
                 db.run(
                     "UPDATE transactions SET rule_id=?, rule_category=? WHERE id=?",

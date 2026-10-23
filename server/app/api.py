@@ -186,12 +186,14 @@ class RulePatchBody(BaseModel):
 class MerchantNameBody(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     category: str | None = Field(default=None, max_length=100)  # saved with the merchant; null clears
+    income: bool = False  # count money coming in from this merchant as income
 
 
 class MerchantPatchBody(BaseModel):
-    # Send either or both. `category: null` clears the merchant's saved category.
+    # Send any of them. `category: null` clears the merchant's saved category.
     name: str | None = Field(default=None, min_length=1, max_length=200)
     category: str | None = Field(default=None, max_length=100)
+    income: bool | None = None
 
 
 class AliasBody(BaseModel):
@@ -204,6 +206,7 @@ class AssignBody(AliasBody):
     name: str | None = Field(default=None, max_length=200)  # a merchant name, new or existing
     merchant_id: int | None = None  # or an existing merchant's id
     category: str | None = Field(default=None, max_length=100)  # saved on the merchant when sent
+    income: bool | None = None  # saved on the merchant when sent
 
 
 class MergeBody(BaseModel):
@@ -1719,6 +1722,7 @@ def create_api_app(services: Services) -> FastAPI:
             "other_currency_transactions": a["other"],
             "top_category": top_category(a["cats"]),
             "category": row["category"],
+            "income": bool(row["is_income"]),
             "first_date": span["first"] if span else None,
             "last_date": span["last"] if span else None,
         }
@@ -1827,6 +1831,8 @@ def create_api_app(services: Services) -> FastAPI:
         db.run("UPDATE merchants SET auto=0 WHERE id=?", (merchant["id"],))  # you chose it: keep it
         if "category" in body.model_fields_set:
             db.run("UPDATE merchants SET category=? WHERE id=?", (category, merchant["id"]))
+        if body.income is not None:
+            db.run("UPDATE merchants SET is_income=? WHERE id=?", (int(body.income), merchant["id"]))
         existing = db.one(
             "SELECT id FROM merchant_aliases WHERE match_field=? AND match_type=? AND lower(pattern)=lower(?)",
             (body.match_field, body.match_type, pattern),
@@ -1865,8 +1871,8 @@ def create_api_app(services: Services) -> FastAPI:
             raise HTTPException(409, f"A merchant named {name} already exists.")
         category = clean_merchant_category(body.category)
         row = merchants_mod.get_or_create_merchant(db, name, auto=False)
-        if category:
-            db.run("UPDATE merchants SET category=? WHERE id=?", (category, row["id"]))
+        if category or body.income:
+            db.run("UPDATE merchants SET category=?, is_income=? WHERE id=?", (category, int(body.income), row["id"]))
             row = merchant_or_404(row["id"])
         return merchant_json(row, None, None, 0)
 
@@ -1938,8 +1944,8 @@ def create_api_app(services: Services) -> FastAPI:
         category applies to all its transactions unless a rule or you changed one by hand."""
         current = merchant_or_404(merchant_id)
         sent = body.model_fields_set
-        if not ({"name", "category"} & sent):
-            raise HTTPException(400, "send a name or a category")
+        if not ({"name", "category", "income"} & sent):
+            raise HTTPException(400, "send a name, a category or income")
         name = current["name"]
         if "name" in sent:
             if body.name is None:
@@ -1952,8 +1958,9 @@ def create_api_app(services: Services) -> FastAPI:
             if clash is not None:
                 raise HTTPException(409, f"A merchant named {name} already exists. Merge them instead.")
         category = clean_merchant_category(body.category) if "category" in sent else current["category"]
-        db.run("UPDATE merchants SET name=?, category=?, auto=0 WHERE id=?", (name, category, merchant_id))
-        if category != current["category"]:
+        income = int(bool(body.income)) if body.income is not None else current["is_income"]
+        db.run("UPDATE merchants SET name=?, category=?, is_income=?, auto=0 WHERE id=?", (name, category, income, merchant_id))
+        if category != current["category"] or income != current["is_income"]:
             rules_mod.assign_rules(db)
         row = db.one("SELECT * FROM merchants WHERE id=?", (merchant_id,))
         count = db.one("SELECT count(*) AS n FROM merchant_aliases WHERE merchant_id=?", (merchant_id,))["n"]
@@ -1968,6 +1975,8 @@ def create_api_app(services: Services) -> FastAPI:
             raise HTTPException(400, "cannot merge a merchant into itself")
         if target["category"] is None and source["category"] is not None:
             db.run("UPDATE merchants SET category=? WHERE id=?", (source["category"], body.into_id))
+        if source["is_income"] and not target["is_income"]:
+            db.run("UPDATE merchants SET is_income=1 WHERE id=?", (body.into_id,))
         db.run("UPDATE merchant_aliases SET merchant_id=? WHERE merchant_id=?", (body.into_id, merchant_id))
         db.run("UPDATE merchants SET auto=0 WHERE id=?", (body.into_id,))
         db.run("DELETE FROM merchants WHERE id=?", (merchant_id,))

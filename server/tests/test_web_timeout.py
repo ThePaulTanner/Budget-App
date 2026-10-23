@@ -128,6 +128,7 @@ def test_upgrade_signs_out_old_browser_sessions_once(tmp_path):
     for column in ("kind", "active_at", "expires_at"):
         db.run(f"ALTER TABLE sessions DROP COLUMN {column}")
     db.run("ALTER TABLE networth DROP COLUMN estimated")
+    db.run("ALTER TABLE merchants DROP COLUMN is_income")
     db.run("ALTER TABLE merchants DROP COLUMN category")
     db.run("PRAGMA user_version = 12")
     db.close()

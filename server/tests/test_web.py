@@ -776,3 +776,10 @@ def test_cash_flow_is_one_chart_with_bars_and_running_lines():
 def test_accounts_sections_have_tight_table_padding():
     css = (WEB_DIR / "app.css").read_text()
     assert ".acct-section .acct-table td { padding-block: 6px; }" in css and ".acct-section .acct-table th { padding-block: 4px; }" in css
+
+
+def test_merchant_boxes_have_the_income_switch():
+    app = (WEB_DIR / "app.js").read_text()
+    assert "function incomeSwitch" in app and "Count money coming in as income" in app
+    assert "income: income.value()" in app and "income: true" in app
+    assert 'stat("Money in"' in app

@@ -862,3 +862,6 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
 .acct-section > .section-head { margin-bottom: 0; }
 .acct-section .acct-table th { padding-block: 4px; }
 .acct-section .acct-table td { padding-block: 6px; }
+
+.switch-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; color: var(--text); font-size: .95rem; cursor: pointer; }
+.switch-row .switch { flex: none; }
