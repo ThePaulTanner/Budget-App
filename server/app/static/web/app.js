@@ -423,7 +423,7 @@
   function accountSection(kind, label, iconId, rows, itemsById) {
     const credit = kind === "credit";
     const showOwner = people.length > 0;
-    const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
+    const open = (a) => { location.hash = `#/transactions?account=${encodeURIComponent(a.id)}`; };
     // The bank is its own column: one cell spans all of that bank's accounts in this section, so it
     // is shown once. Banks are ordered by what they hold, and each bank's accounts the same way.
     const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-acct-owner"],
@@ -449,7 +449,7 @@
         index === 0 && el("td", { class: "col-bankname shared", rowspan: accounts.length },
           el("div", { class: "bank-cell", title: a.institution || (item && item.institution) || "Bank" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
         el("td", { class: "col-account" },
-          el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
+          el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
           showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" })),
         // On a computer the owner has a column of its own; on a phone it stays as the small line under the account name.
         showOwner && el("td", { class: "col-acct-owner", text: ownerText(a) || "" }),
@@ -1022,7 +1022,7 @@
     categorySel.addEventListener("change", () => { state.category = categorySel.value; loadMore(true); });
 
     const merchantNote = state.merchant && el("p", { class: "muted" }, "Showing one merchant's transactions. ",
-      el("a", { href: "#/spending?tab=transactions", text: "Show all" }));
+      el("a", { href: "#/transactions", text: "Show all" }));
     view().replaceChildren(viewerNote(), el("section", { class: "card" },
       el("div", { class: "toolbar" }, search, accountSel, categorySel), merchantNote, list, status, sentinel));
     const observer = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && id === navId) loadMore(false); });
@@ -1188,7 +1188,7 @@
           el("p", { class: "muted", text: page.total === 0 ? "No transactions." : (page.total > page.transactions.length ? `${page.total} transactions. The newest ${page.transactions.length} add up to ${money(net, cur)}.` : `${page.total} transaction${page.total === 1 ? "" : "s"}, ${money(net, cur)} in total.`) }),
           page.total > 0 && el("p", { class: "muted", text: "Tap a transaction to change its category." }),
           ...rows,
-          el("p", { class: "muted" }, el("a", { href: "#/spending?tab=transactions", onclick: closeSheet, text: "Search all transactions" }))].filter(Boolean));   // replaceChildren would print a false as the word "false"
+          el("p", { class: "muted" }, el("a", { href: "#/transactions", onclick: closeSheet, text: "Search all transactions" }))].filter(Boolean));   // replaceChildren would print a false as the word "false"
       } catch (err) {
         if (err instanceof SignedOut) { closeSheet(); showLogin(); } else if (body.isConnected) body.replaceChildren(el("p", { class: "error", text: err.message }));
       }
@@ -2224,7 +2224,7 @@
         const a = signed(t.amount, t.currency);
         return el("div", { class: "row" }, el("div", { class: "grow" }, el("div", { text: t.name }), el("div", { class: "muted", text: shortDate(t.date) })),
           el("div", { class: `amount ${a.cls}`, text: a.text }));
-      }), el("p", {}, el("a", { href: `#/spending?tab=transactions&merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
+      }), el("p", {}, el("a", { href: `#/transactions?merchant=${d.id}`, onclick: closeSheet, text: `See all transactions for ${d.name}` }))],
       message,
       el("div", { class: "actions" },
         el("button", { type: "button", text: "Edit", onclick: () => openRename(d, () => { done(); again(); }) }),
@@ -2753,10 +2753,9 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with three tabs. The old addresses (#/transactions, #/merchants) still open the right tab.
+  // Spending is one page with two tabs. The old address #/merchants still opens the right tab, and Transactions is a page of its own.
   const SPENDING_TABS = [
     ["summary", "This month", viewSpendingSummary, "This month against your budgets"],
-    ["transactions", "Transactions", viewTransactions, "Search, filter and re-categorize"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
   ];
   let spendingTab = "summary";
@@ -2858,12 +2857,13 @@
   const PAGES = {
     overview: ["Overview", "Net worth, and income and expenses over time"],
     accounts: ["Accounts", "Balances by bank and account"],
-    spending: ["Spending", "This month, transactions and merchants"],
+    transactions: ["Transactions", "Search, filter and re-categorize"],
+    spending: ["Spending", "This month and merchants"],
     budgets: ["Budgets", "Limits and spending by month"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],
   };
-  const ROUTES = { overview: viewOverview, accounts: viewAccounts, spending: viewSpending, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
+  const ROUTES = { overview: viewOverview, accounts: viewAccounts, transactions: viewTransactions, spending: viewSpending, budgets: viewBudgets, investments: viewInvestments, settings: viewSettings };
 
   const menuButton = $("menu-button");
   const menuList = $("menu-list");
@@ -2952,6 +2952,7 @@
     // Old Spending tabs that became pages of their own: their bookmarks go to the new place.
     if (name === "spending" && params.get("tab") === "budgets") name = "budgets";
     if (name === "spending" && params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }
+    if (name === "spending" && params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }  // Transactions used to be a Spending tab
     if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
     if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");
     renderSubtabs(name);
