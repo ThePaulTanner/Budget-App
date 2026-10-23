@@ -815,3 +815,11 @@ def test_accounts_column_titles_are_all_the_same_size():
 def test_every_page_has_the_same_room_under_its_last_item():
     css = (WEB_DIR / "app.css").read_text()
     assert "main { padding-bottom: 8px; }" in css and ".version-line { margin-bottom: 16px; }" in css
+
+
+def test_popups_have_a_close_x_and_are_wide_on_a_computer():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    assert "const dialogX = (close) =>" in app and "sheet.append(dialogX(closeSheet));" in app and "dialogX(close)));" in app
+    assert ".dialog-x { display: none; }" in css and "dialog#sheet { width: min(820px, calc(100vw - 96px)); }" in css
+    assert "dialog#sheet .sheet-body { margin-inline: -8px; padding-inline: 8px; }" in css

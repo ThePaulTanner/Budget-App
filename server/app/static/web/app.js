@@ -533,6 +533,9 @@
   }
   const INCOME_NOTE = "Off keeps it automatic: money back from a purchase reduces what you spent. On makes every deposit from this merchant income, such as a paycheque.";
 
+  // The X in the top right corner of a popup (shown on a computer; a phone has the Close button and swipe room instead).
+  const dialogX = (close) => el("button", { type: "button", class: "dialog-x", "aria-label": "Close", title: "Close", text: "\u00D7", onclick: close });
+
   function openSheet(...content) {
     const sheet = $("sheet");
     const nodes = content.flat(Infinity).filter((node) => node != null && node !== false);
@@ -545,6 +548,7 @@
     } else {
       sheet.replaceChildren(...nodes);
     }
+    sheet.append(dialogX(closeSheet));
     if (!sheet.open) sheet.showModal();
     return sheet;
   }
@@ -565,7 +569,8 @@
         points.length > 0 && el("ul", {}, points.map((point) => el("li", { text: point }))),
         el("div", { class: "actions" },
           el("button", { type: "button", class: danger ? "danger-solid" : "primary", text: confirmText, onclick: () => { answer = true; close(); } }),
-          el("button", { type: "button", class: "secondary", text: cancelText, onclick: close }))));
+          el("button", { type: "button", class: "secondary", text: cancelText, onclick: close })),
+        dialogX(close)));
       box.addEventListener("close", () => resolve(answer), { once: true });
       box.showModal();
     });
