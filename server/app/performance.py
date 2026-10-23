@@ -700,7 +700,7 @@ class PerformanceService:
         if self.get_quotes() is None:
             return 0
         made = 0
-        keys = [(r, b) for b in [DEFAULT_BENCHMARK, *[k for k in (*BENCHMARKS, BALANCED[0]) if k != DEFAULT_BENCHMARK]] for r in RANGES]
+        keys = [(r, b) for b in [DEFAULT_BENCHMARK, *[k for k in (*BENCHMARKS, BALANCED[0]) if k != DEFAULT_BENCHMARK]] for r in (*RANGES, "ytd")]  # year to date is worked out from the date, so it is not in RANGES
         keys = sorted(keys, key=lambda rb: (rb[1] != DEFAULT_BENCHMARK, rb[0] != "1y"))  # the page's own first view first
         for range_, benchmark in keys:
             if self._stop.is_set():

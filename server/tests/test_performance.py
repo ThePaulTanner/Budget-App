@@ -413,10 +413,11 @@ def test_warming_makes_every_household_page_ready_so_a_request_fetches_nothing(d
                         symbols={s: bars(d, [100.0 + i / 20 for i in range(400)]) for s in ("^GSPC", "^GSPTSE", "URTH", "AGG", "USDCAD=X")})
     svc = service(db, quotes)
     made = svc.warm_once()
-    assert made == len(perf.RANGES) * (len(perf.BENCHMARKS) + 1)
+    assert made == (len(perf.RANGES) + 1) * (len(perf.BENCHMARKS) + 1)  # every period, year to date included
     asked = len(quotes.asked)
-    page = svc.get(range_="1y", benchmark="sp500", risk_free=0.03, person_id=None, scope=("", []))
-    assert page["available"] and len(quotes.asked) == asked  # a lookup, no market data needed
+    for period in ("1y", "ytd"):
+        page = svc.get(range_=period, benchmark="sp500", risk_free=0.03, person_id=None, scope=("", []))
+        assert page["available"] and len(quotes.asked) == asked  # a lookup, no market data needed
 
 
 def test_a_ready_page_is_worked_out_again_when_the_holdings_change(db):
