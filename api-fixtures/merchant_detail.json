@@ -10,6 +10,7 @@
   "other_currency_transactions": 0,
   "top_category": "ENTERTAINMENT",
   "category": null,
+  "income": false,
   "first_date": "2026-08-01",
   "last_date": "2026-10-01",
   "months": 6,

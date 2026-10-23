@@ -465,3 +465,62 @@ def test_cash_flow_names_the_merchant_as_the_source(seeded):
     rows = [t for t in detail["transactions"] + detail["left_out"] if t["id"] == "tx_000"]
     assert rows and rows[0]["category"] == "GROCERIES" and rows[0]["category_source"] == "merchant"
     assert category_of(client, auth, "tx_000")["category_source"] == "merchant"
+
+
+# -- money coming in from a merchant counts as income when it is switched on ----------
+
+
+def cash_flow_row(client, auth, tx_id):
+    detail = client.get("/api/cashflow/transactions?period_start=2026-10-01&period_end=2026-10-31&range=all", headers=auth).json()
+    return next(t for t in detail["transactions"] + detail["left_out"] if t["id"] == tx_id)
+
+
+def test_income_switch_defaults_off_and_changes_nothing(seeded):
+    client, auth = seeded
+    rows = merchants(client, auth, period="all")
+    assert all(m["income"] is False for m in rows)
+    before = category_of(client, auth, "tx_000")
+    assert before["category_source"] == "plaid"
+
+
+def test_income_switch_makes_money_in_income_but_not_money_out(seeded, services):
+    client, auth = seeded
+    add_tx(services, "pay_in", "ACME PAYROLL", "Acme Corp", -2000, category="OTHER")
+    add_tx(services, "pay_out", "ACME PAYROLL REVERSAL", "Acme Corp", 50, category="OTHER")
+    acme = by_name(merchants(client, auth, period="all"), "Acme Corp")
+    r = client.patch(f"/api/merchants/{acme['id']}", json={"income": True}, headers=auth)
+    assert r.status_code == 200 and r.json()["income"] is True
+    money_in = category_of(client, auth, "pay_in")
+    assert (money_in["category"], money_in["category_source"], money_in["rule_id"]) == ("INCOME", "merchant", None)
+    assert cash_flow_row(client, auth, "pay_in")["side"] == "income"
+    assert category_of(client, auth, "pay_out")["category"] == "OTHER"  # money going out keeps its category
+    client.patch(f"/api/merchants/{acme['id']}", json={"income": False}, headers=auth)
+    assert category_of(client, auth, "pay_in")["category"] == "OTHER"
+
+
+def test_money_back_in_a_spending_category_reduces_expenses_not_income(seeded, services):
+    client, auth = seeded
+    add_tx(services, "claim", "BENEFITS CLAIM", "Sun Benefits", -80, category="OTHER")
+    sun = by_name(merchants(client, auth, period="all"), "Sun Benefits")
+    assert cash_flow_row(client, auth, "claim")["side"] == "income"  # Plaid called it Other
+    client.patch(f"/api/merchants/{sun['id']}", json={"category": "MEDICAL"}, headers=auth)  # switch left off
+    row = cash_flow_row(client, auth, "claim")
+    assert row["side"] == "expense" and row["value"] == -80  # a negative expense: it reduces what you spent
+
+
+def test_a_rule_and_a_manual_change_beat_the_income_switch(seeded, services):
+    client, auth = seeded
+    add_tx(services, "pay2", "ACME PAYROLL", "Acme Corp", -1000, category="OTHER")
+    acme = by_name(merchants(client, auth, period="all"), "Acme Corp")
+    client.patch(f"/api/merchants/{acme['id']}", json={"income": True}, headers=auth)
+    client.patch("/api/transactions/pay2", json={"category": "MEDICAL"}, headers=auth)
+    assert category_of(client, auth, "pay2")["category"] == "MEDICAL"
+
+
+def test_income_switch_can_be_set_when_adding_and_survives_a_merge(seeded):
+    client, auth = seeded
+    a = client.post("/api/merchants", json={"name": "Employer", "income": True}, headers=auth).json()
+    assert a["income"] is True
+    b = client.post("/api/merchants", json={"name": "Employer Inc"}, headers=auth).json()
+    client.post(f"/api/merchants/{a['id']}/merge", json={"into_id": b["id"]}, headers=auth)
+    assert by_name(merchants(client, auth, period="all"), "Employer Inc")["income"] is True

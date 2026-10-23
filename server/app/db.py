@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 SCHEMA = """
 CREATE TABLE users (
@@ -159,7 +159,8 @@ CREATE TABLE merchants (
   name TEXT NOT NULL,
   auto INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  category TEXT
+  category TEXT,
+  is_income INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX merchants_name ON merchants(lower(name));
 CREATE TABLE merchant_aliases (
@@ -398,6 +399,11 @@ ALTER TABLE networth ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;
     # A merchant can carry a default category for all its transactions.
     14: """
 ALTER TABLE merchants ADD COLUMN category TEXT;
+""",
+
+    # A merchant can be marked so that money coming in from it counts as income.
+    15: """
+ALTER TABLE merchants ADD COLUMN is_income INTEGER NOT NULL DEFAULT 0;
 """}
 
 
