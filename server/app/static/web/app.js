@@ -2795,6 +2795,40 @@
   let barsWidth = window.innerWidth;
   window.addEventListener("resize", () => { if (window.innerWidth !== barsWidth) { barsWidth = window.innerWidth; measureBars(); } });
 
+  // A little give when the page is pulled down at the top: the space above the tab content stretches (the pinned bars stay put)
+  // and springs back when let go. The browser's own bounce is switched off in the CSS, so this is the only one.
+  (() => {
+    const page = $("view");
+    let startX = 0, startY = 0, pull = 0, active = false;
+    const reduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const set = (px) => { page.style.transform = px ? `translateY(${px}px)` : ""; };
+    const release = () => {
+      if (!active) return;
+      active = false;
+      if (reduced()) { page.style.transition = ""; set(0); pull = 0; return; }
+      page.style.transition = "transform .45s cubic-bezier(.2, 1.1, .3, 1)";
+      set(0); pull = 0;
+      setTimeout(() => { page.style.transition = ""; }, 480);
+    };
+    document.addEventListener("touchstart", (e) => {
+      active = false; pull = 0;
+      if (e.touches.length !== 1 || window.scrollY > 0 || e.target.closest("dialog, input, select, textarea, .seg, .cf-tiles")) { startY = null; return; }
+      startX = e.touches[0].clientX; startY = e.touches[0].clientY; page.style.transition = "";
+    }, { passive: true });
+    document.addEventListener("touchmove", (e) => {
+      if (startY == null || e.touches.length !== 1) return;
+      const dy = e.touches[0].clientY - startY, dx = e.touches[0].clientX - startX;
+      if (!active && (dy <= 6 || Math.abs(dx) > dy || window.scrollY > 0)) return;
+      active = true;
+      pull = Math.min(110, dy * 0.5);   // it gets harder to pull the further it goes
+      if (pull <= 0) { release(); return; }
+      if (e.cancelable) e.preventDefault();
+      set(pull);
+    }, { passive: false });
+    document.addEventListener("touchend", release);
+    document.addEventListener("touchcancel", release);
+  })();
+
   // Pressing a page choice (or any header control) and sliding away would start dragging the link, which looks like a highlight
   // without going anywhere. These are for clicking, not dragging, so the drag is cancelled.
   document.addEventListener("dragstart", (e) => {
