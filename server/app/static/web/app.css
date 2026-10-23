@@ -879,7 +879,7 @@ main { padding-bottom: 8px; }
   dialog#sheet { width: min(820px, calc(100vw - 96px)); }
   .dialog-x { display: grid; place-items: center; position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; padding: 0; min-height: 0; border-radius: 50%; border: 0; background: transparent; color: var(--muted); font-size: 1.5rem; line-height: 1; cursor: pointer; }
   .dialog-x:hover { background: var(--hover); color: var(--text); }
-  dialog#sheet .sheet-body > h2:first-child, dialog#confirm h2 { padding-right: 36px; }
+  dialog#sheet > h2:first-child, dialog#sheet .sheet-body > h2:first-child, dialog#confirm h2 { padding-right: 36px; }
 }
 /* Rows pull 7px past their column for the hover highlight; the popup body makes room for that so it never scrolls sideways. */
 dialog#sheet .sheet-body { margin-inline: -8px; padding-inline: 8px; }

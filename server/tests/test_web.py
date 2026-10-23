@@ -823,3 +823,4 @@ def test_popups_have_a_close_x_and_are_wide_on_a_computer():
     assert "const dialogX = (close) =>" in app and "sheet.append(dialogX(closeSheet));" in app and "dialogX(close)));" in app
     assert ".dialog-x { display: none; }" in css and "dialog#sheet { width: min(820px, calc(100vw - 96px)); }" in css
     assert "dialog#sheet .sheet-body { margin-inline: -8px; padding-inline: 8px; }" in css
+    assert "dialog#sheet > h2:first-child, dialog#sheet .sheet-body > h2:first-child" in css  # a long title never runs under the X
