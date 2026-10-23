@@ -865,3 +865,6 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
 
 .switch-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; color: var(--text); font-size: .95rem; cursor: pointer; }
 .switch-row .switch { flex: none; }
+
+/* Accounts: every column title is the same size, whatever the size of the cells under it. */
+.acct-table.bank-grouped thead th { font-size: .74rem; }

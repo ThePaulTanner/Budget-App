@@ -805,3 +805,8 @@ def test_cog_count_refreshes_right_after_reconnecting_or_removing_a_bank():
     link = app[app.index("async function startLink"):app.index("// Colour scheme and accent")]
     assert link.index("refreshStatus();") < link.index("done();")
     assert "toast(`${name} removed.`); refreshStatus(); reload();" in app
+
+
+def test_accounts_column_titles_are_all_the_same_size():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".acct-table.bank-grouped thead th { font-size: .74rem; }" in css
