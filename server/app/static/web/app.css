@@ -868,3 +868,7 @@ a, button, [role="button"], .row.click, tr.click { -webkit-tap-highlight-color: 
 
 /* Accounts: every column title is the same size, whatever the size of the cells under it. */
 .acct-table.bank-grouped thead th { font-size: .74rem; }
+
+/* The room under the last thing on every page is the same: the last card's 16px margin (or the version line's) plus 8px of page padding. */
+main { padding-bottom: 8px; }
+.version-line { margin-bottom: 16px; }
