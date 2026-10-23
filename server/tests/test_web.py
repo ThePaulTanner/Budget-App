@@ -833,3 +833,11 @@ def test_popup_title_and_x_are_a_header_that_does_not_scroll():
     assert 'el("div", { class: "sheet-head" }, title || el("span"), dialogX(closeSheet))' in sheet
     assert sheet.index("sheet-head") < sheet.index("sheet-body")  # the header comes first, outside the scrolling body
     assert ".sheet-head { display: flex;" in css and "dialog#confirm .dialog-x { position: absolute;" in css
+
+
+def test_accounts_table_has_an_owner_column_on_a_computer():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    section = app[app.index("function accountSection"):app.index("// A line under the page title")]
+    assert 'showOwner && ["Owner", "col-acct-owner"]' in section and 'el("td", { class: "col-acct-owner"' in section
+    assert ".col-acct-owner { display: none; }" in css and ".bank-grouped .acct-owner { display: none; }" in css

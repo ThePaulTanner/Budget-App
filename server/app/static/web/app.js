@@ -426,7 +426,7 @@
     const open = (a) => { location.hash = `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`; };
     // The bank is its own column: one cell spans all of that bank's accounts in this section, so it
     // is shown once. Banks are ordered by what they hold, and each bank's accounts the same way.
-    const headers = [["Bank", "col-bankname"], ["Account", "col-account"],
+    const headers = [["Bank", "col-bankname"], ["Account", "col-account"], showOwner && ["Owner", "col-acct-owner"],
       credit && ["Limit", "num col-extra"], credit && ["Available", "num col-extra"], credit && ["Used", "num col-extra"],
       kind === "depository" && ["Available", "num col-extra"],
       [kind === "investment" ? "Value" : credit || kind === "loan" ? "Owed" : "Balance", "num col-balance", true]].filter(Boolean);
@@ -451,6 +451,8 @@
         el("td", { class: "col-account" },
           el("a", { href: `#/spending?tab=transactions&account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
           showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" })),
+        // On a computer the owner has a column of its own; on a phone it stays as the small line under the account name.
+        showOwner && el("td", { class: "col-acct-owner", text: ownerText(a) || "" }),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
         credit && el("td", { class: "num col-extra", text: available != null ? money(available, a.currency) : "\u2014" }),
         credit && el("td", { class: `num col-extra${used != null && used >= 80 ? " neg" : ""}`, text: used != null ? `${used}%` : "\u2014" }),

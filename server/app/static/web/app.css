@@ -888,3 +888,11 @@ main { padding-bottom: 8px; }
 }
 /* Rows pull 7px past their column for the hover highlight; the popup body makes room for that so it never scrolls sideways. */
 dialog#sheet .sheet-body { margin-inline: -8px; padding-inline: 8px; }
+
+/* Accounts: on a computer, whose account it is has its own column; below that width it stays as the line under the account name. */
+.col-acct-owner { display: none; }
+@media (min-width: 861px) {
+  .col-acct-owner { display: table-cell; white-space: nowrap; color: var(--muted); font-size: .9rem; padding-left: 8px; padding-right: 8px; }
+  .bank-grouped .acct-owner { display: none; }
+}
+.col-acct-owner { width: 11rem; }
