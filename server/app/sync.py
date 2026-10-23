@@ -608,12 +608,10 @@ class SyncManager:
             rebuild_networth_history(self.db, self.quotes)
         except Unavailable as exc:
             log.warning("Net worth history waits for market prices: %s", exc)
-            self._history_stamp = None
             self._history_next = time.time() + HISTORY_RETRY_SECONDS
             return
         except Exception:  # an estimate must never fail anything
             log.exception("Could not rebuild net worth history")
-            self._history_stamp = None
             self._history_next = time.time() + HISTORY_RETRY_SECONDS
             return
         self._history_next = time.time() + HISTORY_EVERY_SECONDS

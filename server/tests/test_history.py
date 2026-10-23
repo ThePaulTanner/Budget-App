@@ -328,3 +328,21 @@ def test_a_new_link_asks_plaid_for_two_years_of_transactions():
     assert sent["body"]["transactions"] == {"days_requested": 730}
     Spy().link_token_create("1", ("CA",), None, access_token="tok")
     assert "transactions" not in sent["body"]  # a reconnect names no products
+
+
+def test_a_failed_rebuild_waits_out_its_retry_delay_instead_of_retrying_on_every_sync(services, plaid, monkeypatch):
+    from tests.test_sync import ACCOUNTS, add_item, page
+
+    add_item(services)
+    plaid.accounts, plaid.pages = ACCOUNTS, [page()]
+    calls = []
+
+    def waiting(db, quotes):
+        calls.append(1)
+        raise Unavailable("Yahoo is resting")
+
+    monkeypatch.setattr("app.history.rebuild_networth_history", waiting)
+    for _ in range(3):
+        services.sync.sync_items(blocking=True)
+        services.sync._history_thread.join()
+    assert len(calls) == 1  # the next try is 15 minutes on, not the next sync
