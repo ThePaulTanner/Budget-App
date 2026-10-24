@@ -4,8 +4,11 @@ For a sale of *q* shares on day *t* for *P*:
 
 * **If kept:** the same shares, worth what you were paid on the day and then moving as the share's price moved since
   that day's close (converted to the base currency at each day's rate). So the two paths start level on the sale day.
-* **What happened:** the proceeds *P* taken as cash that stayed put (also moving with the exchange rate when they are
-  in another currency). Following the money into whatever it bought is a later step.
+* **What happened to the money:** by default it is followed. Buys in the same account within a few days of the sale
+  are matched to it (the money was most likely put into them) and the proceeds then move as those purchases did; any
+  part not matched stays as cash that stayed put (also moving with the exchange rate when it is in another currency).
+  `proceeds="cash"` takes all of it as cash. Following it matters: the account's real value already contains what the
+  money bought, so the comparison has to take that out, not just the cash.
 * **The gap** is the first less the second. Positive means keeping the shares would have left you better off today.
 
 The page's "if kept" line is the real account value plus every sale's gap from its date on. It is hindsight, in
@@ -27,6 +30,7 @@ from .quotes import QuoteService, Wanted
 RANGES = {"3m": 92, "6m": 183, "1y": 366, "all": None}
 DEFAULT_RANGE = "1y"
 DEFAULT_MIN_AMOUNT = 50.0  # sales smaller than this (in the base currency) are hidden: they are noise
+REINVEST_DAYS = 5  # a buy within this many days of a sale, in the same account, is taken to be where the money went
 EVEN_BAND = 0.005  # within half a percent of the proceeds counts as "about even"
 
 
@@ -46,15 +50,24 @@ def build(
     scope: tuple[str, list[Any]] = ("", []),
     account_id: str | None = None,
     min_amount: float = DEFAULT_MIN_AMOUNT,
+    proceeds: str = "auto",
 ) -> dict[str, Any]:
-    """The What ifs page. Raises DataUnavailable if prices cannot be had now."""
+    """The What ifs page. `proceeds` is "auto" (follow the money into what it bought) or "cash".
+    Raises DataUnavailable if prices cannot be had now."""
     result: dict[str, Any] = {
         "available": False,
         "range": range_,
         "currency": base,
         "as_of": today.isoformat(),
         "min_amount": min_amount,
-        "assumption": "Every share you sold is taken as kept, and what you were paid as cash that stayed put. Price changes only, at closing prices.",
+        "proceeds": proceeds,
+        "assumption": (
+            "Every share you sold is taken as kept. The money you were paid is followed into what you bought with it, "
+            f"when you bought within {REINVEST_DAYS} days in the same account, and is otherwise cash that stayed put. "
+            "Price changes only, at closing prices."
+            if proceeds == "auto"
+            else "Every share you sold is taken as kept, and what you were paid as cash that stayed put. Price changes only, at closing prices."
+        ),
     }
     if quotes.resting():
         raise DataUnavailable("market data is resting after an error")
@@ -108,8 +121,9 @@ def build(
             "price": float(Decimal(t["price"])) if t["price"] else None, "currency": currency,
             "proceeds": round(sale_base, 2) if sale_base is not None else None,
             "priced": False, "reason": None, "start": None, "kept_path": None, "proceeds_path": None,
+            "followed": [], "proceeds_mode": None,
             "kept_now": None, "proceeds_now": None, "gap": None, "gap_percent": None, "verdict": None,
-            "_qty": qty, "_proceeds_local": proceeds_local, "_closes": None,
+            "_qty": qty, "_proceeds_local": proceeds_local, "_closes": None, "_sale_base": sale_base,
         }
         if not t["ticker"]:
             entry["reason"] = "no ticker to look up"
@@ -154,29 +168,39 @@ def build(
         result["message"] = "There is not enough price history yet to play these out."
         return result
 
+    allocations = _match_buys(db, fx, quotes, priced, closes_cache, mics) if proceeds == "auto" else {}
     gap_total = [0.0] * len(dates)
     for e in priced:
         start = bisect_left(dates, date.fromisoformat(e["date"]))
         e["start"] = start
         local = float(e["_proceeds_local"])
         sale_close = float(e["_closes"].on(date.fromisoformat(e["date"])))
-        kept, proceeds = [], []
+        allocs = allocations.get(e["id"], [])
+        kept, path = [], []
         for d in dates[start:]:
             rate = fx.rate(e["currency"], d)
             kept.append(local * float(e["_closes"].on(d)) / sale_close * rate)  # what was paid, riding the share's moves
-            proceeds.append(local * rate)
-        gap = kept[-1] - proceeds[-1]
-        pct = gap / proceeds[-1] if proceeds[-1] > 0 else None
+            path.append(_money_value(fx, e, allocs, d))
+        gap = kept[-1] - path[-1]
+        pct = gap / e["_sale_base"] if e["_sale_base"] else None  # of what you were paid
+        covered = sum(a["share"] for a in allocs)
         e.update(
-            kept_path=[round(v, 2) for v in kept], proceeds_path=[round(v, 2) for v in proceeds],
-            kept_now=round(kept[-1], 2), proceeds_now=round(proceeds[-1], 2), gap=round(gap, 2), gap_percent=pct,
+            kept_path=[round(v, 2) for v in kept], proceeds_path=[round(v, 2) for v in path],
+            kept_now=round(kept[-1], 2), proceeds_now=round(path[-1], 2), gap=round(gap, 2), gap_percent=pct,
             verdict=_verdict(pct),
+            followed=[
+                {"id": a["info"]["row"]["id"], "ticker": a["info"]["row"]["ticker"], "name": a["info"]["row"]["name"],
+                 "date": a["info"]["date"].isoformat(), "share": round(a["share"], 4)}
+                for a in allocs
+            ],
+            proceeds_mode="followed" if covered >= 0.995 else "partly" if covered > 0 else "cash",
         )
-        for i, (k, p) in enumerate(zip(kept, proceeds)):
+        for i, (k, p) in enumerate(zip(kept, path)):
             gap_total[start + i] += k - p
 
     actual = _actual_series(db, quotes, fx, dates, scope, account_id)
     gap_sum = sum(e["gap"] for e in priced)
+    paid_sum = sum(e["_sale_base"] for e in priced)
     now_sum = sum(e["proceeds_now"] for e in priced)
     result.update(
         {
@@ -190,7 +214,8 @@ def build(
             "sells": [_public(e) for e in shown],
             "totals": {
                 "gap": round(gap_sum, 2),
-                "gap_percent": gap_sum / now_sum if now_sum > 0 else None,
+                "gap_percent": gap_sum / paid_sum if paid_sum > 0 else None,
+                "proceeds": round(paid_sum, 2),
                 "proceeds_now": round(now_sum, 2),
                 "kept_now": round(sum(e["kept_now"] for e in priced), 2),
                 "missed": sum(1 for e in priced if e["verdict"] == "missed_gain"),
@@ -200,6 +225,73 @@ def build(
         }
     )
     return result
+
+
+def _match_buys(
+    db: Any, fx: _Fx, quotes: QuoteService, sales: list[dict[str, Any]], closes_cache: dict[tuple, Any], mics: dict[str, str]
+) -> dict[str, list[dict[str, Any]]]:
+    """For each sale, the buys its money most likely went into: in the same account, on the sale day or within
+    REINVEST_DAYS after it. Sales are taken oldest first and each buy can only be spent once, so two sales cannot both
+    claim the same purchase. A buy that cannot be priced is passed over (that part of the money stays cash)."""
+    accounts = sorted({e["account_id"] for e in sales})
+    if not accounts:
+        return {}
+    first = min(date.fromisoformat(e["date"]) for e in sales)
+    rows = db.query(
+        "SELECT id, account_id, date, name, ticker, security_id, mic, amount, currency FROM investment_transactions "
+        f"WHERE type = 'buy' AND CAST(quantity AS REAL) > 0 AND date >= ? AND account_id IN ({','.join('?' * len(accounts))}) "
+        "ORDER BY date, id",
+        [first.isoformat(), *accounts],
+    )
+    buys: list[dict[str, Any]] = []
+    for b in rows:
+        if not b["ticker"] or not fx.usable(b["currency"]):
+            continue
+        amount = abs(Decimal(b["amount"]))
+        if amount <= 0:
+            continue
+        mic = b["mic"] or mics.get(b["security_id"]) or None
+        key = (b["ticker"], mic, b["currency"])
+        if key not in closes_cache:
+            closes_cache[key] = _closes_for(quotes, Wanted(b["ticker"], mic, b["currency"]))
+        closes = closes_cache[key]
+        bought = date.fromisoformat(b["date"])
+        if closes is None or float(closes.on(bought)) <= 0:
+            continue
+        buys.append({"row": b, "date": bought, "closes": closes, "left": float(amount) * fx.rate(b["currency"], bought)})
+    out: dict[str, list[dict[str, Any]]] = {}
+    for e in sorted(sales, key=lambda e: (e["date"], e["id"])):
+        sold, paid = date.fromisoformat(e["date"]), e["_sale_base"]
+        left, allocs = paid, []
+        for buy in buys:
+            if left <= 0.01 or buy["left"] <= 0.01:
+                continue
+            if buy["row"]["account_id"] != e["account_id"] or not (sold <= buy["date"] <= sold + timedelta(days=REINVEST_DAYS)):
+                continue
+            take = min(left, buy["left"])
+            buy["left"] -= take
+            left -= take
+            allocs.append({"info": buy, "share": take / paid})
+        out[e["id"]] = allocs
+    return out
+
+
+def _money_value(fx: _Fx, e: dict[str, Any], allocs: list[dict[str, Any]], d: date) -> float:
+    """What the money from one sale is worth on day d: cash until it was spent, then moving as the purchase did.
+    Anything not matched to a purchase stays cash. Cash moves only with the exchange rate."""
+    local = float(e["_proceeds_local"])
+    rate = fx.rate(e["currency"], d)
+    value = (1 - sum(a["share"] for a in allocs)) * local * rate
+    for a in allocs:
+        info = a["info"]
+        if d < info["date"]:
+            value += a["share"] * local * rate
+        else:
+            bought, currency = info["date"], info["row"]["currency"]
+            at_buy = a["share"] * local * fx.rate(e["currency"], bought)  # the cash that was spent, in the base currency
+            price = float(info["closes"].on(d)) / float(info["closes"].on(bought))
+            value += at_buy * price * fx.rate(currency, d) / fx.rate(currency, bought)
+    return value
 
 
 def _public(entry: dict[str, Any]) -> dict[str, Any]:

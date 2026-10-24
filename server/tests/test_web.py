@@ -892,3 +892,12 @@ def test_performance_has_a_what_ifs_section_that_plays_out_past_sales():
     assert "Missed gain" in page and "Good call" in page and "It is hindsight" in page
     assert "marks" in app[app.index("function perfLineChart"):start]  # a dot on the line at each sale
     assert "svg.chart circle.mark" in (WEB_DIR / "app.css").read_text()
+
+
+def test_what_ifs_lets_you_follow_the_money_or_take_it_as_cash():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewWhatIfs")
+    page = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert "proceeds=${wiFollow ? \"auto\" : \"cash\"}" in page and '[[true, "Follow it"], [false, "As cash"]]' in page
+    assert "wentInto" in page and '"Where the money went"' in page and "What the money became, now" in page
+    assert "sum + (s.proceeds || 0)" in page  # the percentage is of what you were paid

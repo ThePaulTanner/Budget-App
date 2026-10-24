@@ -2357,6 +2357,7 @@
   const WI_VERDICT = { missed_gain: "Missed gain", good_call: "Good call", even: "About even" };
   let wiRange = "1y";
   let wiSmall = false;          // also show sales under the minimum
+  let wiFollow = true;          // follow the money you were paid into what it bought (otherwise: as cash that stayed put)
   const wiOff = new Set();      // sales switched off in the what-if (kept for the visit, not saved)
 
   async function viewWhatIfs(id) {
@@ -2404,7 +2405,7 @@
         const picked = chosen();
         const gaps = gapSeries();
         const gap = gaps.length ? gaps[gaps.length - 1] : 0;
-        const proceeds = picked.reduce((sum, s) => sum + s.proceeds_now, 0);
+        const proceeds = picked.reduce((sum, s) => sum + (s.proceeds || 0), 0);
         const pct = proceeds > 0 ? gap / proceeds : null;
         const almost = pct != null && Math.abs(pct) <= 0.005;
         const words = picked.length === 0 ? "Tick at least one sale below to play it out."
@@ -2426,6 +2427,9 @@
           axis: (v) => money(v, cur, { notation: "compact", maximumFractionDigits: 1 }), readout: (v) => money(v, cur) }));
       };
 
+      const wentInto = (s) => (s.proceeds_mode === "followed" || s.proceeds_mode === "partly"
+        ? s.followed.map((f) => `${f.ticker || f.name} on ${shortDate(f.date)}${f.share < 0.995 ? ` (${Math.round(f.share * 100)}%)` : ""}`).join(", ") + (s.proceeds_mode === "partly" ? ", the rest as cash" : "")
+        : "");
       const open = (s) => {
         const sliced = d.dates.slice(s.start);
         openSheet(
@@ -2433,20 +2437,21 @@
           el("div", { class: "row" }, el("div", { class: "grow", text: "Sold" }), el("div", { class: "amount", text: `${s.quantity} at ${s.price != null ? money(s.price, s.currency) : "—"}` })),
           el("div", { class: "row" }, el("div", { class: "grow", text: "You were paid" }), el("div", { class: "amount", text: money(s.proceeds, cur) })),
           el("div", { class: "row" }, el("div", { class: "grow", text: "If you had kept it, now" }), el("div", { class: "amount", text: money(s.kept_now, cur) })),
-          el("div", { class: "row" }, el("div", { class: "grow", text: "The money as cash, now" }), el("div", { class: "amount", text: money(s.proceeds_now, cur) })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: s.proceeds_mode === "cash" ? "The money as cash, now" : "What the money became, now" }), el("div", { class: "amount", text: money(s.proceeds_now, cur) })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "Where the money went" }), el("div", { class: "amount wi-went", text: wentInto(s) ? `Bought ${wentInto(s)}` : "Held as cash" })),
           el("div", { class: "row" }, el("div", { class: "grow", text: "Difference" }),
             el("div", { class: `amount ${tone(s.gap)}`, text: `${gapText(s.gap)} (${pctSigned(s.gap_percent)}) · ${WI_VERDICT[s.verdict]}` })),
           perfLineChart({ dates: sliced, label: "What the shares would be worth against the money as cash",
-            series: [{ name: "If kept", cls: "p-you", values: s.kept_path }, { name: "As cash", cls: "p-bench", values: s.proceeds_path }],
+            series: [{ name: "If kept", cls: "p-you", values: s.kept_path }, { name: s.proceeds_mode === "cash" ? "As cash" : "What the money did", cls: "p-bench", values: s.proceeds_path }],
             axis: (v) => money(v, cur, { notation: "compact", maximumFractionDigits: 1 }), readout: (v) => money(v, cur) }),
-          el("p", { class: "muted small", text: "The shares are worth what you were paid on the day, then rise and fall with the price. The cash is held as it was (it moves only with the exchange rate)." }),
+          el("p", { class: "muted small", text: `The shares are worth what you were paid on the day, then rise and fall with the price. ${s.proceeds_mode === "cash" ? "The cash is held as it was (it moves only with the exchange rate)." : "The money is followed into what you bought with it; any part not matched to a purchase stays cash."}` }),
           el("div", { class: "actions" }, el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
       };
 
       const rows = [...sells].reverse().map((s) => {
         const head = el("div", { class: "grow" },
           el("div", {}, el("strong", { text: s.ticker || s.name }), el("span", { class: "muted", text: `  ${s.quantity} @ ${s.price != null ? moneyShort(s.price, s.currency) : "—"}` })),
-          el("div", { class: "muted small", text: `${shortDate(s.date)} · ${s.account_name} · paid ${s.proceeds != null ? money(s.proceeds, cur) : "—"}` }));
+          el("div", { class: "muted small", text: `${shortDate(s.date)} · ${s.account_name} · paid ${s.proceeds != null ? money(s.proceeds, cur) : "—"}${wentInto(s) ? ` · into ${wentInto(s)}` : ""}` }));
         if (!s.priced) {
           return el("div", { class: "row wi-row wi-off" }, el("span", { class: "wi-check-gap" }), head, el("div", { class: "muted small wi-result", text: `Not played out: ${s.reason}` }));
         }
@@ -2461,7 +2466,14 @@
       });
 
       const totals = d.totals;
+      const followSeg = el("div", { class: "wi-follow" },
+        el("span", { class: "muted small", text: "What happened to the money you were paid" }),
+        el("div", { class: "seg compact", role: "group", "aria-label": "What happened to the money you were paid" },
+          [[true, "Follow it"], [false, "As cash"]].map(([on, label]) => el("button", { type: "button", "aria-pressed": String(on === wiFollow), text: label,
+            title: on ? "Follow the money into what you bought with it, when you bought in the same account within 5 days" : "Treat it as cash that stayed put",
+            onclick: () => { if (on !== wiFollow) { wiFollow = on; reload(); } } }))));
       const list = el("section", { class: "card" }, el("h3", { text: "Your sales" }),
+        followSeg,
         el("p", { class: "muted small", text: "Tick the sales to include. Untick one to see the picture without it; tap a sale for its own chart." }),
         el("div", { class: "perf-tiles" },
           el("div", { class: "perf-tile" }, el("span", { class: "muted", text: "Missed gains" }), el("strong", { text: String(totals.missed) })),
@@ -2484,7 +2496,7 @@
       el("button", { type: "button", class: "link", text: wiSmall ? "Hide small sales" : "Show small sales", onclick: () => { wiSmall = !wiSmall; reload(); } }));
 
     const load = async () => {
-      const next = await api(scoped(`/api/whatifs?range=${wiRange}&min_amount=${wiSmall ? 0 : 50}`), { timeout: 120000 });
+      const next = await api(scoped(`/api/whatifs?range=${wiRange}&min_amount=${wiSmall ? 0 : 50}&proceeds=${wiFollow ? "auto" : "cash"}`), { timeout: 120000 });
       if (id !== navId) return;
       data = next;
       paint();

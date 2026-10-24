@@ -1241,17 +1241,21 @@ def create_api_app(services: Services) -> FastAPI:
         range: Literal["3m", "6m", "1y", "all"] = "1y",
         min_amount: Annotated[float, Query(ge=0, le=10_000_000)] = 50.0,
         account_id: Annotated[str | None, Query(max_length=100)] = None,
+        proceeds: Literal["auto", "cash"] = "auto",
         person_id: int | None = None,
     ):
         """What if you had not sold: each sale in the period played out against what happened to the money. Every
-        share sold is taken as kept and the proceeds as cash that stayed put (price changes only, at closing prices).
+        share sold is taken as kept; the money you were paid is followed into what you bought with it (buys in the same
+        account within 5 days) when `proceeds` is `auto`, and is otherwise cash that stayed put (price changes only, at
+        closing prices).
         Sales under `min_amount` (in the base currency) are left out. Like Performance, the household's pages are
         worked out ahead of time."""
         if services.quotes is None:
             return {"available": False, "range": range, "message": "Market prices are switched off, so sales cannot be played out."}
         try:
             return services.performance.get_whatifs(
-                range_=range, min_amount=min_amount, person_id=person_id, account_id=account_id, scope=scope_sql(person_id),
+                range_=range, min_amount=min_amount, person_id=person_id, account_id=account_id,
+                scope=scope_sql(person_id), proceeds=proceeds,
             )
         except performance_mod.DataUnavailable as exc:
             return {"available": False, "range": range, "message": f"Market prices are not available right now ({exc}). Try again in a few minutes."}

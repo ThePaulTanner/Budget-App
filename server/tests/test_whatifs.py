@@ -32,6 +32,14 @@ def sell(db, id_, day, ticker, qty, price, currency="CAD", sec="s_a", mic=None, 
     )
 
 
+def buy(db, id_, day, ticker, qty, price, currency="CAD", sec="s_b", mic=None, account="a1"):
+    db.run(
+        "INSERT INTO investment_transactions(id, account_id, security_id, date, name, ticker, type, subtype, quantity, price, "
+        "amount, currency, updated_at, mic) VALUES (?,?,?,?,?,?,'buy','buy',?,?,?,?,'x',?)",
+        (id_, account, sec, day, f"Buy {ticker}", ticker, str(qty), str(price), str(qty * price), currency, mic),
+    )
+
+
 def play(db, quotes, range_="all", **kwargs):
     return whatifs.build(db, quotes, base="CAD", range_=range_, today=TODAY, **kwargs)
 
@@ -182,8 +190,15 @@ def test_whatifs_matches_the_fixture(seeded, services):
 
     client, auth = seeded
     services.quotes = fixture_quotes()
+    # one more sale whose money went straight into a purchase, so the fixture shows a followed sale as well
+    for row in (("wi_sell", "2026-07-01", "Sell VEQT", "sell", "sell", "-10", "44", "-440"), ("wi_buy", "2026-07-03", "Buy VEQT", "buy", "buy", "10", "44.5", "445")):
+        services.db.run(
+            "INSERT INTO investment_transactions(id, account_id, security_id, date, name, ticker, type, subtype, quantity, price, amount, fees, currency, updated_at) "
+            "VALUES (?,?,?,?,?,'VEQT',?,?,?,?,?,'0','CAD','2026-10-02T00:00:00Z')",
+            (row[0], "acc_tfsa", "sec_veqt", row[1], row[2], row[3], row[4], row[5], row[6], row[7]),
+        )
     body = client.get("/api/whatifs?range=all&min_amount=0", headers=auth).json()
-    assert body["available"] is True and len(body["sells"]) == 1
+    assert body["available"] is True and [s["proceeds_mode"] for s in body["sells"]] == ["followed", "cash"]
     if os.environ.get("DUMP_PERFORMANCE_FIXTURE"):
         import json
         import pathlib
@@ -200,3 +215,78 @@ def test_a_zero_price_on_the_sale_day_makes_the_sale_unpriced_instead_of_failing
     r = play(db, FakeQuotes(bars={"AAA": bars(D, closes), "BBB": bars(D, [0.0] * 100)}))
     bad = next(s for s in r["sells"] if s["id"] == "x2")
     assert bad["priced"] is False and "not usable" in bad["reason"] and r["available"] is True
+
+
+# -- following the money into what it bought ------------------------------------------
+
+
+def rising(start, per_day):
+    return [start + per_day * i for i in range(100)]
+
+
+def test_money_put_into_another_holding_is_followed_there(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    holding(db, "a1", "s_b", "BBB", "etf", 10, 2000)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    buy(db, "b1", D[12].isoformat(), "BBB", 10, 100)  # the whole 1,000, two days later
+    quotes = FakeQuotes(bars={"AAA": bars(D, [100.0] * 100), "BBB": bars(D, [100.0] * 12 + rising(100, 1.0)[:88])})
+    s = play(db, quotes)["sells"][0]
+    bought_at, last = 100.0, 100.0 + 87.0
+    assert s["proceeds_mode"] == "followed" and s["followed"][0]["ticker"] == "BBB" and s["followed"][0]["share"] == 1.0
+    assert s["proceeds_now"] == pytest.approx(1000 * last / bought_at, abs=0.01)  # the money rode BBB
+    assert s["kept_now"] == pytest.approx(1000.0, abs=0.01) and s["verdict"] == "good_call"  # AAA stood still
+    cash = play(db, quotes, proceeds="cash")["sells"][0]
+    assert cash["proceeds_mode"] == "cash" and cash["followed"] == [] and cash["proceeds_now"] == 1000.0 and cash["verdict"] == "even"
+
+
+def test_the_kept_line_takes_out_what_the_money_bought(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    holding(db, "a1", "s_b", "BBB", "etf", 10, 2000)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    buy(db, "b1", D[12].isoformat(), "BBB", 10, 100)
+    r = play(db, FakeQuotes(bars={"AAA": bars(D, [100.0] * 100), "BBB": bars(D, rising(100, 1.0))}))
+    # actual (which holds BBB) + AAA kept - BBB: the purchase's growth is out of the picture, not counted twice
+    s = r["sells"][0]
+    assert r["gap_total"][-1] == pytest.approx(s["kept_now"] - s["proceeds_now"], abs=0.02) and r["gap_total"][-1] < -700  # BBB rose 78% after the buy
+    for a, k, g in zip(r["actual"], r["kept"], r["gap_total"]):
+        assert k - a == pytest.approx(g, abs=0.02)
+
+
+def test_money_only_partly_reinvested_keeps_the_rest_as_cash(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    buy(db, "b1", D[11].isoformat(), "BBB", 4, 100)  # 400 of the 1,000
+    quotes = FakeQuotes(bars={"AAA": bars(D, [100.0] * 100), "BBB": bars(D, [100.0] * 12 + [200.0] * 88)})
+    s = play(db, quotes)["sells"][0]
+    assert s["proceeds_mode"] == "partly" and s["followed"][0]["share"] == pytest.approx(0.4)
+    assert s["proceeds_now"] == pytest.approx(600 + 400 * 2, abs=0.01)  # 600 as cash, 400 doubled
+
+
+def test_a_buy_is_matched_once_and_only_inside_the_window_and_account(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    sell(db, "x2", D[11].isoformat(), "AAA", 10, 100)
+    buy(db, "b1", D[12].isoformat(), "BBB", 10, 100)         # 1,000: only enough for the first sale
+    buy(db, "b2", D[30].isoformat(), "BBB", 10, 100)         # far too late
+    buy(db, "b3", D[12].isoformat(), "BBB", 10, 100, account="a2", sec="s_b2")  # another account
+    quotes = FakeQuotes(bars={"AAA": bars(D, [100.0] * 100), "BBB": bars(D, [100.0] * 100)})
+    first, second = play(db, quotes)["sells"]
+    assert [f["id"] for f in first["followed"]] == ["b1"] and second["followed"] == [] and second["proceeds_mode"] == "cash"
+
+
+def test_a_buy_that_cannot_be_priced_leaves_the_money_as_cash(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    buy(db, "b1", D[12].isoformat(), "ZZZ", 10, 100, sec="s_z")
+    s = play(db, FakeQuotes(bars={"AAA": bars(D, [100.0] * 100)}))["sells"][0]
+    assert s["followed"] == [] and s["proceeds_mode"] == "cash"
+
+
+def test_the_two_ways_are_kept_separately_and_the_default_follows_the_money(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    quotes = FakeQuotes(bars={"AAA": bars(D, [100.0] * 100)})
+    svc = PerformanceService(db, lambda: quotes, "CAD", lambda: TODAY)
+    base = dict(range_="all", min_amount=50.0, person_id=None, account_id=None, scope=("", []))
+    assert svc.get_whatifs(**base)["proceeds"] == "auto"
+    assert svc.get_whatifs(**base, proceeds="cash")["proceeds"] == "cash"

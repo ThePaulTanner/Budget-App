@@ -719,17 +719,17 @@ class PerformanceService:
 
     def get_whatifs(
         self, *, range_: str, min_amount: float, person_id: int | None, account_id: str | None, scope: tuple[str, list[Any]],
-        refresh: bool = False,
+        proceeds: str = "auto", refresh: bool = False,
     ) -> dict[str, Any]:
         """The What ifs page, kept ready the same way."""
         from . import whatifs
 
-        key = ("whatifs", range_, round(min_amount, 2), person_id, account_id)
+        key = ("whatifs", range_, round(min_amount, 2), person_id, account_id, proceeds)
         return self._cached(
             key,
             lambda: whatifs.build(
                 self.db, self.get_quotes(), base=self.base, range_=range_, today=self.get_today(), scope=scope,
-                account_id=account_id, min_amount=min_amount,
+                account_id=account_id, min_amount=min_amount, proceeds=proceeds,
             ),
             refresh,
         )
@@ -754,7 +754,7 @@ class PerformanceService:
         if key[0] == "whatifs":
             from .whatifs import DEFAULT_MIN_AMOUNT
 
-            return key[3] is None and key[4] is None and key[2] == round(DEFAULT_MIN_AMOUNT, 2)
+            return key[3] is None and key[4] is None and key[2] == round(DEFAULT_MIN_AMOUNT, 2) and key[5] == "auto"
         return key[3] is None and key[2] == round(DEFAULT_RISK_FREE, 4)
 
     def _forget_old(self) -> None:

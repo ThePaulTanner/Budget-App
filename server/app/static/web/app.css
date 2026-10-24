@@ -973,3 +973,5 @@ svg.chart circle.mark { fill: var(--surface); stroke: var(--p-you); stroke-width
 .wi-row.wi-off { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; }
 .wi-row.wi-off .wi-result { grid-column: 2; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .wi-row .grow { min-width: 0; }
+.wi-follow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 2px 0 10px; }
+.wi-went { text-align: right; max-width: 60%; }
