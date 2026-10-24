@@ -159,3 +159,27 @@ def test_an_empty_answer_does_not_wipe_recent_activity(services, plaid):
     plaid.pages = [page(cursor="c2")]
     run(services, services.db.one("SELECT * FROM items"))
     assert [r["id"] for r in services.db.query("SELECT id FROM investment_transactions")] == ["pit_1"]
+
+
+def test_sync_keeps_the_market_a_security_trades_on(services, plaid):
+    item = setup(services, plaid, [plaid_tx(1), plaid_tx(2, security_id="s2")])
+    plaid.investment_txns["securities"] = [
+        {"security_id": "s1", "name": "Vanguard", "ticker_symbol": "VEQT", "market_identifier_code": "XTSE"},
+        {"security_id": "s2", "name": "Mystery", "ticker_symbol": "MYST"},
+    ]
+    run(services, item)
+    mics = {r["id"]: r["mic"] for r in services.db.query("SELECT id, mic FROM investment_transactions")}
+    assert mics == {"pit_1": "XTSE", "pit_2": ""}  # '' = Plaid gave none, so it is not asked for again
+
+
+def test_rows_saved_before_the_market_was_kept_are_read_again_once(services, plaid):
+    item = setup(services, plaid, [plaid_tx(1)])
+    run(services, item)
+    services.db.run("UPDATE investment_transactions SET mic = NULL")  # as saved by an older release
+    plaid.pages = [page(cursor="c2")]
+    run(services, services.db.one("SELECT * FROM items"))
+    plaid.pages = [page(cursor="c3")]
+    run(services, services.db.one("SELECT * FROM items"))
+    first, again, later = (c["start"] for c in plaid.investment_calls[:3])
+    assert again == first and later > first  # the whole window once, then the short one again
+    assert services.db.one("SELECT mic FROM investment_transactions")["mic"] == ""

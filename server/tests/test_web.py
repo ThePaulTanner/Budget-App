@@ -876,3 +876,19 @@ def test_performance_page_shows_cash_as_part_of_the_math():
     assert 'el("h3", { text: "Cash" })' in perf and "Effect of cash" in perf and "Cash effect" in perf
     assert 'p.cash ? (p.ticker && el("span", { class: "muted small", text: "  cash" }))' in perf  # cash is not "no price history"
     assert "svg.chart .line.p-invested" in (WEB_DIR / "app.css").read_text()
+
+
+def test_performance_has_a_what_ifs_section_that_plays_out_past_sales():
+    app = (WEB_DIR / "app.js").read_text()
+    assert 'PERF_SECTIONS = [["results", "Results"], ["whatifs", "What ifs"]]' in app
+    assert 'perfSection === "whatifs" ? viewWhatIfs(id) : viewPerformance(id)' in app
+    assert app.count("perfSections()") >= 4  # the switch sits at the top of both sections
+    start = app.index("async function viewWhatIfs")
+    page = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert "/api/whatifs?range=" in page and "bar.replaceChildren(invTabs(), rangeSeg);" in page
+    # ticking a sale on or off recomputes the headline and chart in the page, from each sale's own paths
+    assert "wiOff.has(s.id)" in page and "s.kept_path.forEach" in page and 'type: "checkbox"' in page
+    # the verdict is in words as well as colour, and the page says it is hindsight
+    assert "Missed gain" in page and "Good call" in page and "It is hindsight" in page
+    assert "marks" in app[app.index("function perfLineChart"):start]  # a dot on the line at each sale
+    assert "svg.chart circle.mark" in (WEB_DIR / "app.css").read_text()

@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 SCHEMA = """
 CREATE TABLE users (
@@ -225,7 +225,8 @@ CREATE TABLE investment_transactions (
   amount TEXT NOT NULL,
   fees TEXT,
   currency TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  mic TEXT
 );
 CREATE INDEX investment_transactions_account ON investment_transactions(account_id, date DESC);
 CREATE INDEX investment_transactions_security ON investment_transactions(security_id);
@@ -427,6 +428,12 @@ CREATE TABLE networth_adjust (
   investments TEXT NOT NULL,
   PRIMARY KEY (date, currency, person_id)
 );
+""",
+
+    # The market a traded security is listed on (Plaid's market identifier code), so a security that has since
+    # been sold out of the account can still be priced. NULL = not read yet, '' = Plaid gave none.
+    17: """
+ALTER TABLE investment_transactions ADD COLUMN mic TEXT;
 """}
 
 

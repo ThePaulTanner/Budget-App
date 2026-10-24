@@ -1892,7 +1892,13 @@
   const invTabs = () => el("div", { class: "seg", role: "group", "aria-label": "Investments sections" },
     INV_TABS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === invTab), text: label,
       onclick: () => { location.hash = `#/investments${key === "holdings" ? "" : `?tab=${key}`}`; } })));
-  const viewInvestments = (id) => (invTab === "performance" ? viewPerformance(id) : viewHoldings(id));
+  // Inside Performance: the results, or playing out what would have happened if you had not sold.
+  let perfSection = "results";
+  const PERF_SECTIONS = [["results", "Results"], ["whatifs", "What ifs"]];
+  const perfSections = () => el("div", { class: "seg perf-sections", role: "group", "aria-label": "Performance sections" },
+    PERF_SECTIONS.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === perfSection), text: label,
+      onclick: () => { if (key !== perfSection) { perfSection = key; guard(viewInvestments(++navId)); } } })));
+  const viewInvestments = (id) => (invTab === "performance" ? (perfSection === "whatifs" ? viewWhatIfs(id) : viewPerformance(id)) : viewHoldings(id));
 
   async function viewHoldings(id) {
     $("page-sub").textContent = PAGES.investments[1];
@@ -2065,7 +2071,7 @@
   const tone = (v) => (v == null || v === 0 ? "" : v > 0 ? "income" : "neg");
 
   // A two-line (you / benchmark) chart over dates. `valueText(v)` words a value for the readout and axis.
-  function perfLineChart({ dates, series, axis, readout, area = false, label }) {
+  function perfLineChart({ dates, series, axis, readout, area = false, label, marks = [] }) {
     const W = 640, H = 230, L = 52, R = 12, T = 12, B = 26;
     const n = dates.length;
     const wrap = el("div");
@@ -2097,6 +2103,15 @@
       const t = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle" });
       t.textContent = parseDay(dates[i]).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
       chart.append(t);
+    }
+    for (const m of marks) {   // a dot on the first line where something happened, with its note on hover
+      let i = dates.findIndex((d) => d >= m.date);
+      if (i < 0) i = n - 1;
+      const mark = svg("circle", { class: "mark", cx: x(i), cy: y(series[0].values[i]), r: 4.5 });
+      const tip = svg("title");
+      tip.textContent = m.label;
+      mark.append(tip);
+      chart.append(mark);
     }
     const dots = series.map((s) => svg("circle", { r: 3.5, class: `dot ${s.cls}` }));
     chart.append(...dots);
@@ -2197,7 +2212,7 @@
     const paint = () => {
       const d = data;
       if (!d.available) {
-        view().replaceChildren(viewerNote(), el("section", { class: "card" }, el("h3", { text: "Performance" }), el("p", { class: "empty", text: d.message || "Performance is not available right now." })));
+        view().replaceChildren(viewerNote(), perfSections(), el("section", { class: "card" }, el("h3", { text: "Performance" }), el("p", { class: "empty", text: d.message || "Performance is not available right now." })));
         return;
       }
       fillBench(d.benchmarks);
@@ -2323,12 +2338,153 @@
           el("p", { text: g.text })))),
         el("p", { class: "muted small", text: "General observations from the numbers above, not personal financial advice. Past results do not predict future ones." }));
 
-      view().replaceChildren(viewerNote(), note, tiles, growth, down, score, ...(vs ? [vs] : []), months, posTable, spread, ...(cashCard ? [cashCard] : []), ...(income ? [income] : []), ...(guide ? [guide] : []), ...(coverage ? [coverage] : []));
+      view().replaceChildren(viewerNote(), perfSections(), note, tiles, growth, down, score, ...(vs ? [vs] : []), months, posTable, spread, ...(cashCard ? [cashCard] : []), ...(income ? [income] : []), ...(guide ? [guide] : []), ...(coverage ? [coverage] : []));
     };
 
     const load = async () => {
       const q = new URLSearchParams({ range: perfRange, benchmark: perfBench, risk_free: String(perfRiskFree) });
       const next = await api(scoped(`/api/performance?${q}`), { timeout: 120000 });
+      if (id !== navId) return;
+      data = next;
+      paint();
+    };
+    await load();
+  }
+
+  // ---------------------------------------------------------------- Investments: Performance > What ifs
+
+  const WI_RANGES = [["3m", "3M"], ["6m", "6M"], ["1y", "1Y"], ["all", "All"]];
+  const WI_VERDICT = { missed_gain: "Missed gain", good_call: "Good call", even: "About even" };
+  let wiRange = "1y";
+  let wiSmall = false;          // also show sales under the minimum
+  const wiOff = new Set();      // sales switched off in the what-if (kept for the visit, not saved)
+
+  async function viewWhatIfs(id) {
+    $("page-sub").textContent = "What if you had not sold?";
+    let data = null;
+    const rangeSeg = el("div", { class: "seg wide period-seg", role: "group", "aria-label": "Sales from the last" },
+      WI_RANGES.map(([key, label]) => el("button", { type: "button", "aria-pressed": String(key === wiRange), text: label,
+        onclick: () => { wiRange = key; reload(); } })));
+    const bar = $("subtabs");
+    bar.replaceChildren(invTabs(), rangeSeg);
+    bar.hidden = false;
+    measureBars();
+    const syncRange = () => rangeSeg.querySelectorAll("button").forEach((btn, i) => btn.setAttribute("aria-pressed", String(WI_RANGES[i][0] === wiRange)));
+    const reload = async () => {
+      syncRange();
+      view().replaceChildren(viewerNote(), perfSections(), el("p", { class: "empty", text: "Playing out your sales…" }));
+      try { await load(); } catch (err) { if (err instanceof SignedOut) showLogin(); else if (id === navId) view().replaceChildren(el("p", { class: "empty error", role: "alert", text: err.message })); }
+    };
+
+    const paint = () => {
+      const d = data;
+      if (!d.available) {
+        const small = d.coverage && d.coverage.hidden_small > 0;
+        view().replaceChildren(viewerNote(), perfSections(), el("section", { class: "card" }, el("h3", { text: "What ifs" }),
+          el("p", { class: "empty", text: d.message || "This is not available right now." }),
+          small && smallToggle(d)));
+        return;
+      }
+      const cur = d.currency;
+      const sells = d.sells;
+      const priced = sells.filter((s) => s.priced);
+      const chosen = () => priced.filter((s) => !wiOff.has(s.id));
+      const sign = (v) => (v > 0 ? "+" : v < 0 ? MINUS : "");
+      const gapText = (v) => `${sign(v)}${money(Math.abs(v), cur)}`;
+      // The what-if is the sales that are ticked: each one's kept value less what the money did, summed per date.
+      const gapSeries = () => {
+        const out = new Array(d.dates.length).fill(0);
+        for (const s of chosen()) s.kept_path.forEach((k, j) => { out[s.start + j] += k - s.proceeds_path[j]; });
+        return out;
+      };
+
+      const hero = el("section", { class: "card wi-hero" });
+      const chartBox = el("div");
+      const drawHero = () => {
+        const picked = chosen();
+        const gaps = gapSeries();
+        const gap = gaps.length ? gaps[gaps.length - 1] : 0;
+        const proceeds = picked.reduce((sum, s) => sum + s.proceeds_now, 0);
+        const pct = proceeds > 0 ? gap / proceeds : null;
+        const almost = pct != null && Math.abs(pct) <= 0.005;
+        const words = picked.length === 0 ? "Tick at least one sale below to play it out."
+          : almost ? "Keeping what you sold would have left you about where you are."
+          : gap > 0 ? `Keeping what you sold would have left you ${money(gap, cur)} better off today.`
+          : `Selling was right: keeping it would have left you ${money(-gap, cur)} worse off today.`;
+        hero.replaceChildren(
+          el("h3", { text: `If you had kept ${picked.length === sells.length ? "everything" : `${picked.length} of ${sells.length} sales`} you sold` }),
+          el("div", { class: "wi-figure" },
+            el("strong", { class: `wi-big ${almost ? "" : tone(gap)}`, text: picked.length ? gapText(gap) : "—" }),
+            pct != null && el("span", { class: "muted", text: `${pctSigned(pct)} of the ${money(proceeds, cur)} you were paid, as it stands today` })),
+          el("p", { text: words }));
+        const marks = picked.map((s) => ({ date: s.date, label: `${shortDate(s.date)}: sold ${s.quantity} ${s.ticker || s.name}` }));
+        const series = d.actual
+          ? [{ name: "What happened", cls: "p-you", values: d.actual }, { name: "If you had kept them", cls: "p-invested", values: d.actual.map((a, i) => a + gaps[i]) }]
+          : [{ name: "Kept, less what happened to the money", cls: "p-you", values: gaps }];
+        chartBox.replaceChildren(perfLineChart({
+          dates: d.dates, series, marks, label: "Your investment accounts as they were, against as they would have been had you kept what you sold",
+          axis: (v) => money(v, cur, { notation: "compact", maximumFractionDigits: 1 }), readout: (v) => money(v, cur) }));
+      };
+
+      const open = (s) => {
+        const sliced = d.dates.slice(s.start);
+        openSheet(
+          el("h2", { text: `${s.ticker || s.name}, sold ${shortDate(s.date)}` }),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "Sold" }), el("div", { class: "amount", text: `${s.quantity} at ${s.price != null ? money(s.price, s.currency) : "—"}` })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "You were paid" }), el("div", { class: "amount", text: money(s.proceeds, cur) })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "If you had kept it, now" }), el("div", { class: "amount", text: money(s.kept_now, cur) })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "The money as cash, now" }), el("div", { class: "amount", text: money(s.proceeds_now, cur) })),
+          el("div", { class: "row" }, el("div", { class: "grow", text: "Difference" }),
+            el("div", { class: `amount ${tone(s.gap)}`, text: `${gapText(s.gap)} (${pctSigned(s.gap_percent)}) · ${WI_VERDICT[s.verdict]}` })),
+          perfLineChart({ dates: sliced, label: "What the shares would be worth against the money as cash",
+            series: [{ name: "If kept", cls: "p-you", values: s.kept_path }, { name: "As cash", cls: "p-bench", values: s.proceeds_path }],
+            axis: (v) => money(v, cur, { notation: "compact", maximumFractionDigits: 1 }), readout: (v) => money(v, cur) }),
+          el("p", { class: "muted small", text: "The shares are worth what you were paid on the day, then rise and fall with the price. The cash is held as it was (it moves only with the exchange rate)." }),
+          el("div", { class: "actions" }, el("button", { type: "button", class: "secondary", text: "Close", onclick: closeSheet })));
+      };
+
+      const rows = [...sells].reverse().map((s) => {
+        const head = el("div", { class: "grow" },
+          el("div", {}, el("strong", { text: s.ticker || s.name }), el("span", { class: "muted", text: `  ${s.quantity} @ ${s.price != null ? moneyShort(s.price, s.currency) : "—"}` })),
+          el("div", { class: "muted small", text: `${shortDate(s.date)} · ${s.account_name} · paid ${s.proceeds != null ? money(s.proceeds, cur) : "—"}` }));
+        if (!s.priced) {
+          return el("div", { class: "row wi-row wi-off" }, el("span", { class: "wi-check-gap" }), head, el("div", { class: "muted small wi-result", text: `Not played out: ${s.reason}` }));
+        }
+        const check = el("input", { type: "checkbox", class: "wi-check", checked: !wiOff.has(s.id), "aria-label": `Include the ${s.ticker || s.name} sale of ${shortDate(s.date)} in the what-if`,
+          onchange: (e) => { if (e.target.checked) wiOff.delete(s.id); else wiOff.add(s.id); drawHero(); } });
+        const result = el("div", { class: "wi-result" },
+          el("strong", { class: tone(s.gap), text: gapText(s.gap) }),
+          el("div", { class: "muted small", text: `${pctSigned(s.gap_percent)} · ${WI_VERDICT[s.verdict]}` }));
+        const body = el("div", { class: "wi-body click", role: "button", tabindex: 0, onclick: () => open(s),
+          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(s); } } }, head, result);
+        return el("div", { class: "row wi-row" }, check, body);
+      });
+
+      const totals = d.totals;
+      const list = el("section", { class: "card" }, el("h3", { text: "Your sales" }),
+        el("p", { class: "muted small", text: "Tick the sales to include. Untick one to see the picture without it; tap a sale for its own chart." }),
+        el("div", { class: "perf-tiles" },
+          el("div", { class: "perf-tile" }, el("span", { class: "muted", text: "Missed gains" }), el("strong", { text: String(totals.missed) })),
+          el("div", { class: "perf-tile" }, el("span", { class: "muted", text: "Good calls" }), el("strong", { text: String(totals.good) })),
+          el("div", { class: "perf-tile" }, el("span", { class: "muted", text: "About even" }), el("strong", { text: String(totals.even) }))),
+        el("div", { class: "wi-list" }, rows));
+
+      const cov = d.coverage;
+      const notes = el("section", { class: "card" }, el("h3", { text: "How to read this" }),
+        el("p", { class: "muted small", text: d.assumption }),
+        el("p", { class: "muted small", text: "It is hindsight: of course it looks better to have held what went up. It also leaves out the dividends those shares would have paid, any tax on the sale, and the price you actually got, so use it to learn from the pattern, not to second-guess one sale. Only sales from about the last two years are known." }),
+        !d.actual && el("p", { class: "muted small", text: "The chart shows only the difference: the value of your accounts on past days could not be worked out." }),
+        cov.hidden_small > 0 && smallToggle(d));
+      view().replaceChildren(viewerNote(), perfSections(), hero, el("section", { class: "card" }, chartBox), list, notes);
+      drawHero();
+    };
+
+    const smallToggle = (d) => el("p", { class: "muted small" },
+      d.coverage.hidden_small > 0 ? `${d.coverage.hidden_small} sale${d.coverage.hidden_small === 1 ? "" : "s"} under ${money(d.min_amount, d.currency)} ${d.coverage.hidden_small === 1 ? "is" : "are"} hidden. ` : "",
+      el("button", { type: "button", class: "link", text: wiSmall ? "Hide small sales" : "Show small sales", onclick: () => { wiSmall = !wiSmall; reload(); } }));
+
+    const load = async () => {
+      const next = await api(scoped(`/api/whatifs?range=${wiRange}&min_amount=${wiSmall ? 0 : 50}`), { timeout: 120000 });
       if (id !== navId) return;
       data = next;
       paint();

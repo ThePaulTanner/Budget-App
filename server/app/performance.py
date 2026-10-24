@@ -695,17 +695,46 @@ class PerformanceService:
             "SELECT COUNT(*) AS n, COALESCE(MAX(h.updated_at), '') AS u, "
             "COALESCE(SUM(CAST(h.quantity AS REAL)), 0) AS q, COALESCE(SUM(CAST(h.value AS REAL)), 0) AS v, "
             "(SELECT COALESCE(group_concat(id), '') FROM accounts WHERE hidden = 1) AS hidden, "
-            "(SELECT COALESCE(group_concat(account_id || ':' || person_id), '') FROM account_owners) AS owners FROM holdings h"
+            "(SELECT COALESCE(group_concat(account_id || ':' || person_id), '') FROM account_owners) AS owners, "
+            "(SELECT COUNT(*) FROM investment_transactions) AS activity, "
+            "(SELECT COALESCE(MAX(date), '') FROM investment_transactions) AS last_activity FROM holdings h"
         )[0]
-        return f"{row['n']}|{row['u']}|{row['q']}|{row['v']}|{row['hidden']}|{row['owners']}|{self.get_today().isoformat()}"
+        return (f"{row['n']}|{row['u']}|{row['q']}|{row['v']}|{row['hidden']}|{row['owners']}|{row['activity']}|"
+                f"{row['last_activity']}|{self.get_today().isoformat()}")
 
     def get(
         self, *, range_: str, benchmark: str, risk_free: float, person_id: int | None, scope: tuple[str, list[Any]], refresh: bool = False
     ) -> dict[str, Any]:
         """The page, from the ready answers when they are current (`refresh` works it out again regardless, which
         also renews each symbol's history once that has aged). Raises DataUnavailable like `build`."""
-        quotes = self.get_quotes()
         key = (range_, benchmark, round(risk_free, 4), person_id)  # 0.01 of a percent is as fine as the page asks
+        return self._cached(
+            key,
+            lambda: build(
+                self.db, self.get_quotes(), base=self.base, range_=range_, benchmark=benchmark, risk_free=risk_free,
+                today=self.get_today(), scope=scope,
+            ),
+            refresh,
+        )
+
+    def get_whatifs(
+        self, *, range_: str, min_amount: float, person_id: int | None, account_id: str | None, scope: tuple[str, list[Any]],
+        refresh: bool = False,
+    ) -> dict[str, Any]:
+        """The What ifs page, kept ready the same way."""
+        from . import whatifs
+
+        key = ("whatifs", range_, round(min_amount, 2), person_id, account_id)
+        return self._cached(
+            key,
+            lambda: whatifs.build(
+                self.db, self.get_quotes(), base=self.base, range_=range_, today=self.get_today(), scope=scope,
+                account_id=account_id, min_amount=min_amount,
+            ),
+            refresh,
+        )
+
+    def _cached(self, key: tuple, compute: Callable[[], dict[str, Any]], refresh: bool) -> dict[str, Any]:
         stamp = self._fingerprint()
         with self._guard:
             lock = self._locks.setdefault(key, threading.Lock())
@@ -713,14 +742,20 @@ class PerformanceService:
             held = self._results.get(key)
             if not refresh and held is not None and held[1] == stamp and time.monotonic() - held[0] < RESULT_TTL:
                 return held[2]
-            result = build(
-                self.db, quotes, base=self.base, range_=range_, benchmark=benchmark, risk_free=risk_free,
-                today=self.get_today(), scope=scope,
-            )
+            result = compute()
             if result.get("available"):
                 self._results[key] = (time.monotonic(), stamp, result)
                 self._forget_old()
             return result
+
+    @staticmethod
+    def _is_warmed(key: tuple) -> bool:
+        """The household's pages at their default settings are the ones the warmer renews: never dropped."""
+        if key[0] == "whatifs":
+            from .whatifs import DEFAULT_MIN_AMOUNT
+
+            return key[3] is None and key[4] is None and key[2] == round(DEFAULT_MIN_AMOUNT, 2)
+        return key[3] is None and key[2] == round(DEFAULT_RISK_FREE, 4)
 
     def _forget_old(self) -> None:
         """Pages worked out on request (another person, an unusual rate) are dropped once they have expired, so the
@@ -728,7 +763,7 @@ class PerformanceService:
         now = time.monotonic()
         with self._guard:
             for key, (made, _, _) in list(self._results.items()):
-                if now - made >= RESULT_TTL * 2 and (key[3] is not None or key[2] != round(DEFAULT_RISK_FREE, 4)):
+                if now - made >= RESULT_TTL * 2 and not self._is_warmed(key):
                     del self._results[key]
                     self._locks.pop(key, None)
 
@@ -750,7 +785,21 @@ class PerformanceService:
                 break
             except Exception:
                 log.exception("Could not get the %s performance page ready", range_)
+        self._warm_whatifs()
         return made
+
+    def _warm_whatifs(self) -> None:
+        from .whatifs import DEFAULT_MIN_AMOUNT, RANGES as WHATIF_RANGES
+
+        for range_ in WHATIF_RANGES:
+            if self._stop.is_set():
+                return
+            try:
+                self.get_whatifs(range_=range_, min_amount=DEFAULT_MIN_AMOUNT, person_id=None, account_id=None, scope=("", []), refresh=True)
+            except DataUnavailable:
+                return
+            except Exception:
+                log.exception("Could not get the %s what-ifs page ready", range_)
 
     def start(self) -> None:
         if self._thread is None:
