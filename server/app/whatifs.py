@@ -121,6 +121,8 @@ def build(
                 closes_cache[key] = _closes_for(quotes, Wanted(t["ticker"], mic, currency))
             if closes_cache[key] is None:
                 entry["reason"] = "Yahoo Finance has no price history for it"
+            elif float(closes_cache[key].on(date.fromisoformat(t["date"]))) <= 0:
+                entry["reason"] = "its price history is not usable around the sale"
             else:
                 entry["_closes"] = closes_cache[key]
                 entry["priced"] = True

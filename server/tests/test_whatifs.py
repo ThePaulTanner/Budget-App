@@ -190,3 +190,13 @@ def test_whatifs_matches_the_fixture(seeded, services):
 
         pathlib.Path(__file__).parents[2].joinpath("api-fixtures/whatifs.json").write_text(json.dumps(body, indent=2) + "\n")
     assert_matches(body, fixture_float("whatifs.json"))
+
+
+def test_a_zero_price_on_the_sale_day_makes_the_sale_unpriced_instead_of_failing(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 5, 600)
+    sell(db, "x1", D[10].isoformat(), "AAA", 10, 100)
+    sell(db, "x2", D[20].isoformat(), "BBB", 10, 100, sec="s_b")
+    closes = [100.0] * 100
+    r = play(db, FakeQuotes(bars={"AAA": bars(D, closes), "BBB": bars(D, [0.0] * 100)}))
+    bad = next(s for s in r["sells"] if s["id"] == "x2")
+    assert bad["priced"] is False and "not usable" in bad["reason"] and r["available"] is True
