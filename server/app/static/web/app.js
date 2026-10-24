@@ -2034,6 +2034,10 @@
   // Plain-language meaning of each figure, shown when you tap its name (and as a hover title).
   const PERF_HELP = {
     total_return: "How much the positions grew (or shrank) over the period, from the first day shown to the last.",
+    cash_effect: "Your return with cash minus the return of the invested part alone, in percentage points. Negative: cash held the result back. Positive: it cushioned a fall.",
+    cash_share: "How much of the money is cash.",
+    cash_value: "The cash held today, in the base currency.",
+    cash_invested: "What the investments alone returned over the period, leaving the cash out.",
     cagr: "Total return turned into a yearly rate, so periods of different lengths can be compared. Left blank under 30 days: it would mean nothing.",
     volatility: "How much the value swings day to day, scaled to a year. Higher means a bumpier ride. Typical stock funds sit around 12–20%.",
     sharpe: "Return above the risk-free rate for each unit of volatility. Higher is better; above 1 is good, below 0.5 is weak. It lets you compare a calm portfolio with a wild one fairly.",
@@ -2224,13 +2228,15 @@
         metric("volatility", "Volatility", pctPlain(m.volatility)),
         metric("sharpe", "Sharpe", ratio(m.sharpe)),
         metric("max_drawdown", "Biggest fall", pctSigned(m.max_drawdown), tone(m.max_drawdown)),
-        hasBench && metric("excess_return", `vs ${bn}`, pctSigned(rel.excess_return), tone(rel.excess_return)));
+        hasBench && metric("excess_return", `vs ${bn}`, pctSigned(rel.excess_return), tone(rel.excess_return)),
+        d.cash && d.cash.effect != null && metric("cash_effect", "Cash effect", `${d.cash.effect > 0 ? "+" : d.cash.effect < 0 ? MINUS : ""}${Math.abs(d.cash.effect * 100).toFixed(1)} pts`, tone(d.cash.effect)));
 
       const growth = el("section", { class: "card" }, el("h3", { text: "Growth of 100" }),
         perfLineChart({ dates: d.dates, label: "Growth of 100: your positions against the benchmark",
-          series: [{ name: "You", cls: "p-you", values: d.portfolio }, ...(hasBench ? [{ name: bn, cls: "p-bench", values: d.benchmark_index }] : [])],
+          series: [{ name: "You", cls: "p-you", values: d.portfolio }, ...(hasBench ? [{ name: bn, cls: "p-bench", values: d.benchmark_index }] : []),
+            ...(d.invested_index ? [{ name: "Without cash", cls: "p-invested", values: d.invested_index }] : [])],
           axis: (v) => v.toFixed(0), readout: (v) => v.toFixed(1) }),
-        el("p", { class: "muted small", text: "Both lines start at 100 on the first day, so the gap between them is the difference in growth." }));
+        el("p", { class: "muted small", text: `All lines start at 100 on the first day, so the gap between them is the difference in growth.${d.invested_index ? " \u201CWithout cash\u201D is the invested part alone: the gap to \u201CYou\u201D is what holding cash did." : ""}` }));
 
       const down = el("section", { class: "card" }, el("h3", { text: "Falls from the high" }),
         perfLineChart({ dates: d.dates, area: true, label: "How far below its previous high each line was",
@@ -2277,7 +2283,7 @@
         el("div", { class: "table-wrap" }, el("table", { class: "acct-table perf-table" },
           el("thead", {}, el("tr", {}, [["Position", ""], ["Weight", "num"], ["Return", "num"], ["Added", "num"], ["Volatility", "num"], ["Fall", "num"]].map(([t, c]) => el("th", { scope: "col", class: c, text: t })))),
           el("tbody", {}, d.positions.map((p) => el("tr", {},
-            el("td", { title: p.name }, el("strong", { text: p.ticker || p.name }), !p.priced && el("span", { class: "muted small", text: "  no price history" })),
+            el("td", { title: p.name }, el("strong", { text: p.ticker || p.name }), p.cash ? (p.ticker && el("span", { class: "muted small", text: "  cash" })) : !p.priced && el("span", { class: "muted small", text: "  no price history" })),
             el("td", { class: "num", text: pctPlain(p.weight) }),
             el("td", { class: `num ${tone(p.return)}`, text: pctSigned(p.return) }),
             el("td", { class: `num ${tone(p.contribution)}`, text: pctSigned(p.contribution) }),
@@ -2292,6 +2298,15 @@
           el("div", { class: "perf-tile", title: "Share in the three largest positions." }, el("span", { class: "muted", text: "Top 3" }), el("strong", { text: pctPlain(c.top3, 0) })),
           el("div", { class: "perf-tile", title: "How many equal-sized positions would be as concentrated as this. Lower than the number you hold means a few dominate." }, el("span", { class: "muted", text: "Effective holdings" }), el("strong", { text: c.effective_holdings == null ? "—" : c.effective_holdings.toFixed(1) }))),
         allocationBar("By type", d.allocation.by_type), d.allocation.by_currency.length > 1 && allocationBar("By currency", d.allocation.by_currency), d.allocation.by_account.length > 1 && allocationBar("By account", d.allocation.by_account));
+
+      const cashCard = d.cash && el("section", { class: "card" }, el("h3", { text: "Cash" }),
+        el("div", { class: "perf-tiles" },
+          metric("cash_share", "Share of the money", pctPlain(d.cash.share, 1)),
+          metric("cash_value", "Cash held", moneyShort(d.cash.value, d.currency)),
+          d.cash.invested_return != null && metric("cash_invested", "Invested part alone", pctSigned(d.cash.invested_return), tone(d.cash.invested_return)),
+          d.cash.effect != null && metric("cash_effect", "Effect of cash", `${d.cash.effect > 0 ? "+" : d.cash.effect < 0 ? MINUS : ""}${Math.abs(d.cash.effect * 100).toFixed(1)} pts`, tone(d.cash.effect))),
+        el("p", { class: "muted small", text: "Cash is counted in every figure on this page, so it dilutes the return, the swings and the falls like any other choice. The effect is your return with cash minus the return of the invested part alone: negative means cash held the result back over this period, positive means it cushioned a fall." }),
+        Object.entries(d.cash.interest || {}).map(([k, v]) => el("p", { class: "muted small", text: `Interest in the last 12 months: ${moneyShort(v.amount, k)}${v.yield != null ? ` (${pctPlain(v.yield, 2)} of the ${k} cash)` : ""}. It is not in the price-only figures above.` })));
 
       const incomeCards = Object.entries(d.income || {});
       const income = incomeCards.length > 0 && el("section", { class: "card" }, el("h3", { text: "Income and fees, last 12 months" }),
@@ -2308,7 +2323,7 @@
           el("p", { text: g.text })))),
         el("p", { class: "muted small", text: "General observations from the numbers above, not personal financial advice. Past results do not predict future ones." }));
 
-      view().replaceChildren(viewerNote(), note, tiles, growth, down, score, ...(vs ? [vs] : []), months, posTable, spread, ...(income ? [income] : []), ...(guide ? [guide] : []), ...(coverage ? [coverage] : []));
+      view().replaceChildren(viewerNote(), note, tiles, growth, down, score, ...(vs ? [vs] : []), months, posTable, spread, ...(cashCard ? [cashCard] : []), ...(income ? [income] : []), ...(guide ? [guide] : []), ...(coverage ? [coverage] : []));
     };
 
     const load = async () => {

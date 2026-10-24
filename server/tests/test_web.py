@@ -866,3 +866,13 @@ def test_investments_has_holdings_and_performance_tabs():
     assert "not what your account actually earned" in perf
     css = (WEB_DIR / "app.css").read_text()
     assert ".guide-watch" in css and ".perf-tiles" in css and "svg.chart .line.p-bench" in css
+
+
+def test_performance_page_shows_cash_as_part_of_the_math():
+    app = (WEB_DIR / "app.js").read_text()
+    start = app.index("async function viewPerformance")
+    perf = app[start:app.index("// ---------------------------------------------------------------- Merchants", start)]
+    assert 'name: "Without cash"' in perf and "d.invested_index" in perf  # the invested part alone is a third line
+    assert 'el("h3", { text: "Cash" })' in perf and "Effect of cash" in perf and "Cash effect" in perf
+    assert 'p.cash ? (p.ticker && el("span", { class: "muted small", text: "  cash" }))' in perf  # cash is not "no price history"
+    assert "svg.chart .line.p-invested" in (WEB_DIR / "app.css").read_text()
