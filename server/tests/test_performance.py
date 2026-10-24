@@ -472,7 +472,7 @@ def test_a_change_of_owner_makes_the_ready_pages_stale(db):
 
 def test_cash_in_another_currency_moves_with_the_exchange_rate_and_counts_in_coverage(db):
     holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
-    holding(db, "a2", "s_usd", None, "cash", 500, 700, currency="USD")  # US$500, 1.40 CAD each today
+    holding(db, "a2", "s_usd", None, "cash", 500, 500, currency="USD")  # US$500
     d = days(100)
     rates = [1.20 + 0.20 * i / 99 for i in range(100)]
     quotes = FakeQuotes(bars={"AAA": bars(d, [100.0] * 100)}, symbols={"USDCAD=X": bars(d, rates), "^GSPC": bars(d, [100.0] * 100)})
@@ -499,3 +499,19 @@ def test_interest_on_cash_is_shown_against_the_cash_held(db):
     )
     r = build(db, FakeQuotes(bars={"AAA": bars(days(100), [100.0] * 100)}), "3m")
     assert r["cash"]["interest"]["CAD"] == {"amount": 10.0, "yield": pytest.approx(0.04)}
+
+
+def test_a_position_without_prices_is_not_blamed_on_cash(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    holding(db, "a1", "s_x", "ZZZ", "equity", 10, 1000)  # Yahoo does not know it: held flat, in the whole and in the invested part
+    holding(db, "a1", "s_c", None, "cash", 500, 500)
+    d = days(100)
+    r = build(db, FakeQuotes(bars={"AAA": bars(d, [100.0 + i for i in range(100)])}), "3m")
+    flat = next(p for p in r["positions"] if p["ticker"] == "ZZZ")
+    assert flat["priced"] is False
+    # the invested part is AAA plus the flat ZZZ, so what cash did is only what its 500 changed
+    first_close = 100.0 + d.index(date.fromisoformat(r["dates"][0]))
+    invested_return = (10 * 199.0 + 1000) / (10 * first_close + 1000) - 1
+    assert r["cash"]["invested_return"] == pytest.approx(invested_return, rel=1e-6)
+    assert r["cash"]["effect"] == pytest.approx(r["metrics"]["total_return"] - invested_return, rel=1e-6)
+    assert r["cash"]["effect"] < 0  # 500 that did not grow held back a rising pair of holdings

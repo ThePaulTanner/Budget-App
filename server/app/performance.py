@@ -411,12 +411,14 @@ def build(
         if p["closes"] is not None:
             return q * float(p["closes"].on(d)) * fx.rate(p["currency"], d)
         if p["cash"]:
-            return q * fx.rate(p["currency"], d)
+            amount = float(p["value"]) if p["has_value"] else q  # the same figure the weights use; one unit is one dollar
+            return amount * fx.rate(p["currency"], d)
         return p["now_base"] if p["now_base"] is not None else 0.0  # not priced: held flat at today's value
 
     dates = all_days
     values: list[float] = [sum(level(p, d) for p in positions) for d in dates]
-    invested: list[float] = [sum(level(p, d) for p in positions if p["closes"] is not None) for d in dates]
+    # Everything but cash (unpriced positions stay in, held flat), so the difference between the two is cash alone.
+    invested: list[float] = [sum(level(p, d) for p in positions if p["type"] not in NON_PRICED_TYPES) for d in dates]
     if values[0] <= 0:
         result["message"] = "Not enough priced positions to measure."
         return result
