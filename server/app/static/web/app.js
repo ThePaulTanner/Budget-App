@@ -2485,6 +2485,7 @@
       const notes = el("section", { class: "card" }, el("h3", { text: "How to read this" }),
         el("p", { class: "muted small", text: d.assumption }),
         el("p", { class: "muted small", text: "It is hindsight: of course it looks better to have held what went up. It also leaves out the dividends those shares would have paid, any tax on the sale, and the price you actually got, so use it to learn from the pattern, not to second-guess one sale. Only sales from about the last two years are known." }),
+        d.proceeds === "auto" && el("p", { class: "muted small", text: "Following the money is a guess from timing: a purchase within 5 days of a sale, in the same account, is taken as where the money went. It is not a record of where it came from, so check it against what you remember." }),
         !d.actual && el("p", { class: "muted small", text: "The chart shows only the difference: the value of your accounts on past days could not be worked out." }),
         cov.hidden_small > 0 && smallToggle(d));
       view().replaceChildren(viewerNote(), perfSections(), hero, el("section", { class: "card" }, chartBox), list, notes);

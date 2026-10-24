@@ -901,3 +901,4 @@ def test_what_ifs_lets_you_follow_the_money_or_take_it_as_cash():
     assert "proceeds=${wiFollow ? \"auto\" : \"cash\"}" in page and '[[true, "Follow it"], [false, "As cash"]]' in page
     assert "wentInto" in page and '"Where the money went"' in page and "What the money became, now" in page
     assert "sum + (s.proceeds || 0)" in page  # the percentage is of what you were paid
+    assert "Following the money is a guess from timing" in page  # the matching is a heuristic, and the page says so
