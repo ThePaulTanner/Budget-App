@@ -309,7 +309,12 @@ def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, i
     marks = ",".join("?" * len(account_ids))
     have = db.one(f"SELECT count(*) AS n FROM investment_transactions WHERE account_id IN ({marks})", list(account_ids))["n"]
     today = date.fromisoformat(today_str())
-    start = today - timedelta(days=RECENT_INVESTMENT_DAYS if have else FIRST_INVESTMENT_DAYS)
+    # Rows saved before the market code was kept have none: read the whole window once to fill it in.
+    unread = db.one(
+        f"SELECT count(*) AS n FROM investment_transactions WHERE account_id IN ({marks}) AND mic IS NULL AND ticker IS NOT NULL",
+        list(account_ids),
+    )["n"]
+    start = today - timedelta(days=RECENT_INVESTMENT_DAYS if have and not unread else FIRST_INVESTMENT_DAYS)
     stored = 0
     offset = 0
     seen: set[str] = set()
@@ -326,8 +331,8 @@ def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, i
                     sec = securities.get(t.get("security_id"), {})
                     db.run(
                         "INSERT OR REPLACE INTO investment_transactions(id, account_id, security_id, date, name, "
-                        "ticker, type, subtype, quantity, price, amount, fees, currency, updated_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "ticker, type, subtype, quantity, price, amount, fees, currency, updated_at, mic) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             t["investment_transaction_id"],
                             t["account_id"],
@@ -343,6 +348,7 @@ def sync_investment_transactions(db: Database, plaid: PlaidClient, token: str, i
                             as_text(to_dec(t.get("fees"))),
                             _currency(t, base),
                             now,
+                            sec.get("market_identifier_code") or "",
                         ),
                     )
                     seen.add(t["investment_transaction_id"])

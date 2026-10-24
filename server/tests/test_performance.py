@@ -224,7 +224,16 @@ def test_value_of_todays_positions_through_time_and_each_positions_part(db):
     assert r["benchmark"]["name"] == "S&P 500" and r["benchmark"]["converted"] is True
     assert r["metrics"]["total_return"] < r["benchmark_metrics"]["total_return"]
     cash = next(p for p in r["positions"] if p["type"] == "cash")
-    assert cash["priced"] is False and cash["return"] is None
+    # cash is part of the math: worth its amount every day, so it returns 0 on its own and dilutes the rest
+    assert cash["priced"] is True and cash["cash"] is True and cash["return"] == pytest.approx(0.0) and cash["contribution"] == pytest.approx(0.0)
+    summary = r["cash"]
+    assert summary["share"] == pytest.approx(0.2) and summary["value"] == 400.0
+    assert summary["invested_return"] > r["metrics"]["total_return"] > 0  # the invested part alone did better
+    assert summary["effect"] == pytest.approx(r["metrics"]["total_return"] - summary["invested_return"]) and summary["effect"] < 0
+    assert r["invested_index"][0] == 100.0 and r["invested_index"][-1] > r["portfolio"][-1]
+    assert r["coverage"]["priced_share"] == pytest.approx(1.0)  # cash is valued, not "missing prices"
+    note = next(g for g in r["guidance"] if g["title"] == "Cash is part of the choice")
+    assert "held the result back" in note["text"] and "20%" in note["text"]
 
 
 def test_other_currencies_are_converted_at_each_days_rate(db):
@@ -459,3 +468,50 @@ def test_a_change_of_owner_makes_the_ready_pages_stale(db):
     before = svc._fingerprint()
     db.run("UPDATE account_owners SET person_id = ?", (ids[1],))
     assert svc._fingerprint() != before
+
+
+def test_cash_in_another_currency_moves_with_the_exchange_rate_and_counts_in_coverage(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    holding(db, "a2", "s_usd", None, "cash", 500, 500, currency="USD")  # US$500
+    d = days(100)
+    rates = [1.20 + 0.20 * i / 99 for i in range(100)]
+    quotes = FakeQuotes(bars={"AAA": bars(d, [100.0] * 100)}, symbols={"USDCAD=X": bars(d, rates), "^GSPC": bars(d, [100.0] * 100)})
+    r = build(db, quotes, "3m")
+    cash = next(p for p in r["positions"] if p["cash"])
+    assert cash["return"] == pytest.approx(rates[-1] / rates[-92] - 1, rel=0.02)  # all of it the exchange rate
+    assert r["metrics"]["total_return"] > 0  # the dollar's rise lifted the whole, which a flat balance would have missed
+    assert r["coverage"]["priced_share"] == pytest.approx(1.0) and r["cash"]["interest"] == {}
+
+
+def test_a_portfolio_without_cash_has_no_cash_summary(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    r = build(db, FakeQuotes(bars={"AAA": bars(days(100), [100.0 + i for i in range(100)])}), "3m")
+    assert r["cash"] is None and r["invested_index"] is None
+    assert not any(g["title"] == "Cash is part of the choice" for g in r["guidance"])
+
+
+def test_interest_on_cash_is_shown_against_the_cash_held(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    holding(db, "a1", "s_c", None, "cash", 250, 250)
+    db.run(
+        "INSERT INTO investment_transactions(id, account_id, security_id, date, name, type, subtype, amount, currency, updated_at) "
+        "VALUES ('ti','a1','s_c','2026-09-01','x','cash','interest','-10','CAD','x')"
+    )
+    r = build(db, FakeQuotes(bars={"AAA": bars(days(100), [100.0] * 100)}), "3m")
+    assert r["cash"]["interest"]["CAD"] == {"amount": 10.0, "yield": pytest.approx(0.04)}
+
+
+def test_a_position_without_prices_is_not_blamed_on_cash(db):
+    holding(db, "a1", "s_a", "AAA", "etf", 10, 1000)
+    holding(db, "a1", "s_x", "ZZZ", "equity", 10, 1000)  # Yahoo does not know it: held flat, in the whole and in the invested part
+    holding(db, "a1", "s_c", None, "cash", 500, 500)
+    d = days(100)
+    r = build(db, FakeQuotes(bars={"AAA": bars(d, [100.0 + i for i in range(100)])}), "3m")
+    flat = next(p for p in r["positions"] if p["ticker"] == "ZZZ")
+    assert flat["priced"] is False
+    # the invested part is AAA plus the flat ZZZ, so what cash did is only what its 500 changed
+    first_close = 100.0 + d.index(date.fromisoformat(r["dates"][0]))
+    invested_return = (10 * 199.0 + 1000) / (10 * first_close + 1000) - 1
+    assert r["cash"]["invested_return"] == pytest.approx(invested_return, rel=1e-6)
+    assert r["cash"]["effect"] == pytest.approx(r["metrics"]["total_return"] - invested_return, rel=1e-6)
+    assert r["cash"]["effect"] < 0  # 500 that did not grow held back a rising pair of holdings

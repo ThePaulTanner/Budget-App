@@ -5,7 +5,9 @@ quantities are taken to have been held for the whole period, each priced at that
 base currency at that day's exchange rate. That answers "how have the things I own now behaved?", which is the
 question that guides what to do next. It is not an account statement: it ignores what was bought and sold along the
 way, dividends (prices only) and fees, and it cannot see a security Yahoo does not know (those stay flat and are
-counted as "not priced"). The benchmark is measured the same way (price only, in the base currency).
+counted as "not priced"). Cash counts: it is part of the whole, held at its amount (moving only with the exchange rate
+when it is in another currency), so it dilutes the return, the swings and the falls like any other choice, and its
+effect is shown on its own. The benchmark is measured the same way (price only, in the base currency).
 
 Everything here is arithmetic on daily closes. Nothing leaves the NAS except ticker symbols (see quotes.py).
 """
@@ -340,7 +342,7 @@ def build(
         "as_of": today.isoformat(),
         "risk_free": risk_free,
         "benchmarks": benchmark_choices(),
-        "assumption": "Today's positions, held for the whole period, at each day's closing prices.",
+        "assumption": "Today's positions, cash included, held for the whole period, at each day's closing prices.",
     }
     if quotes.resting():
         raise DataUnavailable("market data is resting after an error")
@@ -375,6 +377,9 @@ def build(
         p["fx_ok"] = fx.usable(p["currency"])
         if p["type"] not in NON_PRICED_TYPES and p["ticker"] and p["quantity"] > 0 and p["fx_ok"]:
             p["closes"] = _closes_for(quotes, Wanted(p["ticker"], p["mic"], p["currency"]))
+        # Cash is a choice like any other position: one unit is one dollar, so it is worth its amount each day
+        # (moving only with the exchange rate when it is held in another currency).
+        p["cash"] = p["type"] in NON_PRICED_TYPES and p["fx_ok"] and p["quantity"] > 0
         p["now_base"] = None
         if p["has_value"] and p["fx_ok"]:
             p["now_base"] = float(p["value"]) * (fx.rate(p["currency"], today) if p["currency"] != base else 1.0)
@@ -400,18 +405,20 @@ def build(
     if len(all_days) < 3:
         result["message"] = "There is not enough price history yet for this period."
         return result
+
+    def level(p: dict[str, Any], d: date) -> float:
+        q = float(p["quantity"])
+        if p["closes"] is not None:
+            return q * float(p["closes"].on(d)) * fx.rate(p["currency"], d)
+        if p["cash"]:
+            amount = float(p["value"]) if p["has_value"] else q  # the same figure the weights use; one unit is one dollar
+            return amount * fx.rate(p["currency"], d)
+        return p["now_base"] if p["now_base"] is not None else 0.0  # not priced: held flat at today's value
+
     dates = all_days
-    # One closing day before the period, so the first day's move is counted: use the first date as the base.
-    values: list[float] = []
-    for d in dates:
-        total = 0.0
-        for p in positions:
-            q = float(p["quantity"])
-            if p["closes"] is not None:
-                total += q * float(p["closes"].on(d)) * fx.rate(p["currency"], d)
-            elif p["now_base"] is not None:
-                total += p["now_base"]  # not priced: held flat at today's value
-        values.append(total)
+    values: list[float] = [sum(level(p, d) for p in positions) for d in dates]
+    # Everything but cash (unpriced positions stay in, held flat), so the difference between the two is cash alone.
+    invested: list[float] = [sum(level(p, d) for p in positions if p["type"] not in NON_PRICED_TYPES) for d in dates]
     if values[0] <= 0:
         result["message"] = "Not enough priced positions to measure."
         return result
@@ -430,12 +437,12 @@ def build(
         entry: dict[str, Any] = {
             "ticker": p["ticker"], "name": p["name"], "type": p["type"], "currency": p["currency"],
             "weight": (p["now_base"] / total_now) if p["now_base"] and total_now > 0 else None,
-            "value": round(p["now_base"], 2) if p["now_base"] is not None else None, "priced": p["closes"] is not None,
+            "value": round(p["now_base"], 2) if p["now_base"] is not None else None,
+            "priced": p["closes"] is not None or p["cash"], "cash": p["type"] in NON_PRICED_TYPES,
             "return": None, "contribution": None, "volatility": None, "max_drawdown": None,
         }
-        if p["closes"] is not None:
-            q = float(p["quantity"])
-            series = [q * float(p["closes"].on(d)) * fx.rate(p["currency"], d) for d in dates]
+        if p["closes"] is not None or p["cash"]:
+            series = [level(p, d) for d in dates]
             if series[0] > 0:
                 entry["return"] = series[-1] / series[0] - 1
                 entry["contribution"] = (series[-1] - series[0]) / values[0]
@@ -495,10 +502,32 @@ def build(
         for field in ("dividends", "interest", "fees"):
             b[field] = round(b[field], 2)
 
-    priced_value = sum((p["now_base"] or 0.0) for p in priced)
+    tracked = [p for p in positions if p["closes"] is not None or p["cash"]]
+    priced_value = sum((p["now_base"] or 0.0) for p in tracked)
+    cash_positions = [p for p in positions if p["cash"] and p["now_base"]]
+    cash_summary = None
+    if cash_positions and total_now > 0:
+        cash_now = sum(p["now_base"] for p in cash_positions)
+        invested_return = invested[-1] / invested[0] - 1 if invested[0] > 0 else None
+        cash_values: dict[str, float] = defaultdict(float)
+        for p in cash_positions:
+            cash_values[p["currency"]] += float(p["value"])
+        interest = {
+            cur: {"amount": income[cur]["interest"], "yield": income[cur]["interest"] / v if v > 0 else None}
+            for cur, v in cash_values.items()
+            if cur in income and income[cur]["interest"] > 0
+        }
+        cash_summary = {
+            "value": round(cash_now, 2),
+            "share": cash_now / total_now,
+            "invested_return": invested_return,
+            # How much holding cash moved the result: the whole's return less what the invested part alone returned.
+            "effect": solo["total_return"] - invested_return if invested_return is not None and solo.get("total_return") is not None else None,
+            "interest": interest,
+        }
     coverage = {
         "positions": len(positions),
-        "priced_positions": len(priced),
+        "priced_positions": len(tracked),
         "priced_share": priced_value / total_now if total_now > 0 else None,
         "unpriced": [p["ticker"] or p["name"] for p in positions if p["closes"] is None and p["type"] not in NON_PRICED_TYPES],
         "missing_rates": sorted(fx.missing),
@@ -514,6 +543,8 @@ def build(
             "benchmark": bench_note,
             "dates": [d.isoformat() for d in dates],
             "portfolio": [round(v / values[0] * 100, 4) for v in values],
+            "invested_index": [round(v / invested[0] * 100, 4) for v in invested] if cash_summary and invested[0] > 0 else None,
+            "cash": cash_summary,
             "benchmark_index": [round(v / bench_values[0] * 100, 4) for v in bench_values] if bench_values else None,
             "portfolio_drawdown": [round(x, 5) for x in drawdowns(values)],
             "benchmark_drawdown": [round(x, 5) for x in drawdowns(bench_values)] if bench_values else None,
@@ -583,9 +614,16 @@ def guidance(r: dict[str, Any], top_equity_share: float | None, total_now: float
         add("info", "Exchange rates matter here",
             f"{_pct(foreign[0]['share'])} of the money is in {foreign[0]['name']}. A move in the exchange rate changes your {base} value "
             "even if prices do not move.")
-    cash = next((a for a in r["allocation"]["by_type"] if a["name"] == "Cash"), None)
-    if cash and cash["share"] >= 0.2:
-        add("info", "A lot of the money is cash", f"Cash is {_pct(cash['share'])} of these accounts. It is steady but does not grow with markets; make sure that is on purpose.")
+    cash = r.get("cash")
+    if cash and cash["share"] >= 0.05:
+        effect = cash["effect"]
+        weighed = ""
+        if effect is not None and cash["invested_return"] is not None and m.get("total_return") is not None:
+            weighed = (f" Over this period it {'held the result back by' if effect < 0 else 'added'} {abs(effect) * 100:.1f} points: "
+                       f"{_pct(m['total_return'], 1)} with cash against {_pct(cash['invested_return'], 1)} for the invested part alone.")
+        add("watch" if cash["share"] >= 0.4 else "info", "Cash is part of the choice",
+            f"Cash is {_pct(cash['share'])} of these accounts.{weighed} Holding cash lowers the swings and keeps money ready, but it does not grow with "
+            "markets, so it is worth holding on purpose, for a reason and an amount you chose.")
     for cur, inc in r["income"].items():
         if inc.get("fee_share") and inc["fee_share"] >= 0.005:
             add("watch", "Fees are worth a look",
@@ -657,17 +695,46 @@ class PerformanceService:
             "SELECT COUNT(*) AS n, COALESCE(MAX(h.updated_at), '') AS u, "
             "COALESCE(SUM(CAST(h.quantity AS REAL)), 0) AS q, COALESCE(SUM(CAST(h.value AS REAL)), 0) AS v, "
             "(SELECT COALESCE(group_concat(id), '') FROM accounts WHERE hidden = 1) AS hidden, "
-            "(SELECT COALESCE(group_concat(account_id || ':' || person_id), '') FROM account_owners) AS owners FROM holdings h"
+            "(SELECT COALESCE(group_concat(account_id || ':' || person_id), '') FROM account_owners) AS owners, "
+            "(SELECT COUNT(*) FROM investment_transactions) AS activity, "
+            "(SELECT COALESCE(MAX(date), '') FROM investment_transactions) AS last_activity FROM holdings h"
         )[0]
-        return f"{row['n']}|{row['u']}|{row['q']}|{row['v']}|{row['hidden']}|{row['owners']}|{self.get_today().isoformat()}"
+        return (f"{row['n']}|{row['u']}|{row['q']}|{row['v']}|{row['hidden']}|{row['owners']}|{row['activity']}|"
+                f"{row['last_activity']}|{self.get_today().isoformat()}")
 
     def get(
         self, *, range_: str, benchmark: str, risk_free: float, person_id: int | None, scope: tuple[str, list[Any]], refresh: bool = False
     ) -> dict[str, Any]:
         """The page, from the ready answers when they are current (`refresh` works it out again regardless, which
         also renews each symbol's history once that has aged). Raises DataUnavailable like `build`."""
-        quotes = self.get_quotes()
         key = (range_, benchmark, round(risk_free, 4), person_id)  # 0.01 of a percent is as fine as the page asks
+        return self._cached(
+            key,
+            lambda: build(
+                self.db, self.get_quotes(), base=self.base, range_=range_, benchmark=benchmark, risk_free=risk_free,
+                today=self.get_today(), scope=scope,
+            ),
+            refresh,
+        )
+
+    def get_whatifs(
+        self, *, range_: str, min_amount: float, person_id: int | None, account_id: str | None, scope: tuple[str, list[Any]],
+        proceeds: str = "auto", refresh: bool = False,
+    ) -> dict[str, Any]:
+        """The What ifs page, kept ready the same way."""
+        from . import whatifs
+
+        key = ("whatifs", range_, round(min_amount, 2), person_id, account_id, proceeds)
+        return self._cached(
+            key,
+            lambda: whatifs.build(
+                self.db, self.get_quotes(), base=self.base, range_=range_, today=self.get_today(), scope=scope,
+                account_id=account_id, min_amount=min_amount, proceeds=proceeds,
+            ),
+            refresh,
+        )
+
+    def _cached(self, key: tuple, compute: Callable[[], dict[str, Any]], refresh: bool) -> dict[str, Any]:
         stamp = self._fingerprint()
         with self._guard:
             lock = self._locks.setdefault(key, threading.Lock())
@@ -675,14 +742,20 @@ class PerformanceService:
             held = self._results.get(key)
             if not refresh and held is not None and held[1] == stamp and time.monotonic() - held[0] < RESULT_TTL:
                 return held[2]
-            result = build(
-                self.db, quotes, base=self.base, range_=range_, benchmark=benchmark, risk_free=risk_free,
-                today=self.get_today(), scope=scope,
-            )
+            result = compute()
             if result.get("available"):
                 self._results[key] = (time.monotonic(), stamp, result)
                 self._forget_old()
             return result
+
+    @staticmethod
+    def _is_warmed(key: tuple) -> bool:
+        """The household's pages at their default settings are the ones the warmer renews: never dropped."""
+        if key[0] == "whatifs":
+            from .whatifs import DEFAULT_MIN_AMOUNT
+
+            return key[3] is None and key[4] is None and key[2] == round(DEFAULT_MIN_AMOUNT, 2) and key[5] == "auto"
+        return key[3] is None and key[2] == round(DEFAULT_RISK_FREE, 4)
 
     def _forget_old(self) -> None:
         """Pages worked out on request (another person, an unusual rate) are dropped once they have expired, so the
@@ -690,7 +763,7 @@ class PerformanceService:
         now = time.monotonic()
         with self._guard:
             for key, (made, _, _) in list(self._results.items()):
-                if now - made >= RESULT_TTL * 2 and (key[3] is not None or key[2] != round(DEFAULT_RISK_FREE, 4)):
+                if now - made >= RESULT_TTL * 2 and not self._is_warmed(key):
                     del self._results[key]
                     self._locks.pop(key, None)
 
@@ -712,7 +785,21 @@ class PerformanceService:
                 break
             except Exception:
                 log.exception("Could not get the %s performance page ready", range_)
+        self._warm_whatifs()
         return made
+
+    def _warm_whatifs(self) -> None:
+        from .whatifs import DEFAULT_MIN_AMOUNT, RANGES as WHATIF_RANGES
+
+        for range_ in WHATIF_RANGES:
+            if self._stop.is_set():
+                return
+            try:
+                self.get_whatifs(range_=range_, min_amount=DEFAULT_MIN_AMOUNT, person_id=None, account_id=None, scope=("", []), refresh=True)
+            except DataUnavailable:
+                return
+            except Exception:
+                log.exception("Could not get the %s what-ifs page ready", range_)
 
     def start(self) -> None:
         if self._thread is None:
