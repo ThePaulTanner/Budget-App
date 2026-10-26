@@ -926,7 +926,7 @@
     const netCard = el("section", { class: "card nw-card" },
       el("h3", { text: "Net worth" }),
       breakdown,
-      el("div", { class: "nw-total" }, el("span", { class: "muted", text: "Net worth" }), el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
+      el("div", { class: "nw-total" }, el("span", { text: "Net worth" }), el("span", { class: "nw-sum", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       el("div", { class: "nw-head" }, el("span", { class: "muted", text: "History" }), seg),
       chartBox);

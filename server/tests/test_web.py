@@ -957,3 +957,9 @@ def test_net_worth_card_has_no_extra_space_under_the_chart():
     css = (WEB_DIR / "app.css").read_text()
     assert ".nw-card > div:last-child > div > :last-child { margin-bottom: 0; }" in css
     assert 'class: "card nw-card"' in (WEB_DIR / "app.js").read_text()
+
+
+def test_net_worth_total_sits_right_under_a_rule():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".nw-total { display: flex; justify-content: space-between;" in css and "border-top: 2px solid var(--text)" in css
+    assert 'class: "nw-sum"' in (WEB_DIR / "app.js").read_text()
