@@ -951,3 +951,9 @@ def test_opening_a_page_starts_at_its_top():
     js = (Path(__file__).resolve().parents[1] / "app" / "static" / "web" / "app.js").read_text()
     assert 'history.scrollRestoration = "manual"' in js
     assert 'addEventListener("hashchange", () => { toTop(); route(); })' in js
+
+
+def test_net_worth_card_has_no_extra_space_under_the_chart():
+    css = (WEB_DIR / "app.css").read_text()
+    assert ".nw-card > div:last-child > div > :last-child { margin-bottom: 0; }" in css
+    assert 'class: "card nw-card"' in (WEB_DIR / "app.js").read_text()
