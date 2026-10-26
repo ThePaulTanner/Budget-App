@@ -269,6 +269,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   #tabs a { flex: 1; flex-direction: column; gap: 2px; padding: .35rem .1rem .45rem; font-size: .66rem; border-radius: 0; min-width: 0; }
   #tabs a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   #tabs .lbl + .lbl-short { display: block; }
+  #tabs a[data-tab="transactions"] { flex: 1.5 1 0; }   /* the longest label gets more of the row, so it is written in full */
   #tabs .lbl:has(+ .lbl-short) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   #tabs a[aria-current="page"] { background: transparent; box-shadow: inset 0 -3px 0 var(--accent); }
   #tabs a[aria-current="page"]::before { display: none; }
@@ -278,6 +279,9 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   .topbar .muted { display: none; }
   dialog { width: calc(100vw - 16px); padding: 18px; }
   #toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 340px) {
+  #tabs a { font-size: .6rem; }   /* the very narrowest phones: slightly smaller labels so none is cut short */
 }
 
 /* people and owners */

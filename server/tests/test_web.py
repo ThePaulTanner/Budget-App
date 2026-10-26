@@ -855,7 +855,7 @@ def test_transactions_is_its_own_top_level_tab():
     tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
     assert "viewTransactions" not in tabs
     assert "transactions: viewTransactions" in app and 'transactions: ["Transactions"' in app
-    assert 'href="#/transactions" data-tab="transactions"' in html and ">Txns<" in html
+    assert 'href="#/transactions" data-tab="transactions"' in html and ">Txns<" not in html  # written in full on a phone too
     assert 'params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }' in app
     assert "#/spending?tab=transactions" not in app  # every link goes to the new page
 
@@ -921,3 +921,11 @@ def test_chart_text_is_big_enough_to_read_on_a_phone():
     assert "@media (max-width: 600px) { svg.chart text { font-size: 13px; } }" in css
     # axis labels are thinned to what fits, so the bigger text does not collide
     assert "everyNth(rows.length" in app
+
+
+def test_phone_tab_bar_writes_transactions_in_full_and_gives_it_the_room():
+    html = (WEB_DIR / "index.html").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    assert "<span>Transactions</span>" in html
+    assert '#tabs a[data-tab="transactions"] { flex: 1.5 1 0; }' in css
+    assert "@media (max-width: 340px) {\n  #tabs a { font-size: .6rem; }" in css  # the very narrowest phones still fit every label
