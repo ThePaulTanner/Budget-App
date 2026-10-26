@@ -955,11 +955,31 @@ def test_opening_a_page_starts_at_its_top():
 
 def test_net_worth_card_has_no_extra_space_under_the_chart():
     css = (WEB_DIR / "app.css").read_text()
-    assert ".nw-card > div:last-child > div > :last-child { margin-bottom: 0; }" in css
-    assert 'class: "card nw-card"' in (WEB_DIR / "app.js").read_text()
+    assert ".nw-chart-card > div:last-child > div > :last-child { margin-bottom: 0; }" in css
+    assert 'class: "card nw-chart-card"' in (WEB_DIR / "app.js").read_text()
 
 
 def test_net_worth_total_sits_right_under_a_rule():
     css = (WEB_DIR / "app.css").read_text()
     assert ".nw-total { display: flex; justify-content: space-between;" in css and "border-top: 2px solid var(--text)" in css
     assert 'class: "nw-sum"' in (WEB_DIR / "app.js").read_text()
+
+
+def test_overview_has_a_net_worth_card_and_an_over_time_card_with_the_key_below_the_chart():
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'view().replaceChildren(viewerNote(), netCard, overTimeCard);' in js
+    assert 'el("h3", { text: "Over time" })' in js
+    assert "wrap.append(caption, key);" in js  # the lines' key sits under the chart, not above it
+
+
+def test_over_budget_warning_sits_on_the_category_row():
+    js = (WEB_DIR / "app.js").read_text()
+    spending = js[js.index("async function viewSpendingSummary"):js.index("async function viewTransactions")]
+    assert 'class: "chips"' not in spending  # no strip of warnings under the totals any more
+    assert "Over budget by" in spending and 'class: "over-note"' in spending
+
+
+def test_transactions_search_is_called_search_and_pages_scroll_to_the_top_again_when_drawn():
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'placeholder: "Search", "aria-label": "Search transactions"' in js
+    assert "if (id === navId && wantTop)" in js

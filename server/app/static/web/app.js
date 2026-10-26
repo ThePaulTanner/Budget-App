@@ -225,7 +225,7 @@
 
   // ---------------------------------------------------------------- charts
 
-  // Net worth over time with a line each for assets, liabilities and investments. The key above the
+  // Net worth over time with a line each for assets, liabilities and investments. The key below the
   // chart doubles as switches (at least one line stays on) and shows each figure for the day you point at.
   const NW_SERIES = [["net_worth", "Net worth", "s-net"], ["assets", "Assets", "s-assets"], ["liabilities", "Liabilities", "s-liab"], ["investments", "Investments", "s-inv"]];
   const nwHidden = new Set();
@@ -314,9 +314,8 @@
       chart = next;
       show(current);
     }
-    wrap.append(key);
     draw();
-    wrap.append(caption);
+    wrap.append(caption, key);
     if (estimateNote) wrap.append(estimateNote);
     return wrap;
   }
@@ -923,15 +922,17 @@
       part("Credit card debt", w.credit_cards, true),
       w.other_loans !== 0 && part("Other loans", w.other_loans, true)) : null;
 
-    const netCard = el("section", { class: "card nw-card" },
+    const netCard = el("section", { class: "card" },
       el("h3", { text: "Net worth" }),
       breakdown,
       el("div", { class: "nw-total" }, el("span", { text: "Net worth" }), el("span", { class: "nw-sum", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
-      summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
-      el("div", { class: "nw-head" }, el("span", { class: "muted", text: "History" }), seg),
+      summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })));
+    // The history is a card of its own: the range choice, the chart, then the key to its lines beneath.
+    const overTimeCard = el("section", { class: "card nw-chart-card" },
+      el("div", { class: "nw-head" }, el("h3", { text: "Over time" }), seg),
       chartBox);
 
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));
+    view().replaceChildren(viewerNote(), netCard, overTimeCard);
     drawChart();
   }
 
@@ -953,19 +954,27 @@
     const cur = worth ? worth.currency : baseCurrency;
     const budgeted = summary.budgeted_this_month;
     const pct = budgeted > 0 ? (summary.spent_this_month / budgeted) * 100 : 0;
+    // The over-budget warning sits on the category that is over (or under its parent, for a sub-category's
+    // budget), so a category that is over shows in the list even when it is not one of the five biggest.
+    const overBy = new Map(summary.over_budget.map((b) => [b.category, b.spent - b.monthly_limit]));
+    const notesFor = (c) => [
+      overBy.has(c.category) && `Over budget by ${money(overBy.get(c.category), cur)}`,
+      ...(c.subcategories || []).filter((sub) => overBy.has(sub.category)).map((sub) => `${categoryLabel(sub.category)} over budget by ${money(overBy.get(sub.category), cur)}`)].filter(Boolean);
+    const topRows = spending.categories.filter((c, n) => n < 5 || notesFor(c).length).map((c) => {
+      const over = notesFor(c);
+      return el("div", { class: "row" },
+        el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
+        el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
+          over.map((note) => el("div", { class: "over-note", text: note })),
+          progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
+        el("div", { class: "amount", text: money(c.spent, cur) }));
+    });
     const spendCard = el("section", { class: "card" },
       el("h3", { text: `Spent in ${monthLabel(summary.month)}` }),
       el("div", { class: "big", text: money(summary.spent_this_month, cur) }),
       budgeted > 0 ? [progress(pct), el("p", { class: "muted", text: `of ${money(budgeted, cur)} budgeted (${Math.round(pct)}%)` })]
         : el("p", { class: "muted", text: viewer != null ? "Budgets cover the whole household." : "No budgets set yet." }),
-      summary.over_budget.length > 0 && el("div", { class: "chips" }, summary.over_budget.map((b) =>
-        el("span", { class: "chip", text: `${categoryLabel(b.category)} ${money(b.spent - b.monthly_limit, cur)} over` }))),
-      spending.categories.length > 0 && [el("h3", { text: "Top categories" }),
-        spending.categories.slice(0, 5).map((c) => el("div", { class: "row" },
-          el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
-          el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
-            progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
-          el("div", { class: "amount", text: money(c.spent, cur) })))]);
+      spending.categories.length > 0 && [el("h3", { text: "Top categories" }), ...topRows]);
 
     view().replaceChildren(viewerNote(), spendCard);
   }
@@ -981,7 +990,7 @@
     const status = el("p", { class: "empty" });
     const sentinel = el("div");
 
-    const search = el("input", { type: "search", placeholder: "Search merchants", "aria-label": "Search", maxlength: 100 });
+    const search = el("input", { type: "search", placeholder: "Search", "aria-label": "Search transactions", title: "Search the merchant, bank text, category, account, date or amount", maxlength: 100 });
     const accountSel = el("select", { "aria-label": "Account" }, el("option", { value: "", text: "All accounts" }),
       accounts.map((a) => el("option", { value: a.id, selected: a.id === state.account, text: accountName[a.id] })));
     const categorySel = el("select", { "aria-label": "Category filter" }, el("option", { value: "", text: "All categories" }),
@@ -3456,6 +3465,16 @@
       notices.banks.length ? "#/settings?tab=banks" : notices.signin ? "#/settings?tab=log" : "#/settings");
   }
 
+  // Opening a page puts the view at its very top, now and again once the page has been drawn (a phone can
+  // keep or move the position while the new page is still loading). Refreshing a page keeps where you are.
+  let wantTop = false;
+  function toTop() {
+    wantTop = true;
+    window.scrollTo(0, 0);
+    const root = document.scrollingElement;
+    if (root) root.scrollTop = 0;
+  }
+
   async function route() {
     if (!token && $("shell").hidden) return;
     while (cleanups.length) cleanups.pop()();
@@ -3488,6 +3507,7 @@
       if (peopleLoaded) loadPeople().catch(() => {}); else { await loadPeople(); peopleLoaded = true; }
       if (id !== navId) return;
       await ROUTES[name](id, params);
+      if (id === navId && wantTop) { wantTop = false; window.scrollTo(0, 0); requestAnimationFrame(() => { if (id === navId) window.scrollTo(0, 0); }); }
       refreshStatus();
     } catch (err) {
       if (err instanceof SignedOut) showLogin();
@@ -3604,7 +3624,6 @@
   $("viewer").addEventListener("change", (e) => { viewer = e.target.value === "" ? null : Number(e.target.value); route(); });
   // Opening a page always starts at its top, never where the last page was scrolled to (the back button
   // included). Opening the page you are already on does the same and loads it afresh.
-  const toTop = () => window.scrollTo(0, 0);
   try { history.scrollRestoration = "manual"; } catch { /* an old browser keeps its own */ }
   window.addEventListener("hashchange", () => { toTop(); route(); });
   document.addEventListener("click", (e) => {
