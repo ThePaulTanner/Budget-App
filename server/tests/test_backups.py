@@ -99,7 +99,8 @@ def test_upgrading_the_database_keeps_a_copy_first(tmp_path):
     old.run("INSERT INTO budgets(category, monthly_limit) VALUES ('FOOD', '100')")
     for column in ("kind", "active_at", "expires_at"):
         old.run(f"ALTER TABLE sessions DROP COLUMN {column}")  # what the last layout change added
-    old.run("ALTER TABLE investment_transactions DROP COLUMN mic")  # the newest one
+    old.run("ALTER TABLE accounts DROP COLUMN loan_kind")  # the newest one
+    old.run("ALTER TABLE investment_transactions DROP COLUMN mic")
     old.run("DROP TABLE networth_adjust")  # the newest one
     old.run("ALTER TABLE networth DROP COLUMN estimated")  # and the one before it
     old.run("ALTER TABLE merchants DROP COLUMN is_income")

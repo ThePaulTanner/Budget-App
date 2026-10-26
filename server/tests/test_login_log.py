@@ -189,6 +189,7 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
         CREATE TABLE holdings (account_id TEXT, security_id TEXT, ticker TEXT);
         CREATE TABLE transactions (id TEXT PRIMARY KEY, name TEXT);
         CREATE TABLE items (id TEXT PRIMARY KEY, institution TEXT);
+        CREATE TABLE accounts (id TEXT PRIMARY KEY, type TEXT);
         INSERT INTO items VALUES ('item_1', 'TD');
         CREATE TABLE networth (date TEXT NOT NULL, currency TEXT NOT NULL, assets TEXT NOT NULL,
           liabilities TEXT NOT NULL, investments TEXT NOT NULL, net_worth TEXT NOT NULL, PRIMARY KEY (date, currency));
@@ -198,8 +199,9 @@ def test_upgrade_from_schema_1_keeps_the_user_and_reaches_the_latest_schema(tmp_
     )
     old.close()
     db = Database(path, None, insecure_plaintext=True)
-    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 18
+    assert db.one("PRAGMA user_version")[0] == SCHEMA_VERSION == 19
     assert "mic" in [c[1] for c in db.query("PRAGMA table_info(holdings)")]
+    assert "loan_kind" in [c[1] for c in db.query("PRAGMA table_info(accounts)")]
     tx_columns = [c[1] for c in db.query("PRAGMA table_info(transactions)")]
     assert {"merchant_id", "cashflow_override", "transfer_pair_id"} <= set(tx_columns)
     assert db.query("SELECT * FROM merchants") == [] and db.query("SELECT * FROM merchant_aliases") == []

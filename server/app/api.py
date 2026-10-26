@@ -181,8 +181,9 @@ class PasskeyAddBody(BaseModel):
     attestation: str = Field(min_length=1, max_length=65536)
 
 
-class HiddenBody(BaseModel):
-    hidden: bool
+class AccountPatch(BaseModel):
+    hidden: bool | None = None
+    loan_kind: Literal["mortgage", "other"] | None = None  # how a loan is counted; null = go by the bank's label
 
 
 class PersonBody(BaseModel):
@@ -352,6 +353,7 @@ def account_json(row: Any, institution: str | None, owner_ids: list[int] | None 
         "credit_limit": num(row["credit_limit"]),
         "currency": row["currency"],
         "hidden": bool(row["hidden"]),
+        "loan_kind": row["loan_kind"],
         "owner_ids": owner_ids or [],
         "updated_at": row["updated_at"],
     }
@@ -727,9 +729,22 @@ def create_api_app(services: Services) -> FastAPI:
         return [account_json(r, r["institution"], owners.get(r["id"])) for r in db.query(sql, params)]
 
     @app.patch("/api/accounts/{account_id}")
-    def patch_account(account_id: str, body: HiddenBody, ctx: Auth):
-        if db.run("UPDATE accounts SET hidden=? WHERE id=?", (int(body.hidden), account_id)) == 0:
+    def patch_account(account_id: str, body: AccountPatch, ctx: Auth):
+        sent = body.model_fields_set
+        if not sent:
+            raise HTTPException(400, "Send hidden and/or loan_kind.")
+        account = db.one("SELECT type FROM accounts WHERE id=?", (account_id,))
+        if not account:
             raise HTTPException(404, "account not found")
+        if "hidden" in sent and body.hidden is None:
+            raise HTTPException(422, "hidden is true or false")
+        if "loan_kind" in sent and body.loan_kind is not None and account["type"] != "loan":
+            raise HTTPException(400, "Only a loan can be counted as a mortgage or another loan.")
+        with db.transaction():  # everything checked above, so a request changes both fields or neither
+            if "hidden" in sent:
+                db.run("UPDATE accounts SET hidden=? WHERE id=?", (int(body.hidden), account_id))
+            if "loan_kind" in sent:
+                db.run("UPDATE accounts SET loan_kind=? WHERE id=?", (body.loan_kind, account_id))
         row = db.one("SELECT * FROM accounts WHERE id=?", (account_id,))
         return account_json(row, None, owners_by_account().get(account_id))  # institution is null here, as in the spec
 

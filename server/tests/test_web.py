@@ -983,3 +983,9 @@ def test_transactions_search_is_called_search_and_pages_scroll_to_the_top_again_
     js = (WEB_DIR / "app.js").read_text()
     assert 'placeholder: "Search", "aria-label": "Search transactions"' in js
     assert "if (id === navId && wantTop)" in js
+
+
+def test_a_loan_row_has_a_counts_as_choice():
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'kind === "loan" && loanKindControl(a)' in js
+    assert "body: { loan_kind: select.value || null }" in js

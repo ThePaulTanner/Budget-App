@@ -993,3 +993,5 @@ svg.chart circle.mark { fill: var(--surface); stroke: var(--p-you); stroke-width
 .wi-went { text-align: right; max-width: 60%; }
 
 .over-note { color: var(--red); font-size: .85rem; font-weight: 650; }
+.loan-kind-row { display: flex; align-items: center; gap: 6px; font-size: .85rem; margin-top: 2px; }
+.loan-kind { width: auto; min-width: 0; font-size: .85rem; padding: 2px 6px; }
