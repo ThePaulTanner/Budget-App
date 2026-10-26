@@ -911,10 +911,24 @@
       el("button", { type: "button", "aria-pressed": String(label === nwRange), text: label, onclick: () => { nwRange = label; paint(); drawChart(); } })));
     paint();
 
-    const netCard = el("section", { class: "card" },
-      el("div", { class: "nw-head" }, el("h3", { text: "Net worth" }), seg),
-      el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) }),
+    // Assets and liabilities each with their parts, then the net worth total beneath both.
+    const part = (label, value, sub) => el("div", { class: "nw-line" + (sub ? " sub" : "") }, el("span", { text: label }), el("span", { class: "num", text: money(value, cur) }));
+    const w = worth || {};
+    const breakdown = worth ? el("div", { class: "nw-breakdown" },
+      part("Assets", w.assets),
+      part("Cash", w.cash, true),
+      part("Investments", w.investments, true),
+      part("Liabilities", w.liabilities),
+      part("Mortgage", w.mortgage, true),
+      part("Credit card debt", w.credit_cards, true),
+      w.other_loans !== 0 && part("Other loans", w.other_loans, true)) : null;
+
+    const netCard = el("section", { class: "card nw-card" },
+      el("h3", { text: "Net worth" }),
+      breakdown,
+      el("div", { class: "nw-total" }, el("span", { class: "muted", text: "Net worth" }), el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
+      el("div", { class: "nw-head" }, el("span", { class: "muted", text: "History" }), seg),
       chartBox);
 
     view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));
@@ -3588,7 +3602,17 @@
   });
   $("signout").addEventListener("click", signOut);
   $("viewer").addEventListener("change", (e) => { viewer = e.target.value === "" ? null : Number(e.target.value); route(); });
-  window.addEventListener("hashchange", route);
+  // Opening a page always starts at its top, never where the last page was scrolled to (the back button
+  // included). Opening the page you are already on does the same and loads it afresh.
+  const toTop = () => window.scrollTo(0, 0);
+  try { history.scrollRestoration = "manual"; } catch { /* an old browser keeps its own */ }
+  window.addEventListener("hashchange", () => { toTop(); route(); });
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("#tabs a, #menu-list a, #subtabs a, .sidebar a");
+    if (!a) return;
+    toTop();
+    if (a.hash && a.hash === location.hash) route();  // same address: no hashchange will follow
+  });
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });
 

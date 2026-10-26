@@ -72,7 +72,9 @@ def test_full_sync_stores_exact_amounts_and_builds_net_worth(services, plaid, cl
     assert types["acc_tfsa"] == "investment"  # Plaid's "brokerage" maps to investment
     summary = client.get("/api/summary", headers=auth).json()["net_worth"][0]
     assert summary == {"currency": "CAD", "assets": 45200.5, "liabilities": 312850.25,
-                       "investments": 42000.0, "net_worth": -267649.75}
+                       "investments": 42000.0, "net_worth": -267649.75,
+                       # assets = cash + investments; liabilities = mortgage + credit cards (+ other loans)
+                       "cash": 3200.5, "credit_cards": 850.25, "mortgage": 312000.0, "other_loans": 0.0}
 
     from app.sync import snapshot_networth
     snapshot_networth(services.db)
@@ -292,3 +294,23 @@ def test_a_us_listing_the_bank_cannot_price_is_shown_in_usd_even_if_labelled_cad
     # the unpriced position starts no USD total of its own
     assert list(client.get("/api/holdings/live", headers=auth).json()["totals"]) == ["CAD"]
     assert client.get("/api/holdings", headers=auth).json()["totals"] == {"CAD": 470.0}
+
+
+def test_net_worth_parts_add_up_with_an_other_loan_and_a_person(services):
+    from app.sync import compute_networth
+    db = services.db
+    add_item(services)
+    for aid, kind, sub, bal in (("a1", "depository", "checking", "100.00"), ("a2", "investment", "tfsa", "400.00"),
+                                ("a3", "loan", "Mortgage", "1000.00"), ("a4", "loan", "student", "50.00"),
+                                ("a5", "credit", "credit card", "25.00")):
+        db.run("INSERT INTO accounts(id, item_id, name, type, subtype, current_balance, currency, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+               (aid, "item_desj", aid, kind, sub, bal, "CAD", utcnow()))
+    db.run("INSERT INTO people(name, created_at) VALUES ('Paul', ?)", (utcnow(),))
+    pid = db.one("SELECT id FROM people")["id"]
+    for aid in ("a1", "a3", "a4"):
+        db.run("INSERT INTO account_owners(account_id, person_id) VALUES (?,?)", (aid, pid))
+    for who, expect in ((None, ("100.00", "400.00", "1000.00", "25.00", "50.00")), (pid, ("100.00", "0", "1000.00", "0", "50.00"))):
+        t = compute_networth(db, who)["CAD"]
+        assert (t["cash"], t["investments"], t["mortgage"], t["credit_cards"], t["other_loans"]) == tuple(Decimal(x) for x in expect)
+        assert t["cash"] + t["investments"] == t["assets"]
+        assert t["mortgage"] + t["credit_cards"] + t["other_loans"] == t["liabilities"]

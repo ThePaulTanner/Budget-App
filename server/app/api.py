@@ -647,6 +647,10 @@ def create_api_app(services: Services) -> FastAPI:
                     "liabilities": num(worth[c]["liabilities"]),
                     "investments": num(worth[c]["investments"]),
                     "net_worth": num(worth[c]["net_worth"]),
+                    "cash": num(worth[c]["cash"]),
+                    "credit_cards": num(worth[c]["credit_cards"]),
+                    "mortgage": num(worth[c]["mortgage"]),
+                    "other_loans": num(worth[c]["other_loans"]),
                 }
                 for c in currencies
             ],

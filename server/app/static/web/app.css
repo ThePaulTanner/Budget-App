@@ -395,6 +395,12 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 @media (max-width: 760px) { .tiny-only { display: block; } .money-table .col-account { min-width: 0; } .money-table .acct strong { white-space: normal; } }
 
 /* net worth card: the range choice sits at the top right of the header */
+.nw-breakdown { margin: 4px 0 10px; }
+.nw-line { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.nw-line.sub { padding: 2px 0 2px 16px; font-weight: 400; color: var(--muted); }
+.nw-line + .nw-line:not(.sub) { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 9px; }
+.nw-card > div:last-child > div > :last-child { margin-bottom: 0; }  /* the card's own padding is the only space under the chart */
+.nw-total { margin: 10px 0 14px; padding-top: 10px; border-top: 2px solid var(--border); }
 .nw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .nw-head h3 { margin: 0; }
 .seg.compact button { padding: .2rem .6rem; font-size: .8rem; }
