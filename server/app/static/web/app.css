@@ -282,6 +282,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
 }
 @media (max-width: 340px) {
   #tabs a { font-size: .6rem; }   /* the very narrowest phones: slightly smaller labels so none is cut short */
+  .cf-card .cf-controls .seg.wide button { font-size: .7rem; padding-inline: .15rem; }
 }
 
 /* people and owners */
