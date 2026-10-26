@@ -428,7 +428,7 @@ def compute_networth(db: Database, person_id: int | None = None) -> dict[str, di
     owners it has. With a person it is the accounts that person owns, in full: an account shared
     with someone else shows in both people's totals, never twice in the household's."""
     totals: dict[str, dict[str, Decimal]] = {}
-    sql = "SELECT type, current_balance, currency FROM accounts WHERE hidden=0"
+    sql = "SELECT type, subtype, current_balance, currency FROM accounts WHERE hidden=0"
     params: tuple = ()
     if person_id is not None:
         sql += " AND id IN (SELECT account_id FROM account_owners WHERE person_id=?)"
@@ -443,17 +443,28 @@ def compute_networth(db: Database, person_id: int | None = None) -> dict[str, di
                 "liabilities": Decimal(0),
                 "investments": Decimal(0),
                 "net_worth": Decimal(0),
+                "cash": Decimal(0),
+                "credit_cards": Decimal(0),
+                "mortgage": Decimal(0),
+                "other_loans": Decimal(0),
             },
         )
         balance = Decimal(acct["current_balance"])
         if acct["type"] in LIABILITY_TYPES:
             t["liabilities"] += balance
+            if acct["type"] == "credit":
+                t["credit_cards"] += balance
+            elif (acct["subtype"] or "").lower() == "mortgage":
+                t["mortgage"] += balance
+            else:
+                t["other_loans"] += balance
         elif acct["type"] in ASSET_TYPES:
             t["assets"] += balance
             if acct["type"] == "investment":
                 t["investments"] += balance
     for t in totals.values():
         t["net_worth"] = t["assets"] - t["liabilities"]
+        t["cash"] = t["assets"] - t["investments"]  # bank accounts and anything else that is not invested
     return totals
 
 

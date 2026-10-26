@@ -7,7 +7,11 @@
       "assets": 45200.5,
       "liabilities": 312850.25,
       "investments": 42000.0,
-      "net_worth": -267649.75
+      "net_worth": -267649.75,
+      "cash": 3200.5,
+      "credit_cards": 850.25,
+      "mortgage": 312000.0,
+      "other_loans": 0.0
     }
   ],
   "month": "2026-10",

@@ -911,10 +911,24 @@
       el("button", { type: "button", "aria-pressed": String(label === nwRange), text: label, onclick: () => { nwRange = label; paint(); drawChart(); } })));
     paint();
 
+    // Assets and liabilities each with their parts, then the net worth total beneath both.
+    const part = (label, value, sub) => el("div", { class: "nw-line" + (sub ? " sub" : "") }, el("span", { text: label }), el("span", { class: "num", text: money(value, cur) }));
+    const w = worth || {};
+    const breakdown = worth ? el("div", { class: "nw-breakdown" },
+      part("Assets", w.assets),
+      part("Cash", w.cash ?? w.assets - w.investments, true),
+      part("Investments", w.investments, true),
+      part("Liabilities", w.liabilities),
+      part("Mortgage", w.mortgage ?? 0, true),
+      part("Credit card debt", w.credit_cards ?? 0, true),
+      (w.other_loans ?? 0) !== 0 && part("Other loans", w.other_loans, true)) : null;
+
     const netCard = el("section", { class: "card" },
-      el("div", { class: "nw-head" }, el("h3", { text: "Net worth" }), seg),
-      el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) }),
+      el("h3", { text: "Net worth" }),
+      breakdown,
+      el("div", { class: "nw-total" }, el("span", { class: "muted", text: "Net worth" }), el("div", { class: "big", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
+      el("div", { class: "nw-head" }, el("span", { class: "muted", text: "History" }), seg),
       chartBox);
 
     view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));

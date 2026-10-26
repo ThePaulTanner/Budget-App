@@ -72,7 +72,9 @@ def test_full_sync_stores_exact_amounts_and_builds_net_worth(services, plaid, cl
     assert types["acc_tfsa"] == "investment"  # Plaid's "brokerage" maps to investment
     summary = client.get("/api/summary", headers=auth).json()["net_worth"][0]
     assert summary == {"currency": "CAD", "assets": 45200.5, "liabilities": 312850.25,
-                       "investments": 42000.0, "net_worth": -267649.75}
+                       "investments": 42000.0, "net_worth": -267649.75,
+                       # assets = cash + investments; liabilities = mortgage + credit cards (+ other loans)
+                       "cash": 3200.5, "credit_cards": 850.25, "mortgage": 312000.0, "other_loans": 0.0}
 
     from app.sync import snapshot_networth
     snapshot_networth(services.db)
