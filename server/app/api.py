@@ -96,7 +96,7 @@ def transaction_search_sql(search: str) -> tuple[str, list[str | float]]:
     params: list[str | float] = []
     fields = (
         "t.name", "t.merchant_name", "m.name", "a.name", "a.official_name", "a.mask", "i.institution",
-        "REPLACE(COALESCE(override_category, rule_category, plaid_category), '_', ' ')",
+        "REPLACE(COALESCE(t.override_category, t.rule_category, t.plaid_category), '_', ' ')",
         "REPLACE(COALESCE(t.category_detailed, ''), '_', ' ')",
         "t.date", "t.authorized_date", "t.currency", "t.amount",
     )

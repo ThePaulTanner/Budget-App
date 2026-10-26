@@ -922,7 +922,7 @@
       part("Credit card debt", w.credit_cards, true),
       w.other_loans !== 0 && part("Other loans", w.other_loans, true)) : null;
 
-    const netCard = el("section", { class: "card nw-card" },
+    const netCard = el("section", { class: "card" },
       el("h3", { text: "Net worth" }),
       breakdown,
       el("div", { class: "nw-total" }, el("span", { text: "Net worth" }), el("span", { class: "nw-sum", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
