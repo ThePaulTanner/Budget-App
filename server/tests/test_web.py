@@ -929,3 +929,9 @@ def test_phone_tab_bar_writes_transactions_in_full_and_gives_it_the_room():
     assert "<span>Transactions</span>" in html
     assert '#tabs a[data-tab="transactions"] { flex: 1.5 1 0; }' in css
     assert "@media (max-width: 340px) {\n  #tabs a { font-size: .6rem; }" in css  # the very narrowest phones still fit every label
+
+
+def test_spending_this_month_has_no_see_budgets_and_trends_link():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewSpendingSummary"):app.index("// ---------------------------------------------------------------- Transactions")]
+    assert "See budgets and trends" not in page and 'Top categories' in page

@@ -950,8 +950,7 @@
           el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
           el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
             progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
-          el("div", { class: "amount", text: money(c.spent, cur) }))),
-        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
+          el("div", { class: "amount", text: money(c.spent, cur) })))]);
 
     view().replaceChildren(viewerNote(), spendCard);
   }
