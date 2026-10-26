@@ -916,12 +916,12 @@
     const w = worth || {};
     const breakdown = worth ? el("div", { class: "nw-breakdown" },
       part("Assets", w.assets),
-      part("Cash", w.cash ?? w.assets - w.investments, true),
+      part("Cash", w.cash, true),
       part("Investments", w.investments, true),
       part("Liabilities", w.liabilities),
-      part("Mortgage", w.mortgage ?? 0, true),
-      part("Credit card debt", w.credit_cards ?? 0, true),
-      (w.other_loans ?? 0) !== 0 && part("Other loans", w.other_loans, true)) : null;
+      part("Mortgage", w.mortgage, true),
+      part("Credit card debt", w.credit_cards, true),
+      w.other_loans !== 0 && part("Other loans", w.other_loans, true)) : null;
 
     const netCard = el("section", { class: "card" },
       el("h3", { text: "Net worth" }),

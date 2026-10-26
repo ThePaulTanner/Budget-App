@@ -47,7 +47,7 @@ The server release number lives in `server/app/VERSION` (`MAJOR.MINOR.PATCH`). *
 
 | Call | Fixture | Notes |
 |---|---|---|
-| `GET /api/summary` | `summary.json` | Home screen. `net_worth` is an **array, one entry per currency**; show the `base_currency` one prominently. `items_needing_attention` holds institution names; if it's non-empty, show a banner that opens the server page in Safari. |
+| `GET /api/summary` | `summary.json` | Home screen. `net_worth` is an **array, one entry per currency**; show the `base_currency` one prominently. Each entry also splits the totals: `cash` + `investments` = `assets`, and `mortgage` + `credit_cards` + `other_loans` = `liabilities` (all `Decimal` through the `Money` path). `items_needing_attention` holds institution names; if it's non-empty, show a banner that opens the server page in Safari. |
 | `GET /api/accounts[?include_hidden=false]` | `accounts.json` | `type`: `depository`, `credit`, `loan`, `investment`, `other`. Credit and loan `current_balance` values are positive numbers meaning **owed**. |
 | `PATCH /api/accounts/{id}` `{"hidden":bool}` | — | Hides an account from totals and budgets. The response has `institution: null`, so keep the institution from the list. |
 | `GET /api/transactions` | `transactions.json` | Query parameters: `account_id`, `category`, `search` (matches the bank's text and merchant names), `merchant_id`, `start`, `end` (YYYY-MM-DD), `limit` (≤1000, default 100), `offset`. **Show `display_name` as the row title**: it is the merchant name the user chose, else Plaid's cleaned name, else the raw text. `merchant_id` and `merchant` (the chosen name, or null) are also returned. Returns `{total, limit, offset, transactions}`. Paginate with infinite scroll. Sorted newest first. |
