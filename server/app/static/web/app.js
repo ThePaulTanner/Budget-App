@@ -225,7 +225,7 @@
 
   // ---------------------------------------------------------------- charts
 
-  // Net worth over time with a line each for assets, liabilities and investments. The key above the
+  // Net worth over time with a line each for assets, liabilities and investments. The key below the
   // chart doubles as switches (at least one line stays on) and shows each figure for the day you point at.
   const NW_SERIES = [["net_worth", "Net worth", "s-net"], ["assets", "Assets", "s-assets"], ["liabilities", "Liabilities", "s-liab"], ["investments", "Investments", "s-inv"]];
   const nwHidden = new Set();
@@ -314,9 +314,8 @@
       chart = next;
       show(current);
     }
-    wrap.append(key);
     draw();
-    wrap.append(caption);
+    wrap.append(caption, key);
     if (estimateNote) wrap.append(estimateNote);
     return wrap;
   }
@@ -927,11 +926,13 @@
       el("h3", { text: "Net worth" }),
       breakdown,
       el("div", { class: "nw-total" }, el("span", { text: "Net worth" }), el("span", { class: "nw-sum", text: worth ? money(worth.net_worth, cur) : money(0, cur) })),
-      summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
-      el("div", { class: "nw-head" }, el("span", { class: "muted", text: "History" }), seg),
+      summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })));
+    // The history is a card of its own: the range choice, the chart, then the key to its lines beneath.
+    const overTimeCard = el("section", { class: "card nw-chart-card" },
+      el("div", { class: "nw-head" }, el("h3", { text: "Over time" }), seg),
       chartBox);
 
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));
+    view().replaceChildren(viewerNote(), netCard, overTimeCard);
     drawChart();
   }
 

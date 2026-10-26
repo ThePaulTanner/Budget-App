@@ -375,7 +375,7 @@ svg.chart .dot.s-assets { fill: var(--c-assets); }
 svg.chart .dot.s-liab { fill: var(--c-liab); }
 svg.chart .dot.s-inv { fill: var(--c-inv); }
 svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
-.nw-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.nw-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 4px; }
 .nw-chip { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
 .nw-chip[aria-pressed="false"] { opacity: .45; }
 .nw-chip .nw-label { font-size: .8rem; color: var(--muted); }
@@ -399,8 +399,8 @@ svg.chart .gl.zero { stroke: var(--muted-2); stroke-dasharray: 3 3; }
 .nw-line { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-weight: 650; font-variant-numeric: tabular-nums; }
 .nw-line.sub { padding: 2px 0 2px 16px; font-weight: 400; color: var(--muted); }
 .nw-line + .nw-line:not(.sub) { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 9px; }
-.nw-card > div:last-child > div > :last-child { margin-bottom: 0; }  /* the card's own padding is the only space under the chart */
-.nw-total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 0 16px; padding-top: 8px; border-top: 2px solid var(--text); font-weight: 750; }  /* the rule under the sums, like adding up a column */
+.nw-chart-card > div:last-child > div > :last-child { margin-bottom: 0; }  /* the card's own padding is the only space under the chart */
+.nw-total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 8px 0 4px; padding-top: 8px; border-top: 2px solid var(--text); font-weight: 750; }  /* the rule under the sums, like adding up a column */
 .nw-sum { font-size: 1.9rem; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; text-align: right; }
 @media (max-width: 360px) { .nw-sum { font-size: 1.5rem; } }
 .nw-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
