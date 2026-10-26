@@ -314,3 +314,31 @@ def test_net_worth_parts_add_up_with_an_other_loan_and_a_person(services):
         assert (t["cash"], t["investments"], t["mortgage"], t["credit_cards"], t["other_loans"]) == tuple(Decimal(x) for x in expect)
         assert t["cash"] + t["investments"] == t["assets"]
         assert t["mortgage"] + t["credit_cards"] + t["other_loans"] == t["liabilities"]
+
+
+def test_a_loan_can_be_counted_as_a_mortgage_or_another_loan(services, plaid, client, auth):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page(added=[])]
+    run(services, item)
+
+    def parts():
+        t = client.get("/api/summary", headers=auth).json()["net_worth"][0]
+        return t["mortgage"], t["other_loans"]
+
+    assert parts() == (312000.0, 0.0)  # the bank's label says mortgage
+    body = client.patch("/api/accounts/acc_mtg", json={"loan_kind": "other"}, headers=auth).json()
+    assert body["loan_kind"] == "other" and body["hidden"] is False
+    assert parts() == (0.0, 312000.0)  # the owner's choice wins
+    client.patch("/api/accounts/acc_mtg", json={"loan_kind": "mortgage"}, headers=auth)
+    assert parts() == (312000.0, 0.0)
+    assert client.patch("/api/accounts/acc_mtg", json={"loan_kind": None}, headers=auth).json()["loan_kind"] is None
+    run(services, item)  # a sync keeps the choice
+    client.patch("/api/accounts/acc_mtg", json={"loan_kind": "other"}, headers=auth)
+    run(services, item)
+    assert parts() == (0.0, 312000.0)
+    # only loans have a kind, and the request must say something
+    assert client.patch("/api/accounts/acc_chq", json={"loan_kind": "mortgage"}, headers=auth).status_code == 400
+    assert client.patch("/api/accounts/acc_mtg", json={}, headers=auth).status_code == 400
+    assert client.patch("/api/accounts/acc_mtg", json={"loan_kind": "car"}, headers=auth).status_code == 422
+    assert client.patch("/api/accounts/nope", json={"hidden": True}, headers=auth).status_code == 404

@@ -430,6 +430,24 @@
     return Object.entries(totals).sort(([a], [b]) => (a === baseCurrency ? -1 : b === baseCurrency ? 1 : a.localeCompare(b)))
       .map(([cur, value]) => money(value, cur)).join(" \u00B7 ") + (kind === "credit" || kind === "loan" ? " owed" : "");
   }
+  // How a loan counts in the net worth card: as the mortgage or as another loan. Automatic goes by the bank's own label.
+  function loanKindControl(a) {
+    const select = el("select", { class: "loan-kind", "aria-label": `Count ${a.name} as` },
+      el("option", { value: "", text: "Automatic" }), el("option", { value: "mortgage", text: "Mortgage" }), el("option", { value: "other", text: "Other loan" }));
+    select.value = a.loan_kind || "";
+    select.addEventListener("change", async () => {
+      select.disabled = true;
+      try {
+        await api(`/api/accounts/${encodeURIComponent(a.id)}`, { method: "PATCH", body: { loan_kind: select.value || null } });
+        toast("Saved.");
+        route();
+      } catch (err) {
+        if (err instanceof SignedOut) showLogin(); else { toast(err.message, true); select.value = a.loan_kind || ""; select.disabled = false; }
+      }
+    });
+    return el("label", { class: "loan-kind-row muted" }, el("span", { text: "Counts as " }), select);
+  }
+
   function accountSection(kind, label, iconId, rows, itemsById) {
     const credit = kind === "credit";
     const showOwner = people.length > 0;
@@ -460,7 +478,8 @@
           el("div", { class: "bank-cell", title: a.institution || (item && item.institution) || "Bank" }, bankLogo(item, a.institution, 28), el("strong", { text: a.institution || (item && item.institution) || "Bank" }))),
         el("td", { class: "col-account" },
           el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
-          showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" })),
+          showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" }),
+          kind === "loan" && loanKindControl(a)),
         // On a computer the owner has a column of its own; on a phone it stays as the small line under the account name.
         showOwner && el("td", { class: "col-acct-owner", text: ownerText(a) || "" }),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
@@ -470,7 +489,7 @@
         el("td", { class: "num col-balance" }, a.current_balance == null ? "\u2014" : money(a.current_balance, a.currency)),
       ].filter(Boolean);
       return el("tr", { class: `click${index === 0 ? " bank-first" : ""}`, tabindex: 0,
-        onclick: (e) => { if (!e.target.closest("a, td.shared")) open(a); },
+        onclick: (e) => { if (!e.target.closest("a, td.shared, label")) open(a); },
         onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(a); } }, cells);
     }));
     return el("section", { class: `card acct-section ${kind}` },

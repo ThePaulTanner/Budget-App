@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 SCHEMA = """
 CREATE TABLE users (
@@ -88,7 +88,8 @@ CREATE TABLE accounts (
   credit_limit TEXT,
   currency TEXT NOT NULL,
   hidden INTEGER NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  loan_kind TEXT
 );
 CREATE TABLE transactions (
   id TEXT PRIMARY KEY,
@@ -434,6 +435,11 @@ CREATE TABLE networth_adjust (
     # been sold out of the account can still be priced. NULL = not read yet, '' = Plaid gave none.
     17: """
 ALTER TABLE investment_transactions ADD COLUMN mic TEXT;
+""",
+
+    # How a loan is counted in the net worth card: 'mortgage' or 'other' by the owner's choice, NULL = go by the bank's label.
+    18: """
+ALTER TABLE accounts ADD COLUMN loan_kind TEXT;
 """}
 
 
