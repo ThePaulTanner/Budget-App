@@ -45,6 +45,7 @@
   // On a phone the charts are drawn 360 wide (about their real width) with larger text, instead of 640 wide and
   // shrunk to half size, which left the axis labels too small to read. How many labels fit along an axis is worked
   // out from the text size.
+  // (600px matches the phone breakpoint in app.css; keep the two together.)
   const PHONE_CHARTS = window.matchMedia ? window.matchMedia("(max-width: 600px)") : { matches: false };
   const chartW = () => (PHONE_CHARTS.matches ? 360 : 640);
   const everyNth = (count, room, labelWidth) => Math.max(1, Math.ceil((labelWidth * count) / room));  // show every nth of `count` labels
@@ -1344,7 +1345,8 @@
     return svg("path", { class: cls, d });
   }
 
-  // `mount` is the element the cash flow is drawn into (the Overview's); without one it fills the whole page.
+  // `mount` is the element the cash flow is drawn into (the Spending page's Cash flow tab, which puts its heading above it);
+  // without one it fills the whole page.
   async function viewCashflow(id, params, mount = null) {
     // An address like #/spending?tab=cashflow&range=6m&group=week opens that view.
     if (params.get("range")) {
