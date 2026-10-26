@@ -231,7 +231,7 @@
   function netWorthChart(rows, currency) {
     const wrap = el("div");
     if (rows.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
-    const W = chartW(), phone = W < 640, H = phone ? 230 : 240, L = phone ? 62 : 62, R = 12, T = 12, B = phone ? 30 : 26;
+    const W = chartW(), phone = W < 640, H = phone ? 230 : 240, L = 62, R = 12, T = 12, B = phone ? 30 : 26;
     const x = (i) => L + (i / (rows.length - 1)) * (W - L - R);
     // Days before the first recorded one are estimated from transactions and market prices: drawn fainter.
     const firstRecorded = rows.findIndex((r) => !r.estimated);
@@ -321,7 +321,7 @@
   }
 
   function barChart(rows, currency) {
-    const W = chartW(), phone = W < 640, H = phone ? 210 : 200, L = phone ? 62 : 62, R = 8, T = 10, B = phone ? 28 : 24;
+    const W = chartW(), phone = W < 640, H = phone ? 210 : 200, L = 62, R = 8, T = 10, B = phone ? 28 : 24;
     const max = Math.max(...rows.map((r) => r.total), 1);
     const chart = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Spending by month" });
     for (let i = 0; i <= 2; i++) {
@@ -2148,7 +2148,7 @@
   // Monthly returns: a pair of bars per month (you, benchmark), gains up and falls down from one zero line.
   function monthlyBars(rows, benchName) {
     if (rows.length === 0) return el("p", { class: "empty", text: "No full months in this period yet." });
-    const W = chartW(), phone = W < 640, H = phone ? 220 : 210, L = phone ? 46 : 46, R = 8, T = 12, B = phone ? 30 : 26;
+    const W = chartW(), phone = W < 640, H = phone ? 220 : 210, L = 46, R = 8, T = 12, B = phone ? 30 : 26;
     const peak = Math.max(0.01, ...rows.flatMap((r) => [Math.abs(r.portfolio ?? 0), Math.abs(r.benchmark ?? 0)]));
     const y = (v) => T + (1 - (v + peak) / (2 * peak)) * (H - T - B);
     const chart = svg("svg", { class: "chart perf-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Return for each month, you against the benchmark" });
