@@ -202,6 +202,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 .monthnav strong { min-width: 9em; text-align: center; }
 svg.chart { width: 100%; height: auto; display: block; }
 svg.chart text { fill: var(--muted-2); font-size: 11px; }
+@media (max-width: 600px) { svg.chart text { font-size: 13px; } }   /* drawn about life size on a phone, so this is the size you see */
 svg.chart .line { fill: none; stroke: var(--chart); stroke-width: 2.2; stroke-linejoin: round; }
 svg.chart .area { fill: var(--chart); opacity: .12; stroke: none; }
 svg.chart .bar { fill: var(--chart); }
@@ -268,6 +269,7 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   #tabs a { flex: 1; flex-direction: column; gap: 2px; padding: .35rem .1rem .45rem; font-size: .66rem; border-radius: 0; min-width: 0; }
   #tabs a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   #tabs .lbl + .lbl-short { display: block; }
+  #tabs a[data-tab="transactions"] { flex: 1.5 1 0; }   /* the longest label gets more of the row, so it is written in full */
   #tabs .lbl:has(+ .lbl-short) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   #tabs a[aria-current="page"] { background: transparent; box-shadow: inset 0 -3px 0 var(--accent); }
   #tabs a[aria-current="page"]::before { display: none; }
@@ -277,6 +279,10 @@ dialog::backdrop { background: rgba(8, 12, 20, .55); -webkit-backdrop-filter: bl
   .topbar .muted { display: none; }
   dialog { width: calc(100vw - 16px); padding: 18px; }
   #toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 340px) {
+  #tabs a { font-size: .6rem; }   /* the very narrowest phones: slightly smaller labels so none is cut short */
+  .cf-card .cf-controls .seg.wide button { font-size: .7rem; padding-inline: .15rem; }
 }
 
 /* people and owners */
@@ -526,9 +532,11 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 @media (max-width: 1100px) { .cf-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .cf-controls { flex-wrap: wrap; }
-  .cf-controls .seg.wide { flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; }
-  .cf-controls .seg.wide::-webkit-scrollbar { display: none; }
-  .cf-controls .seg.wide button { flex: none; }
+  /* six look-back choices do not fit across a phone: two rows of three, all visible (not scrolled out of sight) */
+  .cf-controls .seg.wide { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .cf-controls .seg.wide button { white-space: nowrap; padding-inline: .3rem; }
+  .cf-controls .seg.wide button:nth-child(n + 4) { border-top: 1px solid var(--border); }
+  .cf-controls .seg.wide button:nth-child(3n + 1) { border-left: 0; }
   /* four Spending tabs don't fit across a phone: show them as a 2 x 2 grid, all visible */
   .subtabs .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .subtabs .seg button { white-space: nowrap; }
@@ -555,22 +563,23 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .inv-note { font-size: .85rem; }
 }
 
-/* Phone sign-in: no empty margin. The three boxes (the card, the box inside it, and the box of details
-   inside that) fill the whole screen, with bigger fields and buttons to tap. */
+/* Phone sign-in: no empty margin, and the details sit together at the top, close to the title, so the fields
+   stay in view above the keyboard. They are not spread over the screen; the fields and buttons are still
+   big enough to tap (48px). */
 @media (max-width: 600px) {
-  .login { display: block; min-height: 0; padding: 0; background: var(--surface); }   /* the card sets the height, so nothing is left blank below it */
-  .login-card { display: flex; flex-direction: column; width: 100%; min-height: 100vh; min-height: 100dvh; border: 0; border-radius: 0; box-shadow: none;
-    padding: calc(env(safe-area-inset-top) + 22px) 14px calc(env(safe-area-inset-bottom) + 14px); }
-  .login-title { margin-bottom: 14px; padding: 0 4px; }
-  .login-title .logo { width: 44px; height: 44px; }
-  .login-card h1 { font-size: 1.6rem; }
-  .login-outer { flex: 1 1 auto; display: flex; flex-direction: column; padding: 14px; border-radius: 18px; }
-  .login-inner { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-evenly; gap: 14px; padding: 22px 18px; border-radius: 14px; }
-  .login-inner label { margin: 0; }
-  .login-inner label { font-size: .95rem; font-weight: 600; }
-  .login-inner input { min-height: 58px; margin-top: 6px; font-size: 1.1rem; }
-  .login-outer .wide { min-height: 54px; font-size: 1.05rem; border-radius: 14px; }
-  .login-card .error { margin: 12px 4px 0; }
+  .login { display: block; min-height: 100vh; min-height: 100dvh; padding: 0; background: var(--surface); }   /* one background, edge to edge */
+  .login-card { display: block; width: 100%; border: 0; border-radius: 0; box-shadow: none;
+    padding: calc(env(safe-area-inset-top) + 16px) 14px calc(env(safe-area-inset-bottom) + 14px); }
+  .login-title { margin-bottom: 10px; padding: 0 4px; gap: 10px; }
+  .login-title .logo { width: 36px; height: 36px; }
+  .login-card h1 { font-size: 1.4rem; }
+  .login-outer { padding: 10px; border-radius: 16px; }
+  .login-inner { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; border-radius: 12px; }
+  .login-inner label { margin: 0; font-size: .9rem; font-weight: 600; }
+  .login-inner input { min-height: 48px; margin-top: 4px; font-size: 1.05rem; }
+  .login-inner #password-submit { margin-top: 2px; }
+  .login-outer .wide { min-height: 50px; font-size: 1.05rem; border-radius: 12px; }
+  .login-card .error { margin: 10px 4px 0; }
 }
 
 /* The Spending tabs stay on one row; on a narrow screen the row scrolls sideways. */
@@ -642,7 +651,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 /* Whose account it is: a small line under the account name (inline on a phone, to keep one line per account). */
 .acct-owner { font-size: .74rem; line-height: 1.3; }
 
-.cf-on-overview { margin-top: 16px; }
 .cf-page-heading { margin: 0 0 10px; font-size: 1.1rem; }
 
 /* A position: ticker with its name (small), then what is held and at what price, then the money. */

@@ -42,6 +42,14 @@
     return node;
   }
 
+  // On a phone the charts are drawn 360 wide (about their real width) with larger text, instead of 640 wide and
+  // shrunk to half size, which left the axis labels too small to read. How many labels fit along an axis is worked
+  // out from the text size.
+  // (600px matches the phone breakpoint in app.css; keep the two together.)
+  const PHONE_CHARTS = window.matchMedia ? window.matchMedia("(max-width: 600px)") : { matches: false };
+  const chartW = () => (PHONE_CHARTS.matches ? 360 : 640);
+  const everyNth = (count, room, labelWidth) => Math.max(1, Math.ceil((labelWidth * count) / room));  // show every nth of `count` labels
+
   const formatters = {};
   function money(value, currency, options) {
     const key = currency + JSON.stringify(options || {});
@@ -224,7 +232,7 @@
   function netWorthChart(rows, currency) {
     const wrap = el("div");
     if (rows.length < 2) return el("p", { class: "empty", text: "Not enough history yet. The chart fills in as days of data are collected." });
-    const W = 640, H = 240, L = 62, R = 12, T = 12, B = 26;
+    const W = chartW(), phone = W < 640, H = phone ? 230 : 240, L = 62, R = 12, T = 12, B = phone ? 30 : 26;
     const x = (i) => L + (i / (rows.length - 1)) * (W - L - R);
     // Days before the first recorded one are estimated from transactions and market prices: drawn fainter.
     const firstRecorded = rows.findIndex((r) => !r.estimated);
@@ -291,7 +299,7 @@
         }
       }
       for (const i of [0, Math.floor((rows.length - 1) / 2), rows.length - 1]) {
-        const label = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === rows.length - 1 ? "end" : "middle" });
+        const label = svg("text", { x: x(i), y: H - 7, "text-anchor": i === 0 ? "start" : i === rows.length - 1 ? "end" : "middle" });
         label.textContent = parseDay(rows[i].date).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
         next.append(label);
       }
@@ -314,7 +322,7 @@
   }
 
   function barChart(rows, currency) {
-    const W = 640, H = 200, L = 62, R = 8, T = 10, B = 24;
+    const W = chartW(), phone = W < 640, H = phone ? 210 : 200, L = 62, R = 8, T = 10, B = phone ? 28 : 24;
     const max = Math.max(...rows.map((r) => r.total), 1);
     const chart = svg("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Spending by month" });
     for (let i = 0; i <= 2; i++) {
@@ -326,6 +334,7 @@
       chart.append(label);
     }
     const slot = (W - L - R) / rows.length;
+    const nth = everyNth(rows.length, W - L - R, phone ? 34 : 28);
     rows.forEach((row, i) => {
       const h = Math.max(0, (row.total / max) * (H - T - B));
       const bar = svg("rect", { class: "bar", x: L + i * slot + slot * 0.18, y: H - B - h, width: slot * 0.64, height: h, rx: 3 });
@@ -333,9 +342,11 @@
       tip.textContent = `${monthLabel(row.month)}: ${money(row.total, currency)}`;
       bar.append(tip);
       chart.append(bar);
-      const label = svg("text", { x: L + i * slot + slot / 2, y: H - 7, "text-anchor": "middle" });
-      label.textContent = shortMonth(row.month);
-      chart.append(label);
+      if (i % nth === 0) {
+        const label = svg("text", { x: L + i * slot + slot / 2, y: H - 8, "text-anchor": "middle" });
+        label.textContent = shortMonth(row.month);
+        chart.append(label);
+      }
     });
     return chart;
   }
@@ -877,7 +888,7 @@
     view().replaceChildren(viewerNote(), ...sections);
   }
 
-  async function viewOverview(id, params = new URLSearchParams()) {
+  async function viewOverview(id) {
     const [summary, log] = await Promise.all([api(scoped("/api/summary")), api("/auth/login-log?limit=100").catch(() => null)]);
     if (id !== navId) return;
     setAlert(log);
@@ -906,13 +917,15 @@
       summary.net_worth.filter((n) => n !== worth).map((n) => el("p", { class: "muted", text: `${n.currency}: ${money(n.net_worth, n.currency)}` })),
       chartBox);
 
-    const cashflowBox = el("div", { class: "cf-on-overview" });
-    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard), cashflowBox);
+    view().replaceChildren(viewerNote(), el("div", { class: "grid" }, netCard));
     drawChart();
-    // The cash flow loads on its own, so the net worth shows at once.
-    viewCashflow(id, params, cashflowBox).catch((err) => {
-      if (err instanceof SignedOut) showLogin(); else if (id === navId) cashflowBox.replaceChildren(el("p", { class: "error", text: err.message }));
-    });
+  }
+
+  // The Spending page's Cash flow tab: income and expenses over time, with its own heading and controls.
+  async function viewCashflowTab(id, params) {
+    const box = el("div");
+    view().replaceChildren(viewerNote(), box);
+    await viewCashflow(id, params, box);
   }
 
   // The Spending page's first tab: this month's spending against the budgets, and the top categories.
@@ -938,8 +951,7 @@
           el("div", { class: "icon", text: icon(c.category), "aria-hidden": "true" }),
           el("div", { class: "grow" }, el("div", { text: categoryLabel(c.category) }),
             progress(spending.total > 0 ? (Math.max(c.spent, 0) / spending.total) * 100 : 0, true)),
-          el("div", { class: "amount", text: money(c.spent, cur) }))),
-        el("p", {}, el("a", { href: "#/budgets", text: "See budgets and trends" }))]);
+          el("div", { class: "amount", text: money(c.spent, cur) })))]);
 
     view().replaceChildren(viewerNote(), spendCard);
   }
@@ -1333,9 +1345,10 @@
     return svg("path", { class: cls, d });
   }
 
-  // `mount` is the element the cash flow is drawn into (the Overview's); without one it fills the whole page.
+  // `mount` is the element the cash flow is drawn into (the Spending page's Cash flow tab, which puts its heading above it);
+  // without one it fills the whole page.
   async function viewCashflow(id, params, mount = null) {
-    // An address like #/overview?range=6m&group=week opens that view.
+    // An address like #/spending?tab=cashflow&range=6m&group=week opens that view.
     if (params.get("range")) {
       cf.range = params.get("range"); cf.group = params.get("group");
       cf.start = params.get("start"); cf.end = params.get("end");
@@ -1436,7 +1449,7 @@
       const q = new URLSearchParams({ range: cf.range });
       if (cf.group) q.set("group", cf.group);
       if (cf.range === "custom" && cf.start && cf.end) { q.set("start", cf.start); q.set("end", cf.end); }
-      history.replaceState(null, "", `#/overview?${q}`);  // no hashchange, so no reload
+      history.replaceState(null, "", `#/spending?tab=cashflow&${q}`);  // no hashchange, so no reload
     }
 
     // ---- data
@@ -1505,7 +1518,7 @@
       if (!data) return;
       const width = Math.max(300, Math.round(plot1.clientWidth || 640));
       const narrow = width < 560;
-      const L = narrow ? 48 : 60, R = 10, T = 10, B = 24;
+      const L = narrow ? 58 : 60, R = 10, T = 10, B = narrow ? 28 : 24;
       const H1 = narrow ? 300 : 380;
       const bks = data.buckets, n = bks.length, slot = (width - L - R) / n;
       const cx = (i) => L + slot * (i + 0.5);
@@ -1555,7 +1568,7 @@
         s1.append(svg("path", { class: `cf-line ${cls}`, d: pts.map((v, i) => `${i ? "L" : "M"}${cx(i).toFixed(1)},${y1(v).toFixed(1)}`).join(" ") }));
         s1.append(svg("circle", { class: `cf-end ${cls}`, cx: cx(n - 1), cy: y1(pts[n - 1]), r: 4 }));
       }
-      const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 54 : 66)))));
+      const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((width - L - R) / (narrow ? 60 : 66)))));
       bks.forEach((b, i) => {
         if (i % every) return;
         const label = svg("text", { x: cx(i), y: H1 - 6, "text-anchor": "middle" });
@@ -2072,7 +2085,7 @@
 
   // A two-line (you / benchmark) chart over dates. `valueText(v)` words a value for the readout and axis.
   function perfLineChart({ dates, series, axis, readout, area = false, label, marks = [] }) {
-    const W = 640, H = 230, L = 52, R = 12, T = 12, B = 26;
+    const W = chartW(), phone = W < 640, H = 230, L = phone ? 60 : 52, R = 12, T = 12, B = phone ? 30 : 26;
     const n = dates.length;
     const wrap = el("div");
     if (n < 2) return el("p", { class: "empty", text: "Not enough history for this chart yet." });
@@ -2100,7 +2113,7 @@
     }
     if (lo < 0 && hi > 0 && !area) chart.append(svg("line", { class: "gl zero", x1: L, x2: W - R, y1: y(0), y2: y(0) }));
     for (const i of [0, Math.floor((n - 1) / 2), n - 1]) {
-      const t = svg("text", { x: x(i), y: H - 6, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle" });
+      const t = svg("text", { x: x(i), y: H - 7, "text-anchor": i === 0 ? "start" : i === n - 1 ? "end" : "middle" });
       t.textContent = parseDay(dates[i]).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "2-digit" });
       chart.append(t);
     }
@@ -2136,7 +2149,7 @@
   // Monthly returns: a pair of bars per month (you, benchmark), gains up and falls down from one zero line.
   function monthlyBars(rows, benchName) {
     if (rows.length === 0) return el("p", { class: "empty", text: "No full months in this period yet." });
-    const W = 640, H = 210, L = 46, R = 8, T = 12, B = 26;
+    const W = chartW(), phone = W < 640, H = phone ? 220 : 210, L = 46, R = 8, T = 12, B = phone ? 30 : 26;
     const peak = Math.max(0.01, ...rows.flatMap((r) => [Math.abs(r.portfolio ?? 0), Math.abs(r.benchmark ?? 0)]));
     const y = (v) => T + (1 - (v + peak) / (2 * peak)) * (H - T - B);
     const chart = svg("svg", { class: "chart perf-chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Return for each month, you against the benchmark" });
@@ -2147,6 +2160,7 @@
       chart.append(t);
     }
     const slot = (W - L - R) / rows.length;
+    const nth = everyNth(rows.length, W - L - R, phone ? 34 : 28);
     const bar = (v, cls, at, width, tip) => {
       if (v == null) return;
       const top = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
@@ -2161,8 +2175,8 @@
       const name = `${monthLabel(r.month)}${r.partial ? " (part month)" : ""}`;
       bar(r.portfolio, "p-you", left, width, `${name}: you ${pctSigned(r.portfolio)}`);
       bar(r.benchmark, "p-bench", left + width + 1, width, `${name}: ${benchName} ${pctSigned(r.benchmark)}`);
-      if (rows.length <= 14 || i % 2 === 0) {
-        const t = svg("text", { x: L + i * slot + slot / 2, y: H - 7, "text-anchor": "middle" });
+      if (i % nth === 0) {
+        const t = svg("text", { x: L + i * slot + slot / 2, y: H - 8, "text-anchor": "middle" });
         t.textContent = shortMonth(r.month);
         chart.append(t);
       }
@@ -3239,9 +3253,10 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with two tabs. The old address #/merchants still opens the right tab, and Transactions is a page of its own.
+  // Spending is one page with three tabs. The old address #/merchants still opens the right tab, and Transactions is a page of its own.
   const SPENDING_TABS = [
     ["summary", "This month", viewSpendingSummary, "This month against your budgets"],
+    ["cashflow", "Cash flow", viewCashflowTab, "Income and expenses over time"],
     ["merchants", "Merchants", viewMerchants, "Where your money goes, over time"],
   ];
   let spendingTab = "summary";
@@ -3341,10 +3356,10 @@
   placeTabs();
 
   const PAGES = {
-    overview: ["Overview", "Net worth, and income and expenses over time"],
+    overview: ["Overview", "Net worth over time"],
     accounts: ["Accounts", "Balances by bank and account"],
     transactions: ["Transactions", "Search, filter and re-categorize"],
-    spending: ["Spending", "This month and merchants"],
+    spending: ["Spending", "This month, cash flow and merchants"],
     budgets: ["Budgets", "Limits and spending by month"],
     investments: ["Investments", "Positions at live prices"],
     settings: ["Settings", "App data, security and appearance"],
@@ -3437,7 +3452,8 @@
     let name = asked in ROUTES || isSpendingTab(asked) ? asked : "overview";
     // Old Spending tabs that became pages of their own: their bookmarks go to the new place.
     if (name === "spending" && params.get("tab") === "budgets") name = "budgets";
-    if (name === "spending" && params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }
+    // Cash flow used to sit under the Overview: its old addresses (with a range or grouping) open it where it lives now.
+    if (name === "overview" && (params.get("range") || params.get("group"))) { name = "spending"; params.set("tab", "cashflow"); }
     if (name === "spending" && params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }  // Transactions used to be a Spending tab
     if (isSpendingTab(name)) { params.set("tab", name); name = "spending"; }  // an old address
     if (name === "spending" && isSpendingTab(params.get("tab"))) spendingTab = params.get("tab");

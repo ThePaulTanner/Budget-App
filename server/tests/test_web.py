@@ -224,9 +224,13 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
 
 
-def test_phone_sign_in_fills_the_screen():
+def test_phone_sign_in_keeps_the_fields_together_at_the_top():
     css = (WEB_DIR / "app.css").read_text()
-    assert "min-height: 100dvh" in css and ".login-outer { flex: 1 1 auto;" in css and ".login-inner { flex: 1 1 auto;" in css
+    phone = css[css.index("/* Phone sign-in: no empty margin"):css.index("/* The Spending tabs stay on one row")]
+    # the details are stacked close together from the top, not stretched over the screen
+    assert "space-evenly" not in phone and "flex: 1 1 auto" not in phone
+    assert ".login-inner { display: flex; flex-direction: column; gap: 10px;" in phone
+    assert "min-height: 48px" in phone  # still big enough to tap
 
 
 def test_spending_summary_lives_on_the_spending_page_not_the_overview():
@@ -390,14 +394,17 @@ def test_there_is_no_money_page():
     assert 'data-tab="money"' not in html and "money: [" not in app
 
 
-def test_cash_flow_lives_on_the_overview_not_in_a_spending_tab():
+def test_cash_flow_lives_in_a_spending_tab_and_the_overview_is_net_worth_only():
     app = (WEB_DIR / "app.js").read_text()
     tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
-    assert "viewCashflow" not in tabs and "Cash flow" not in tabs
+    assert '["cashflow", "Cash flow", viewCashflowTab' in tabs
     overview = app[app.index("async function viewOverview"):]
     overview = overview[:overview.index("\n  }\n")]
-    assert "viewCashflow(id, params, cashflowBox)" in overview
-    assert "history.replaceState(null, \"\", `#/overview?${q}`)" in app
+    assert "viewCashflow" not in overview and "cashflowBox" not in overview
+    tab = app[app.index("async function viewCashflowTab"):]
+    tab = tab[:tab.index("\n  }\n")]
+    assert "viewCashflow(id, params, box)" in tab  # drawn with its own "Cash flow" heading above the chart's title
+    assert "history.replaceState(null, \"\", `#/spending?tab=cashflow&${q}`)" in app
 
 
 def test_budgets_has_its_own_top_level_tab():
@@ -409,10 +416,11 @@ def test_budgets_has_its_own_top_level_tab():
     assert 'href="#/budgets" data-tab="budgets"' in html and "tab=budgets" not in app
 
 
-def test_old_budgets_and_cash_flow_tab_addresses_go_to_their_new_pages():
+def test_old_budgets_and_overview_cash_flow_addresses_go_to_their_new_pages():
     app = (WEB_DIR / "app.js").read_text()
     assert 'params.get("tab") === "budgets") name = "budgets"' in app
-    assert 'params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }' in app
+    # cash flow is a Spending tab again; its old Overview addresses (with a range or grouping) open it there
+    assert 'if (name === "overview" && (params.get("range") || params.get("group"))) { name = "spending"; params.set("tab", "cashflow"); }' in app
 
 
 def test_the_sign_in_button_says_passkey_not_face_id():
@@ -673,7 +681,7 @@ def test_budgets_page_has_no_twelve_month_chart():
 def test_sign_in_screen_has_no_blank_space_below_the_box_on_phones():
     css = (WEB_DIR / "app.css").read_text()
     assert ".login { min-height: 100vh; min-height: 100dvh; display: grid;" in css
-    assert ".login { display: block; min-height: 0; padding: 0; background: var(--surface); }" in css
+    assert ".login { display: block; min-height: 100vh; min-height: 100dvh; padding: 0; background: var(--surface); }" in css  # one background, edge to edge
 
 
 def test_budgets_spending_card_title_has_the_total_spent_at_its_right():
@@ -847,7 +855,7 @@ def test_transactions_is_its_own_top_level_tab():
     tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
     assert "viewTransactions" not in tabs
     assert "transactions: viewTransactions" in app and 'transactions: ["Transactions"' in app
-    assert 'href="#/transactions" data-tab="transactions"' in html and ">Txns<" in html
+    assert 'href="#/transactions" data-tab="transactions"' in html and ">Txns<" not in html  # written in full on a phone too
     assert 'params.get("tab") === "transactions") { name = "transactions"; params.delete("tab"); }' in app
     assert "#/spending?tab=transactions" not in app  # every link goes to the new page
 
@@ -902,3 +910,38 @@ def test_what_ifs_lets_you_follow_the_money_or_take_it_as_cash():
     assert "wentInto" in page and '"Where the money went"' in page and "What the money became, now" in page
     assert "sum + (s.proceeds || 0)" in page  # the percentage is of what you were paid
     assert "Following the money is a guess from timing" in page  # the matching is a heuristic, and the page says so
+
+
+def test_chart_text_is_big_enough_to_read_on_a_phone():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    # charts are drawn about life size on a phone (360 wide), not 640 wide and shrunk to half size
+    assert "const chartW = () => (PHONE_CHARTS.matches ? 360 : 640);" in app
+    assert app.count("const W = chartW()") >= 4 and "const W = 640" not in app
+    assert "@media (max-width: 600px) { svg.chart text { font-size: 13px; } }" in css
+    # axis labels are thinned to what fits, so the bigger text does not collide
+    assert "everyNth(rows.length" in app
+
+
+def test_phone_tab_bar_writes_transactions_in_full_and_gives_it_the_room():
+    html = (WEB_DIR / "index.html").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    assert "<span>Transactions</span>" in html
+    assert '#tabs a[data-tab="transactions"] { flex: 1.5 1 0; }' in css
+    assert "@media (max-width: 340px) {\n  #tabs a { font-size: .6rem; }" in css  # the very narrowest phones still fit every label
+
+
+def test_spending_this_month_has_no_see_budgets_and_trends_link():
+    app = (WEB_DIR / "app.js").read_text()
+    page = app[app.index("async function viewSpendingSummary"):app.index("// ---------------------------------------------------------------- Transactions")]
+    assert "See budgets and trends" not in page and 'Top categories' in page
+
+
+def test_cash_flow_range_choices_are_all_visible_on_a_phone():
+    css = (WEB_DIR / "app.css").read_text()
+    phone = css[css.index("@media (max-width: 760px) {\n  .cf-controls { flex-wrap: wrap; }"):]
+    phone = phone[:phone.index("\n}\n")]
+    # six choices in two rows of three, not one long row that scrolls out of sight
+    assert ".cf-controls .seg.wide { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }" in phone
+    assert "overflow-x: auto" not in phone.split(".subtabs")[0]
+    assert ".cf-card .cf-controls .seg.wide button { font-size: .7rem; padding-inline: .15rem; }" in css  # and "Month to date" fits on the narrowest phones
