@@ -935,3 +935,12 @@ def test_spending_this_month_has_no_see_budgets_and_trends_link():
     app = (WEB_DIR / "app.js").read_text()
     page = app[app.index("async function viewSpendingSummary"):app.index("// ---------------------------------------------------------------- Transactions")]
     assert "See budgets and trends" not in page and 'Top categories' in page
+
+
+def test_cash_flow_range_choices_are_all_visible_on_a_phone():
+    css = (WEB_DIR / "app.css").read_text()
+    phone = css[css.index("@media (max-width: 760px) {\n  .cf-controls { flex-wrap: wrap; }"):]
+    phone = phone[:phone.index("\n}\n")]
+    # six choices in two rows of three, not one long row that scrolls out of sight
+    assert ".cf-controls .seg.wide { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }" in phone
+    assert "overflow-x: auto" not in phone.split(".subtabs")[0]

@@ -531,9 +531,11 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 @media (max-width: 1100px) { .cf-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .cf-controls { flex-wrap: wrap; }
-  .cf-controls .seg.wide { flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; }
-  .cf-controls .seg.wide::-webkit-scrollbar { display: none; }
-  .cf-controls .seg.wide button { flex: none; }
+  /* six look-back choices do not fit across a phone: two rows of three, all visible (not scrolled out of sight) */
+  .cf-controls .seg.wide { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .cf-controls .seg.wide button { white-space: nowrap; padding-inline: .3rem; }
+  .cf-controls .seg.wide button:nth-child(n + 4) { border-top: 1px solid var(--border); }
+  .cf-controls .seg.wide button:nth-child(3n + 1) { border-left: 0; }
   /* four Spending tabs don't fit across a phone: show them as a 2 x 2 grid, all visible */
   .subtabs .seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .subtabs .seg button { white-space: nowrap; }
