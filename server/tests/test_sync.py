@@ -342,3 +342,15 @@ def test_a_loan_can_be_counted_as_a_mortgage_or_another_loan(services, plaid, cl
     assert client.patch("/api/accounts/acc_mtg", json={}, headers=auth).status_code == 400
     assert client.patch("/api/accounts/acc_mtg", json={"loan_kind": "car"}, headers=auth).status_code == 422
     assert client.patch("/api/accounts/nope", json={"hidden": True}, headers=auth).status_code == 404
+
+
+def test_a_refused_account_change_changes_nothing(services, plaid, client, auth):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page(added=[])]
+    run(services, item)
+    refused = client.patch("/api/accounts/acc_chq", json={"hidden": True, "loan_kind": "mortgage"}, headers=auth)
+    assert refused.status_code == 400
+    assert client.patch("/api/accounts/acc_chq", json={"hidden": None}, headers=auth).status_code == 422
+    accounts = {a["id"]: a for a in client.get("/api/accounts", headers=auth).json()}
+    assert accounts["acc_chq"]["hidden"] is False and accounts["acc_chq"]["loan_kind"] is None

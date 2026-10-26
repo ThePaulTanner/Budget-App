@@ -736,14 +736,15 @@ def create_api_app(services: Services) -> FastAPI:
         account = db.one("SELECT type FROM accounts WHERE id=?", (account_id,))
         if not account:
             raise HTTPException(404, "account not found")
-        if "hidden" in sent:
-            if body.hidden is None:
-                raise HTTPException(422, "hidden is true or false")
-            db.run("UPDATE accounts SET hidden=? WHERE id=?", (int(body.hidden), account_id))
-        if "loan_kind" in sent:
-            if body.loan_kind is not None and account["type"] != "loan":
-                raise HTTPException(400, "Only a loan can be counted as a mortgage or another loan.")
-            db.run("UPDATE accounts SET loan_kind=? WHERE id=?", (body.loan_kind, account_id))
+        if "hidden" in sent and body.hidden is None:
+            raise HTTPException(422, "hidden is true or false")
+        if "loan_kind" in sent and body.loan_kind is not None and account["type"] != "loan":
+            raise HTTPException(400, "Only a loan can be counted as a mortgage or another loan.")
+        with db.transaction():  # everything checked above, so a request changes both fields or neither
+            if "hidden" in sent:
+                db.run("UPDATE accounts SET hidden=? WHERE id=?", (int(body.hidden), account_id))
+            if "loan_kind" in sent:
+                db.run("UPDATE accounts SET loan_kind=? WHERE id=?", (body.loan_kind, account_id))
         row = db.one("SELECT * FROM accounts WHERE id=?", (account_id,))
         return account_json(row, None, owners_by_account().get(account_id))  # institution is null here, as in the spec
 
