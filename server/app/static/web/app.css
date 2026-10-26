@@ -202,6 +202,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 .monthnav strong { min-width: 9em; text-align: center; }
 svg.chart { width: 100%; height: auto; display: block; }
 svg.chart text { fill: var(--muted-2); font-size: 11px; }
+@media (max-width: 600px) { svg.chart text { font-size: 13px; } }   /* drawn about life size on a phone, so this is the size you see */
 svg.chart .line { fill: none; stroke: var(--chart); stroke-width: 2.2; stroke-linejoin: round; }
 svg.chart .area { fill: var(--chart); opacity: .12; stroke: none; }
 svg.chart .bar { fill: var(--chart); }
@@ -643,7 +644,6 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
 /* Whose account it is: a small line under the account name (inline on a phone, to keep one line per account). */
 .acct-owner { font-size: .74rem; line-height: 1.3; }
 
-.cf-on-overview { margin-top: 16px; }
 .cf-page-heading { margin: 0 0 10px; font-size: 1.1rem; }
 
 /* A position: ticker with its name (small), then what is held and at what price, then the money. */

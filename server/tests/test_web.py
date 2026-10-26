@@ -394,14 +394,17 @@ def test_there_is_no_money_page():
     assert 'data-tab="money"' not in html and "money: [" not in app
 
 
-def test_cash_flow_lives_on_the_overview_not_in_a_spending_tab():
+def test_cash_flow_lives_in_a_spending_tab_and_the_overview_is_net_worth_only():
     app = (WEB_DIR / "app.js").read_text()
     tabs = app[app.index("const SPENDING_TABS"):app.index("let spendingTab")]
-    assert "viewCashflow" not in tabs and "Cash flow" not in tabs
+    assert '["cashflow", "Cash flow", viewCashflowTab' in tabs
     overview = app[app.index("async function viewOverview"):]
     overview = overview[:overview.index("\n  }\n")]
-    assert "viewCashflow(id, params, cashflowBox)" in overview
-    assert "history.replaceState(null, \"\", `#/overview?${q}`)" in app
+    assert "viewCashflow" not in overview and "cashflowBox" not in overview
+    tab = app[app.index("async function viewCashflowTab"):]
+    tab = tab[:tab.index("\n  }\n")]
+    assert "viewCashflow(id, params, box)" in tab  # drawn with its own "Cash flow" heading above the chart's title
+    assert "history.replaceState(null, \"\", `#/spending?tab=cashflow&${q}`)" in app
 
 
 def test_budgets_has_its_own_top_level_tab():
@@ -413,10 +416,11 @@ def test_budgets_has_its_own_top_level_tab():
     assert 'href="#/budgets" data-tab="budgets"' in html and "tab=budgets" not in app
 
 
-def test_old_budgets_and_cash_flow_tab_addresses_go_to_their_new_pages():
+def test_old_budgets_and_overview_cash_flow_addresses_go_to_their_new_pages():
     app = (WEB_DIR / "app.js").read_text()
     assert 'params.get("tab") === "budgets") name = "budgets"' in app
-    assert 'params.get("tab") === "cashflow") { name = "overview"; params.delete("tab"); }' in app
+    # cash flow is a Spending tab again; its old Overview addresses (with a range or grouping) open it there
+    assert 'if (name === "overview" && (params.get("range") || params.get("group"))) { name = "spending"; params.set("tab", "cashflow"); }' in app
 
 
 def test_the_sign_in_button_says_passkey_not_face_id():
@@ -906,3 +910,14 @@ def test_what_ifs_lets_you_follow_the_money_or_take_it_as_cash():
     assert "wentInto" in page and '"Where the money went"' in page and "What the money became, now" in page
     assert "sum + (s.proceeds || 0)" in page  # the percentage is of what you were paid
     assert "Following the money is a guess from timing" in page  # the matching is a heuristic, and the page says so
+
+
+def test_chart_text_is_big_enough_to_read_on_a_phone():
+    app = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    # charts are drawn about life size on a phone (360 wide), not 640 wide and shrunk to half size
+    assert "const chartW = () => (PHONE_CHARTS.matches ? 360 : 640);" in app
+    assert app.count("const W = chartW()") >= 4 and "const W = 640" not in app
+    assert "@media (max-width: 600px) { svg.chart text { font-size: 13px; } }" in css
+    # axis labels are thinned to what fits, so the bigger text does not collide
+    assert "everyNth(rows.length" in app
