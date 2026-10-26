@@ -224,9 +224,13 @@ def test_sign_in_page_does_not_focus_the_username_when_face_id_is_offered():
     assert 'if (user && $("passkey-first").hidden) user.focus();' in js
 
 
-def test_phone_sign_in_fills_the_screen():
+def test_phone_sign_in_keeps_the_fields_together_at_the_top():
     css = (WEB_DIR / "app.css").read_text()
-    assert "min-height: 100dvh" in css and ".login-outer { flex: 1 1 auto;" in css and ".login-inner { flex: 1 1 auto;" in css
+    phone = css[css.index("/* Phone sign-in: no empty margin"):css.index("/* The Spending tabs stay on one row")]
+    # the details are stacked close together from the top, not stretched over the screen
+    assert "space-evenly" not in phone and "flex: 1 1 auto" not in phone
+    assert ".login-inner { display: flex; flex-direction: column; gap: 10px;" in phone
+    assert "min-height: 48px" in phone  # still big enough to tap
 
 
 def test_spending_summary_lives_on_the_spending_page_not_the_overview():
@@ -673,7 +677,7 @@ def test_budgets_page_has_no_twelve_month_chart():
 def test_sign_in_screen_has_no_blank_space_below_the_box_on_phones():
     css = (WEB_DIR / "app.css").read_text()
     assert ".login { min-height: 100vh; min-height: 100dvh; display: grid;" in css
-    assert ".login { display: block; min-height: 0; padding: 0; background: var(--surface); }" in css
+    assert ".login { display: block; min-height: 100vh; min-height: 100dvh; padding: 0; background: var(--surface); }" in css  # one background, edge to edge
 
 
 def test_budgets_spending_card_title_has_the_total_spent_at_its_right():
