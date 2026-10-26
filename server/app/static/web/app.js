@@ -3253,7 +3253,7 @@
   // ---------------------------------------------------------------- shell: routes, sign-in
 
   const cleanups = [];
-  // Spending is one page with two tabs. The old address #/merchants still opens the right tab, and Transactions is a page of its own.
+  // Spending is one page with three tabs. The old address #/merchants still opens the right tab, and Transactions is a page of its own.
   const SPENDING_TABS = [
     ["summary", "This month", viewSpendingSummary, "This month against your budgets"],
     ["cashflow", "Cash flow", viewCashflowTab, "Income and expenses over time"],
