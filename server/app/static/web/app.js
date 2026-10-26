@@ -3602,7 +3602,17 @@
   });
   $("signout").addEventListener("click", signOut);
   $("viewer").addEventListener("change", (e) => { viewer = e.target.value === "" ? null : Number(e.target.value); route(); });
-  window.addEventListener("hashchange", route);
+  // Opening a page always starts at its top, never where the last page was scrolled to (the back button
+  // included). Opening the page you are already on does the same and loads it afresh.
+  const toTop = () => window.scrollTo(0, 0);
+  try { history.scrollRestoration = "manual"; } catch { /* an old browser keeps its own */ }
+  window.addEventListener("hashchange", () => { toTop(); route(); });
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("#tabs a, #menu-list a, #subtabs a, .sidebar a");
+    if (!a) return;
+    toTop();
+    if (a.hash && a.hash === location.hash) route();  // same address: no hashchange will follow
+  });
   // Hide the page contents whenever the tab is not visible (task switchers, screenshots of other windows).
   document.addEventListener("visibilitychange", () => { $("cover").hidden = !document.hidden; });
 

@@ -945,3 +945,9 @@ def test_cash_flow_range_choices_are_all_visible_on_a_phone():
     assert ".cf-controls .seg.wide { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }" in phone
     assert "overflow-x: auto" not in phone.split(".subtabs")[0]
     assert ".cf-card .cf-controls .seg.wide button { font-size: .7rem; padding-inline: .15rem; }" in css  # and "Month to date" fits on the narrowest phones
+
+
+def test_opening_a_page_starts_at_its_top():
+    js = (Path(__file__).resolve().parents[1] / "app" / "static" / "web" / "app.js").read_text()
+    assert 'history.scrollRestoration = "manual"' in js
+    assert 'addEventListener("hashchange", () => { toTop(); route(); })' in js
