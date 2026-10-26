@@ -84,6 +84,51 @@ def _norm_search(text: str | None) -> str:
     return " ".join((text or "").casefold().split())
 
 
+_SEARCH_AMOUNT = re.compile(r"^([+\-\u2212])?\$?(\d[\d,]*\.?\d*|\.\d+)$")
+
+
+def transaction_search_sql(search: str) -> tuple[str, list[str | float]]:
+    """A search box for transactions: every word has to match something on the transaction (the bank's
+    text, the merchant, the account or bank, the category, the date, the amount, the currency, or the word
+    "pending"). Amounts are typed the way they are shown: "-12.50" is money that left (Plaid stores that
+    as a positive number), "+12.50" money that came in, and a bare number matches either."""
+    clauses: list[str] = []
+    params: list[str | float] = []
+    fields = (
+        "t.name", "t.merchant_name", "m.name", "a.name", "a.official_name", "a.mask", "i.institution",
+        "REPLACE(COALESCE(override_category, rule_category, plaid_category), '_', ' ')",
+        "REPLACE(COALESCE(t.category_detailed, ''), '_', ' ')",
+        "t.date", "t.authorized_date", "t.currency", "t.amount",
+    )
+    for word in search.split()[:8]:
+        if word == "&":
+            continue
+        escaped = "%" + re.sub(r"([\\%_])", r"\\\1", word) + "%"
+        parts = [f"{f} LIKE ? ESCAPE '\\'" for f in fields]
+        values = [escaped] * len(fields)
+        amount = _SEARCH_AMOUNT.match(word.replace(",", ""))
+        if amount:
+            digits = re.sub(r"([\\%_])", r"\\\1", amount.group(2))
+            sign = amount.group(1)
+            if sign == "+":
+                parts, values = ["t.amount LIKE ? ESCAPE '\\'"], ["-%" + digits + "%"]
+            elif sign:
+                parts, values = ["(t.amount LIKE ? ESCAPE '\\' AND t.amount NOT LIKE '-%')"], ["%" + digits + "%"]
+            else:
+                parts[-1:] = ["t.amount LIKE ? ESCAPE '\\'"]
+                values[-1] = "%" + digits + "%"
+            if "." in amount.group(2):  # 64.20 is the stored 64.2: an exact figure also matches by value
+                value = float(amount.group(2))
+                exact = {"+": "CAST(t.amount AS REAL) = ?", None: "ABS(CAST(t.amount AS REAL)) = ?"}.get(sign, "CAST(t.amount AS REAL) = ?")
+                parts.append(exact)
+                values.append(-value if sign == "+" else value)
+        if word.casefold() == "pending":
+            parts.append("t.pending = 1")
+        clauses.append("(" + " OR ".join(parts) + ")")
+        params += values
+    return (" AND ".join(clauses) or "1=1"), params
+
+
 def origin_of(request: Request) -> str:
     """What the proxy says about the caller. Logged for the owner to read, never trusted for
     any decision (the real peer behind Tailscale Serve is always the NAS itself)."""
@@ -807,9 +852,9 @@ def create_api_app(services: Services) -> FastAPI:
                 where.append(f"{EFFECTIVE_CATEGORY_SQL} = ?")
                 params.append(wanted)
         if search and search.strip():
-            like = "%" + re.sub(r"([\\%_])", r"\\\1", search.strip()) + "%"
-            where.append("(t.name LIKE ? ESCAPE '\\' OR t.merchant_name LIKE ? ESCAPE '\\' OR m.name LIKE ? ESCAPE '\\')")
-            params += [like, like, like]
+            condition, search_params = transaction_search_sql(search.strip())
+            where.append(condition)
+            params += search_params
         if merchant_id is not None:
             where.append("t.merchant_id = ?")
             params.append(merchant_id)
@@ -822,7 +867,7 @@ def create_api_app(services: Services) -> FastAPI:
         clause = " AND ".join(where)
         join = (
             "FROM transactions t JOIN accounts a ON a.id = t.account_id "
-            "LEFT JOIN merchants m ON m.id = t.merchant_id"
+            "LEFT JOIN merchants m ON m.id = t.merchant_id LEFT JOIN items i ON i.id = a.item_id"
         )
         total = db.one(f"SELECT count(*) AS n {join} WHERE {clause}", params)["n"]
         rows = db.query(

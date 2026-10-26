@@ -970,3 +970,16 @@ def test_overview_has_a_net_worth_card_and_an_over_time_card_with_the_key_below_
     assert 'view().replaceChildren(viewerNote(), netCard, overTimeCard);' in js
     assert 'el("h3", { text: "Over time" })' in js
     assert "wrap.append(caption, key);" in js  # the lines' key sits under the chart, not above it
+
+
+def test_over_budget_warning_sits_on_the_category_row():
+    js = (WEB_DIR / "app.js").read_text()
+    spending = js[js.index("async function viewSpendingSummary"):js.index("async function viewTransactions")]
+    assert 'class: "chips"' not in spending  # no strip of warnings under the totals any more
+    assert "Over budget by" in spending and 'class: "over-note"' in spending
+
+
+def test_transactions_search_is_called_search_and_pages_scroll_to_the_top_again_when_drawn():
+    js = (WEB_DIR / "app.js").read_text()
+    assert 'placeholder: "Search", "aria-label": "Search transactions"' in js
+    assert "if (id === navId && wantTop)" in js

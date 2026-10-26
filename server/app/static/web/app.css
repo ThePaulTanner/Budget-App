@@ -991,3 +991,5 @@ svg.chart circle.mark { fill: var(--surface); stroke: var(--p-you); stroke-width
 .wi-row .grow { min-width: 0; }
 .wi-follow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 2px 0 10px; }
 .wi-went { text-align: right; max-width: 60%; }
+
+.over-note { color: var(--red); font-size: .85rem; font-weight: 650; }

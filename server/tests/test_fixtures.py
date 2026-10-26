@@ -168,3 +168,25 @@ def test_cashflow_transactions(seeded):
     client, auth = seeded
     body = client.get("/api/cashflow/transactions?period_start=2026-09-28&period_end=2026-10-02", headers=auth).json()
     assert_matches(body, fixture_float("cashflow_transactions.json"))
+
+
+def test_search_matches_any_part_of_a_transaction(seeded):
+    client, auth = seeded
+
+    def names(q):
+        found = client.get("/api/transactions", params={"search": q, "limit": 50}, headers=auth).json()
+        return [t["name"] for t in found["transactions"]]
+
+    assert names("132.47") == ["IGA"]                          # an amount
+    assert names("$132.47") == ["IGA"]                         # typed with the dollar sign
+    assert names("-132.47") == ["IGA"]                         # shown as money that left
+    assert names("+132.47") == []                              # nothing came in for that amount
+    assert names("+2,850") == ["Payroll"]                      # the deposit
+    assert "Payroll" in names("2026-09-29")                    # a date (the date posted or authorized)
+    on_visa = names("9876")                                    # an account's last digits: everything on that card
+    assert "Restaurant Le Local" in on_visa and "Payroll" not in on_visa
+    assert set(on_visa) < set(names("visa")) | {"Visa payment"} and "Visa payment" in names("visa")  # its name, or the bank's text
+    assert names("food and drink") == ["IGA", "Restaurant Le Local"]  # the category, spelled out
+    assert names("food 64.20") == ["Restaurant Le Local"]      # every word has to match
+    assert names("pending") == ["IGA"]                         # the word pending
+    assert names("desjardins mortgage") == ["Mortgage payment"]  # the bank plus the text
