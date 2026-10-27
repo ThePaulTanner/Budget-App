@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -86,11 +87,20 @@ def _norm_search(text: str | None) -> str:
 
 
 def plaid_logo(url: str | None) -> bool:
-    """True for a picture address on Plaid's own servers (https only), the one place the web page may load images from."""
-    if not url or not url.startswith("https://"):
+    """True for a picture address on Plaid's own servers (https only, a plain host name), the one place the web page may load images from."""
+    if not url or len(url) > 500 or any(c in url for c in "\\ \t\r\n") or not url.startswith("https://"):
         return False
-    host = url[8:].split("/", 1)[0].lower()
-    return host.endswith(".plaid.com") and "@" not in host and ":" not in host
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = parts.port
+    except ValueError:
+        return False
+    # The host is read the way a browser reads it, so tricks such as "https://evil.com#.plaid.com/x" fail.
+    return (
+        host.endswith(".plaid.com") and port in (None, 443) and parts.username is None and not parts.fragment
+        and "#" not in parts.netloc and "@" not in parts.netloc
+    )
 
 
 _SEARCH_AMOUNT = re.compile(r"^([+\-\u2212])?\$?(\d[\d,]*\.?\d*|\.\d+)$")

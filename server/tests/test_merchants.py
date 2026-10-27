@@ -544,3 +544,7 @@ def test_a_merchant_shows_the_banks_logo_only_from_plaids_servers(seeded, servic
     from app.api import plaid_logo
     assert not plaid_logo("http://x.plaid.com/a.png") and not plaid_logo("https://x.plaid.com@evil.com/a.png")
     assert not plaid_logo("https://evilplaid.com/a.png") and plaid_logo("https://cdn.plaid.com/a.png")
+    for tricky in ("https://evil.com#.plaid.com/x.png", "https://evil.com\\.plaid.com/x.png", "https://evil.com?.plaid.com",
+                   "https://x.plaid.com:8443/a.png", "https://user@x.plaid.com/a.png", "https://x.plaid.com/a b.png", "https://plaid.com/a.png"):
+        assert not plaid_logo(tricky), tricky
+    assert plaid_logo("https://plaid-merchant-logos.plaid.com/a_1.png?v=2")
