@@ -15,6 +15,7 @@ from typing import Any
 from .config import Settings
 from .crypto import Keys, unseal
 from .db import Database, utcnow
+from .loans import kind_of
 from .plaid import PlaidClient, PlaidError
 from .merchants import assign_merchants
 from .rules import assign_rules
@@ -447,6 +448,7 @@ def compute_networth(db: Database, person_id: int | None = None) -> dict[str, di
                 "credit_cards": Decimal(0),
                 "mortgage": Decimal(0),
                 "other_loans": Decimal(0),
+                "loans": {},
             },
         )
         balance = Decimal(acct["current_balance"])
@@ -454,10 +456,13 @@ def compute_networth(db: Database, person_id: int | None = None) -> dict[str, di
             t["liabilities"] += balance
             if acct["type"] == "credit":
                 t["credit_cards"] += balance
-            elif (acct["loan_kind"] or (acct["subtype"] or "").lower()) == "mortgage":  # the owner's choice, else the bank's label
-                t["mortgage"] += balance
             else:
-                t["other_loans"] += balance
+                kind = kind_of(acct["loan_kind"], acct["subtype"])  # the owner's choice, else the bank's label
+                t["loans"][kind] = t["loans"].get(kind, Decimal(0)) + balance
+                if kind == "mortgage":
+                    t["mortgage"] += balance
+                else:
+                    t["other_loans"] += balance
         elif acct["type"] in ASSET_TYPES:
             t["assets"] += balance
             if acct["type"] == "investment":

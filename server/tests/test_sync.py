@@ -8,6 +8,7 @@ from app.crypto import seal
 from app.db import utcnow
 from app.plaid import PlaidError
 from app.sync import SyncBusy, sync_item
+from tests.conftest import fixture_float
 
 
 def pj(text):
@@ -74,7 +75,8 @@ def test_full_sync_stores_exact_amounts_and_builds_net_worth(services, plaid, cl
     assert summary == {"currency": "CAD", "assets": 45200.5, "liabilities": 312850.25,
                        "investments": 42000.0, "net_worth": -267649.75,
                        # assets = cash + investments; liabilities = mortgage + credit cards (+ other loans)
-                       "cash": 3200.5, "credit_cards": 850.25, "mortgage": 312000.0, "other_loans": 0.0}
+                       "cash": 3200.5, "credit_cards": 850.25, "mortgage": 312000.0, "other_loans": 0.0,
+                       "loans": [{"kind": "mortgage", "label": "Mortgage", "amount": 312000.0}]}
 
     from app.sync import snapshot_networth
     snapshot_networth(services.db)
@@ -354,3 +356,43 @@ def test_a_refused_account_change_changes_nothing(services, plaid, client, auth)
     assert client.patch("/api/accounts/acc_chq", json={"hidden": None}, headers=auth).status_code == 422
     accounts = {a["id"]: a for a in client.get("/api/accounts", headers=auth).json()}
     assert accounts["acc_chq"]["hidden"] is False and accounts["acc_chq"]["loan_kind"] is None
+
+
+def test_loan_types_list_matches_the_fixture_and_the_choices_the_api_accepts(client, auth):
+    import re
+    from pathlib import Path
+
+    from app.loans import LOAN_KINDS
+
+    listed = client.get("/api/loan-types", headers=auth).json()
+    assert listed == fixture_float("loan_types.json") == [{"kind": k, "label": label} for k, label in LOAN_KINDS]
+    literal = re.search(r"loan_kind: Literal\[(.*?)\]", (Path(__file__).resolve().parents[1] / "app" / "api.py").read_text()).group(1)
+    assert re.findall(r'"(\w+)"', literal) == [k for k, _ in LOAN_KINDS]
+
+
+def test_each_loan_counts_as_its_own_kind(services, plaid, client, auth):
+    from app.loans import kind_of
+
+    assert kind_of(None, "student") == "student" and kind_of(None, "Home Equity") == "home_equity"
+    assert kind_of(None, "consumer") == "personal" and kind_of(None, None) == "other"
+    assert kind_of("auto", "mortgage") == "auto"  # the owner's choice wins over the bank's label
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page(added=[])]
+    run(services, item)
+    for aid, kind, sub, bal in (("loan_s", "loan", "student", "9000.00"), ("loan_c", "loan", "line of credit", "700.00"),
+                                ("loan_x", "loan", "weird", "50.00")):
+        services.db.run("INSERT INTO accounts(id, item_id, name, type, subtype, current_balance, currency, updated_at) "
+                        "VALUES (?,?,?,?,?,?,?,?)", (aid, "item_desj", aid, kind, sub, bal, "CAD", utcnow()))
+    client.patch("/api/accounts/loan_x", json={"loan_kind": "auto"}, headers=auth)
+    t = client.get("/api/summary", headers=auth).json()["net_worth"][0]
+    assert t["loans"] == [  # in the list's order, none that are empty
+        {"kind": "mortgage", "label": "Mortgage", "amount": 312000.0},
+        {"kind": "student", "label": "Student loan", "amount": 9000.0},
+        {"kind": "auto", "label": "Auto loan", "amount": 50.0},
+        {"kind": "line_of_credit", "label": "Line of credit", "amount": 700.0}]
+    assert t["mortgage"] == 312000.0 and t["other_loans"] == 9750.0  # everything that is not a mortgage
+    assert t["mortgage"] + t["credit_cards"] + t["other_loans"] == t["liabilities"]
+    accounts = {a["id"]: a for a in client.get("/api/accounts", headers=auth).json()}
+    assert accounts["loan_s"]["loan_type"] == "student" and accounts["loan_s"]["loan_kind"] is None
+    assert accounts["loan_x"]["loan_type"] == "auto" and accounts["acc_chq"]["loan_type"] is None

@@ -44,6 +44,7 @@ from .rules import (
     split_category,
 )
 from .positions import bank_price_and_value, effective_currency
+from .loans import KIND_LABELS, LOAN_KINDS, kind_of
 from .sync import PlaidNotConfigured, SyncBusy, compute_networth, store_institution, today_str
 from .transfers import match_transfers
 
@@ -183,7 +184,7 @@ class PasskeyAddBody(BaseModel):
 
 class AccountPatch(BaseModel):
     hidden: bool | None = None
-    loan_kind: Literal["mortgage", "other"] | None = None  # how a loan is counted; null = go by the bank's label
+    loan_kind: Literal["mortgage", "home_equity", "student", "auto", "personal", "line_of_credit", "business", "other"] | None = None  # the kind of loan; null = go by the bank's label (see loans.py)
 
 
 class PersonBody(BaseModel):
@@ -354,6 +355,7 @@ def account_json(row: Any, institution: str | None, owner_ids: list[int] | None 
         "currency": row["currency"],
         "hidden": bool(row["hidden"]),
         "loan_kind": row["loan_kind"],
+        "loan_type": kind_of(row["loan_kind"], row["subtype"]) if row["type"] == "loan" else None,  # what a loan counts as now
         "owner_ids": owner_ids or [],
         "updated_at": row["updated_at"],
     }
@@ -698,6 +700,11 @@ def create_api_app(services: Services) -> FastAPI:
                     "credit_cards": num(worth[c]["credit_cards"]),
                     "mortgage": num(worth[c]["mortgage"]),
                     "other_loans": num(worth[c]["other_loans"]),
+                    "loans": [
+                        {"kind": k, "label": KIND_LABELS[k], "amount": num(worth[c]["loans"][k])}
+                        for k, _ in LOAN_KINDS
+                        if worth[c]["loans"].get(k)
+                    ],
                 }
                 for c in currencies
             ],
@@ -728,6 +735,11 @@ def create_api_app(services: Services) -> FastAPI:
         owners = owners_by_account()
         return [account_json(r, r["institution"], owners.get(r["id"])) for r in db.query(sql, params)]
 
+    @app.get("/api/loan-types")
+    def loan_types(ctx: Auth):
+        """The kinds a loan account can be set to, in display order."""
+        return [{"kind": k, "label": label} for k, label in LOAN_KINDS]
+
     @app.patch("/api/accounts/{account_id}")
     def patch_account(account_id: str, body: AccountPatch, ctx: Auth):
         sent = body.model_fields_set
@@ -739,7 +751,7 @@ def create_api_app(services: Services) -> FastAPI:
         if "hidden" in sent and body.hidden is None:
             raise HTTPException(422, "hidden is true or false")
         if "loan_kind" in sent and body.loan_kind is not None and account["type"] != "loan":
-            raise HTTPException(400, "Only a loan can be counted as a mortgage or another loan.")
+            raise HTTPException(400, "Only a loan account has a loan type.")
         with db.transaction():  # everything checked above, so a request changes both fields or neither
             if "hidden" in sent:
                 db.run("UPDATE accounts SET hidden=? WHERE id=?", (int(body.hidden), account_id))

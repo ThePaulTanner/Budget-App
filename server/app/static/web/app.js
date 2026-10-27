@@ -430,10 +430,19 @@
     return Object.entries(totals).sort(([a], [b]) => (a === baseCurrency ? -1 : b === baseCurrency ? 1 : a.localeCompare(b)))
       .map(([cur, value]) => money(value, cur)).join(" \u00B7 ") + (kind === "credit" || kind === "loan" ? " owed" : "");
   }
-  // How a loan counts in the net worth card: as the mortgage or as another loan. Automatic goes by the bank's own label.
-  function loanKindControl(a) {
-    const select = el("select", { class: "loan-kind", "aria-label": `Count ${a.name} as` },
-      el("option", { value: "", text: "Automatic" }), el("option", { value: "mortgage", text: "Mortgage" }), el("option", { value: "other", text: "Other loan" }));
+  // The kinds a loan can be set to (the server owns the list). Asked for once.
+  let loanTypeList = null;
+  async function loanTypes() {
+    if (!loanTypeList) loanTypeList = await api("/api/loan-types").catch(() => []);
+    return loanTypeList;
+  }
+
+  // What kind of loan an account is: Automatic goes by the bank's own label, or pick one (mortgage, student, car ...).
+  function loanKindControl(a, types) {
+    const label = (kind) => (types.find((t) => t.kind === kind) || { label: kind }).label;
+    const select = el("select", { class: "loan-kind", "aria-label": `Kind of loan for ${a.name}` },
+      el("option", { value: "", text: a.loan_type ? `Automatic (${label(a.loan_type)})` : "Automatic" }),
+      types.map((t) => el("option", { value: t.kind, text: t.label })));
     select.value = a.loan_kind || "";
     select.addEventListener("change", async () => {
       select.disabled = true;
@@ -445,10 +454,10 @@
         if (err instanceof SignedOut) showLogin(); else { toast(err.message, true); select.value = a.loan_kind || ""; select.disabled = false; }
       }
     });
-    return el("label", { class: "loan-kind-row muted" }, el("span", { text: "Counts as " }), select);
+    return el("label", { class: "loan-kind-row muted" }, el("span", { text: "Kind of loan " }), select);
   }
 
-  function accountSection(kind, label, iconId, rows, itemsById) {
+  function accountSection(kind, label, iconId, rows, itemsById, loanKinds = []) {
     const credit = kind === "credit";
     const showOwner = people.length > 0;
     const open = (a) => { location.hash = `#/transactions?account=${encodeURIComponent(a.id)}`; };
@@ -479,7 +488,7 @@
         el("td", { class: "col-account" },
           el("a", { href: `#/transactions?account=${encodeURIComponent(a.id)}`, class: "acct-name", text: a.name }),
           showOwner && el("div", { class: "muted acct-owner", text: ownerText(a) || "" }),
-          kind === "loan" && loanKindControl(a)),
+          kind === "loan" && loanKinds.length > 0 && loanKindControl(a, loanKinds)),
         // On a computer the owner has a column of its own; on a phone it stays as the small line under the account name.
         showOwner && el("td", { class: "col-acct-owner", text: ownerText(a) || "" }),
         credit && el("td", { class: "num col-extra", text: a.credit_limit != null ? money(a.credit_limit, a.currency) : "\u2014" }),
@@ -891,14 +900,14 @@
 
   // Every account and its balance, by kind, with each bank's logo.
   async function viewAccounts(id) {
-    const [accounts, items] = await Promise.all([api(scoped("/api/accounts?include_hidden=false")), api("/api/items").catch(() => [])]);
+    const [accounts, items, loanKinds] = await Promise.all([api(scoped("/api/accounts?include_hidden=false")), api("/api/items").catch(() => []), loanTypes()]);
     if (id !== navId) return;
     const itemsById = new Map(items.map((i) => [i.id, i]));
     const known = new Set(["investment", "depository", "credit", "loan"]);
     const sections = ACCOUNT_SECTIONS
       .map(([kind, label, iconId]) => [kind, label, iconId, accounts.filter((a) => (kind === "other" ? !known.has(a.type) : a.type === kind))])
       .filter(([, , , rows]) => rows.length > 0)
-      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById));
+      .map(([kind, label, iconId, rows]) => accountSection(kind, label, iconId, rows, itemsById, loanKinds));
     if (sections.length === 0) {
       sections.push(el("section", { class: "card" }, el("h2", { text: "Accounts" }),
         el("p", { class: "empty", text: "No accounts yet. Link a bank from Settings." })));
@@ -937,9 +946,8 @@
       part("Cash", w.cash, true),
       part("Investments", w.investments, true),
       part("Liabilities", w.liabilities),
-      part("Mortgage", w.mortgage, true),
-      part("Credit card debt", w.credit_cards, true),
-      w.other_loans !== 0 && part("Other loans", w.other_loans, true)) : null;
+      ...(w.loans || []).map((l) => part(l.label, l.amount, true)),
+      part("Credit card debt", w.credit_cards, true)) : null;
 
     const netCard = el("section", { class: "card" },
       el("h3", { text: "Net worth" }),
@@ -2912,7 +2920,7 @@
 
   // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
   const SETTINGS_GROUPS = [
-    ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
+    ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"], ["loans", "Loans"]]],
     ["security", "Security", [["logins", "Logins"], ["passkeys", "Passkeys"], ["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
     ["look", "Appearance", [["appearance", "Appearance"]]],
   ];
@@ -2922,10 +2930,10 @@
 
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
-    const [items, sessions, rules, accounts, choices, log, backups, logins, release, passkeyList] = await Promise.all([
+    const [items, sessions, rules, accounts, choices, log, backups, logins, release, passkeyList, loanKinds] = await Promise.all([
       api("/api/items"), api("/auth/sessions"), api("/api/rules"), api("/api/accounts"), categoryChoices(), api("/auth/login-log?limit=50"),
       api("/api/backups").catch(() => ({ backups: [], last_daily: null, keep: {} })), api("/auth/users").catch(() => []),
-      api("/api/version").catch(() => null), api("/api/passkeys").catch(() => [])]);
+      api("/api/version").catch(() => null), api("/api/passkeys").catch(() => []), loanTypes()]);
     if (id !== navId) return;
     setAlert(log);
     const reload = () => guard(viewSettings(++navId));
@@ -3269,7 +3277,18 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], passkeys: [passkeysCard], devices: [devices], backups: [backupsCard], log: [activity] };
+    // ---- Loans: what kind of loan each loan account is, which is how the Overview groups what you owe.
+    const itemName = new Map(items.map((i) => [i.id, i.institution]));
+    const loanAccounts = accounts.filter((a) => a.type === "loan");
+    const loansCard = el("section", { class: "card" }, el("h2", { text: "Loans" }),
+      el("p", { class: "muted", text: "Say what kind of loan each one is (mortgage, student, car, and so on). The Overview lists what you owe by kind. Automatic goes by what the bank calls the loan." }),
+      loanAccounts.length === 0 && el("p", { class: "empty", text: "No loan accounts are linked." }),
+      loanAccounts.map((a) => el("div", { class: "row" }, el("div", { class: "grow" },
+        el("strong", { text: a.name }), el("div", { class: "muted", text: `${a.institution || itemName.get(a.item_id) || "Bank"}${a.mask ? ` \u2022\u2022${a.mask}` : ""} \u00B7 ${a.current_balance == null ? "no balance" : money(a.current_balance, a.currency)} owed` }),
+        loanKindControl(a, loanKinds))
+      )));
+
+    const sections = { loans: [loansCard], banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], passkeys: [passkeysCard], devices: [devices], backups: [backupsCard], log: [activity] };
     const versionLine = el("p", { class: "muted version-line", text: release ? `HomeFinance version ${release.version}${release.build ? ` (build ${release.build})` : ""}` : "HomeFinance version unknown" });
     const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
     const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });

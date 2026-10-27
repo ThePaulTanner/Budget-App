@@ -985,7 +985,8 @@ def test_transactions_search_is_called_search_and_pages_scroll_to_the_top_again_
     assert "if (id === navId && wantTop)" in js
 
 
-def test_a_loan_row_has_a_counts_as_choice():
+def test_loans_can_be_given_a_kind_on_the_accounts_page_and_in_settings():
     js = (WEB_DIR / "app.js").read_text()
-    assert 'kind === "loan" && loanKindControl(a)' in js
-    assert "body: { loan_kind: select.value || null }" in js
+    assert "loanKindControl(a, loanKinds)" in js and "body: { loan_kind: select.value || null }" in js
+    assert '["loans", "Loans"]' in js and "loans: [loansCard]" in js  # a Loans tab under Settings > App data
+    assert "(w.loans || []).map((l) => part(l.label, l.amount, true))" in js  # the Overview lists each kind
