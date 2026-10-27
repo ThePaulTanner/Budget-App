@@ -2921,7 +2921,7 @@
 
   // Settings has a few groups, each with its own tabs (a group with one tab shows no second row).
   const SETTINGS_GROUPS = [
-    ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"], ["loans", "Loans"]]],
+    ["data", "App data", [["banks", "Banks"], ["people", "People"], ["categories", "Categories"], ["rules", "Rules"]]],
     ["security", "Security", [["logins", "Logins"], ["passkeys", "Passkeys"], ["devices", "Devices"], ["log", "Sign-in log"], ["backups", "Backups"]]],
     ["look", "Appearance", [["appearance", "Appearance"]]],
   ];
@@ -3048,7 +3048,8 @@
       const row = (a) => {
         const chosen = new Set(a.owner_ids || []);
         return el("tr", {},
-          el("td", { class: "col-account" }, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` })),
+          el("td", { class: "col-account" }, el("strong", { text: a.name }), a.mask && el("span", { class: "muted", text: `  \u2022\u2022${a.mask}` }),
+            a.type === "loan" && loanKinds.length > 0 && loanKindControl(a, loanKinds)),  // what kind of loan it is (mortgage, student, car ...)
           hasOwners && el("td", { class: "col-owners" }, el("div", { class: "owners", role: "group", "aria-label": `Owners of ${a.name}` }, people.map((p) =>
             el("label", {}, el("input", { type: "checkbox", checked: chosen.has(p.id), onchange: (e) => {
               if (e.target.checked) chosen.add(p.id); else chosen.delete(p.id);
@@ -3278,18 +3279,7 @@
           el("div", { class: "muted", text: detail })));
       }));
 
-    // ---- Loans: what kind of loan each loan account is, which is how the Overview groups what you owe.
-    const itemName = new Map(items.map((i) => [i.id, i.institution]));
-    const loanAccounts = accounts.filter((a) => a.type === "loan");
-    const loansCard = el("section", { class: "card" }, el("h2", { text: "Loans" }),
-      el("p", { class: "muted", text: "Say what kind of loan each one is (mortgage, student, car, and so on). The Overview lists what you owe by kind. Automatic goes by what the bank calls the loan." }),
-      loanAccounts.length === 0 && el("p", { class: "empty", text: "No loan accounts are linked." }),
-      loanAccounts.map((a) => el("div", { class: "row" }, el("div", { class: "grow" },
-        el("strong", { text: a.name }), el("div", { class: "muted", text: `${a.institution || itemName.get(a.item_id) || "Bank"}${a.mask ? ` \u2022\u2022${a.mask}` : ""} \u00B7 ${a.current_balance == null ? "no balance" : money(a.current_balance, a.currency)} owed` }),
-        loanKindControl(a, loanKinds))
-      )));
-
-    const sections = { loans: [loansCard], banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], passkeys: [passkeysCard], devices: [devices], backups: [backupsCard], log: [activity] };
+    const sections = { banks: [banks], people: [peopleCard], rules: [rulesCard], categories: [categoriesCard], appearance: [appearanceCard()], logins: [loginsCard], passkeys: [passkeysCard], devices: [devices], backups: [backupsCard], log: [activity] };
     const versionLine = el("p", { class: "muted version-line", text: release ? `HomeFinance version ${release.version}${release.build ? ` (build ${release.build})` : ""}` : "HomeFinance version unknown" });
     const lastTab = Object.fromEntries(SETTINGS_GROUPS.map(([key, , tabs]) => [key, tabs[0][0]]));  // the tab last open in each group
     const groupBar = el("div", { class: "seg wide", role: "group", "aria-label": "Settings sections" });
