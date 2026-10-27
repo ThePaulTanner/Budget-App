@@ -1000,3 +1000,5 @@ svg.chart circle.mark { fill: var(--surface); stroke: var(--p-you); stroke-width
   #subtabs .tabs-sub { flex-wrap: wrap; overflow-x: visible; }
   #subtabs .tabs-sub button { padding-inline: .7rem; }
 }
+.col-account .loan-kind-row { flex-direction: column; align-items: flex-start; gap: 2px; }
+.col-account .loan-kind { max-width: 100%; }
