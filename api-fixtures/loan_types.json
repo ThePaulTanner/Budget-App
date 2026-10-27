@@ -1,0 +1,34 @@
+[
+  {
+    "kind": "mortgage",
+    "label": "Mortgage"
+  },
+  {
+    "kind": "home_equity",
+    "label": "Home equity loan"
+  },
+  {
+    "kind": "student",
+    "label": "Student loan"
+  },
+  {
+    "kind": "auto",
+    "label": "Auto loan"
+  },
+  {
+    "kind": "personal",
+    "label": "Personal loan"
+  },
+  {
+    "kind": "line_of_credit",
+    "label": "Line of credit"
+  },
+  {
+    "kind": "business",
+    "label": "Business loan"
+  },
+  {
+    "kind": "other",
+    "label": "Other loan"
+  }
+]
