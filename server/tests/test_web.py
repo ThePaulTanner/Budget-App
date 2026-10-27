@@ -348,7 +348,7 @@ def test_account_section_total_sits_at_the_right_of_the_coloured_header():
     start = app.index("function accountSection")
     section = app[start:app.index("async function viewAccounts", start)]
     assert section.index('class: "head-total"') < section.index('class: "acct-table bank-grouped"')
-    assert "`Total: ${sectionTotals(rows, kind)}`" in section and 'class: "section-total muted"' not in section
+    assert '"Total owed" : "Total"' in section and "${sectionTotals(rows, kind)}" in section and 'class: "section-total muted"' not in section
     assert ".acct-section > .section-head .head-total { margin-left: auto;" in css
 
 
@@ -991,3 +991,22 @@ def test_loans_can_be_given_a_kind_on_the_accounts_page_and_in_the_banks_tab():
     assert 'a.type === "loan" && loanKinds.length > 0 && loanKindControl(a, loanKinds)' in js  # in each bank's account table
     assert '["loans", "Loans"]' not in js  # it lives in Banks, not a tab of its own
     assert "(w.loans || []).map((l) => part(l.label, l.amount, true))" in js  # the Overview lists each kind
+
+
+def test_a_flagged_bank_says_why_in_plain_words():
+    js = (WEB_DIR / "app.js").read_text()
+    assert "ITEM_LOGIN_REQUIRED:" in js and "PENDING_EXPIRATION:" in js and "function bankProblem(i)" in js
+    assert "bankProblem(i), details);" in js  # on its own full-width line under the bank
+
+
+def test_accounts_say_total_owed_and_cash_flow_tiles_are_a_grid_not_a_scroller():
+    js = (WEB_DIR / "app.js").read_text()
+    css = (WEB_DIR / "app.css").read_text()
+    assert '"Total owed" : "Total"' in js and '+ (kind === "credit" || kind === "loan" ? " owed" : "")' not in js
+    assert "scroll-snap-type: x mandatory; gap: 8px" not in css  # the phone tiles no longer scroll sideways
+    assert ".cf-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }" in css
+
+
+def test_the_merchants_list_shows_a_logo_when_there_is_one():
+    js = (WEB_DIR / "app.js").read_text()
+    assert "function merchantBadge(m)" in js and "merchantBadge(m)," in js and "img.addEventListener(\"load\"" in js

@@ -124,6 +124,18 @@ def test_item_errors_flag_reconnect_and_repair_clears_it(hook):
     assert queued(services) == "item_desj"
 
 
+def test_expiry_warning_keeps_the_banks_own_date_and_a_repair_clears_it(hook):
+    client, signer, services = hook
+    warn = json.dumps({"webhook_type": "ITEM", "webhook_code": "PENDING_EXPIRATION", "item_id": "item_desj",
+                       "consent_expiration_time": "2026-11-14T00:00:00Z"}).encode()
+    post(client, warn, signer.sign(warn))
+    row = services.db.one("SELECT needs_reauth, error_code, consent_expires_at FROM items")
+    assert (row["needs_reauth"], row["error_code"], row["consent_expires_at"]) == (1, "PENDING_EXPIRATION", "2026-11-14T00:00:00Z")
+    fixed = json.dumps({"webhook_type": "ITEM", "webhook_code": "LOGIN_REPAIRED", "item_id": "item_desj"}).encode()
+    post(client, fixed, signer.sign(fixed))
+    assert services.db.one("SELECT consent_expires_at FROM items")["consent_expires_at"] is None
+
+
 def test_only_the_webhook_route_exists(hook):
     client, signer, services = hook
     for path in ("/", "/health", "/api/summary", "/auth/login", "/docs", "/openapi.json", "/static/link.js"):
@@ -143,3 +155,12 @@ def test_flood_is_rate_limited(hook):
     client, signer, services = hook
     statuses = {post(client, b"{}", None).status_code for _ in range(130)}
     assert 429 in statuses
+
+
+def test_an_unreadable_expiry_date_is_not_stored(hook):
+    client, signer, services = hook
+    warn = json.dumps({"webhook_type": "ITEM", "webhook_code": "PENDING_EXPIRATION", "item_id": "item_desj",
+                       "consent_expiration_time": "soon, maybe"}).encode()
+    post(client, warn, signer.sign(warn))
+    row = services.db.one("SELECT needs_reauth, consent_expires_at FROM items")
+    assert row["needs_reauth"] == 1 and row["consent_expires_at"] is None  # still flagged, just no date

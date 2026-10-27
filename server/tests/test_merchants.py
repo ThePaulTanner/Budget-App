@@ -524,3 +524,27 @@ def test_income_switch_can_be_set_when_adding_and_survives_a_merge(seeded):
     b = client.post("/api/merchants", json={"name": "Employer Inc"}, headers=auth).json()
     client.post(f"/api/merchants/{a['id']}/merge", json={"into_id": b["id"]}, headers=auth)
     assert by_name(merchants(client, auth, period="all"), "Employer Inc")["income"] is True
+
+
+def test_a_merchant_shows_the_banks_logo_only_from_plaids_servers(seeded, services):
+    client, auth = seeded
+    good = "https://plaid-merchant-logos.plaid.com/iga_1.png"
+    add_tx(services, "logo_old", "BAKERY 1", "Corner Bakery", 5, date="2026-09-01")
+    add_tx(services, "logo_new", "BAKERY 2", "Corner Bakery", 6, date="2026-10-01")
+    add_tx(services, "logo_bad", "SHADY 1", "Shady Shop", 7)
+    for tx_id, url in (("logo_old", "https://plaid-merchant-logos.plaid.com/old.png"), ("logo_new", good),
+                       ("logo_bad", "https://evil.example.com/logo.png")):
+        services.db.run("UPDATE transactions SET logo_url=? WHERE id=?", (url, tx_id))
+    rows = merchants(client, auth, period="all")
+    assert by_name(rows, "Corner Bakery")["logo_url"] == good  # the latest one
+    assert by_name(rows, "Shady Shop")["logo_url"] is None  # not Plaid's server: never passed on
+    assert by_name(rows, "IGA")["logo_url"] is None  # no logo from the bank
+    detail = client.get(f"/api/merchants/{by_name(rows, 'Corner Bakery')['id']}", headers=auth).json()
+    assert detail["logo_url"] == good
+    from app.api import plaid_logo
+    assert not plaid_logo("http://x.plaid.com/a.png") and not plaid_logo("https://x.plaid.com@evil.com/a.png")
+    assert not plaid_logo("https://evilplaid.com/a.png") and plaid_logo("https://cdn.plaid.com/a.png")
+    for tricky in ("https://evil.com#.plaid.com/x.png", "https://evil.com\\.plaid.com/x.png", "https://evil.com?.plaid.com",
+                   "https://x.plaid.com:8443/a.png", "https://user@x.plaid.com/a.png", "https://x.plaid.com/a b.png", "https://plaid.com/a.png"):
+        assert not plaid_logo(tricky), tricky
+    assert plaid_logo("https://plaid-merchant-logos.plaid.com/a_1.png?v=2")

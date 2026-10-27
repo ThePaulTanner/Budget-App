@@ -428,7 +428,7 @@
     const totals = {};
     for (const a of rows) if (a.current_balance != null) totals[a.currency] = (totals[a.currency] || 0) + a.current_balance;
     return Object.entries(totals).sort(([a], [b]) => (a === baseCurrency ? -1 : b === baseCurrency ? 1 : a.localeCompare(b)))
-      .map(([cur, value]) => money(value, cur)).join(" \u00B7 ") + (kind === "credit" || kind === "loan" ? " owed" : "");
+      .map(([cur, value]) => money(value, cur)).join(" \u00B7 ");
   }
   // The kinds a loan can be set to (the server owns the list). Asked for once.
   let loanTypeList = null;
@@ -506,7 +506,7 @@
       el("div", { class: "section-head" },
         el("div", { class: "section-icon", "aria-hidden": "true" }, iconSvg(iconId, 22)),
         el("div", { class: "grow" }, el("h2", { text: label })),
-        el("div", { class: "head-total", text: `Total: ${sectionTotals(rows, kind)}` })),
+        el("div", { class: "head-total", text: `${kind === "credit" || kind === "loan" ? "Total owed" : "Total"}: ${sectionTotals(rows, kind)}` })),
       el("div", { class: "table-wrap" }, el("table", { class: "acct-table bank-grouped" },
         el("thead", {}, el("tr", {}, headers.map(([text, cls, unlabelled]) => el("th", { scope: "col", class: cls },
           // The amounts speak for themselves (and the header says "owed" for credit and loans), so this column's title is not shown; screen readers still hear it.
@@ -2582,6 +2582,16 @@
     return parseDay(text).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
   }
 
+  // A merchant's logo (the bank's own picture of it, from Plaid's servers) in the round badge; the category icon shows until it loads, or when there is none.
+  function merchantBadge(m) {
+    const badge = el("div", { class: "icon", text: icon(m.top_category), "aria-hidden": "true" });
+    if (m.logo_url) {
+      const img = el("img", { class: "merchant-logo", src: m.logo_url, alt: "", loading: "lazy", referrerpolicy: "no-referrer" });
+      img.addEventListener("load", () => badge.replaceChildren(img));
+    }
+    return badge;
+  }
+
   async function viewMerchants(id) {
     const [data, todo] = await Promise.all([api(`/api/merchants?period=${merchPeriod}`), api("/api/merchants/unassigned")]);
     if (id !== navId) return;
@@ -2610,7 +2620,7 @@
           const open = () => openMerchantById(m.id, reload);
           const row = el("div", { class: "row click", role: "button", tabindex: 0, onclick: open,
             onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } } },
-            el("div", { class: "icon", text: icon(m.top_category), "aria-hidden": "true" }),
+            merchantBadge(m),
             el("div", { class: "grow" },
               el("div", {}, el("strong", { text: m.name }), !m.auto && el("span", { class: "badge", text: "named by you" })),
               el("div", { class: "muted", text: `${m.transactions} transaction${m.transactions === 1 ? "" : "s"}${m.last_date ? ` \u00B7 last ${shortDate(m.last_date)}` : ""}${m.top_category ? ` \u00B7 ${categoryLabel(m.top_category)}` : ""}` })),
@@ -2929,6 +2939,26 @@
   const groupOf = (tab) => SETTINGS_GROUPS.find(([, , tabs]) => tabs.some(([key]) => key === tab)) || SETTINGS_GROUPS[0];
   let settingsTab = "banks";
 
+  // Why a bank is flagged, in plain words (what the bank or Plaid reported is kept in error_code).
+  const BANK_REASONS = {
+    ITEM_LOGIN_REQUIRED: "The bank no longer accepts the saved sign-in. This follows a password or two-step sign-in change, or the bank signing every connection out.",
+    PENDING_EXPIRATION: "The bank's permission for this connection is running out.",
+    PENDING_DISCONNECT: "The bank is about to disconnect this connection.",
+    USER_PERMISSION_REVOKED: "The permission for this app was removed at the bank.",
+    INSTITUTION_DOWN: "The bank's connection was down. It is tried again at the next sync.",
+    INSTITUTION_NOT_RESPONDING: "The bank did not answer. It is tried again at the next sync.",
+    INSTITUTION_NOT_AVAILABLE: "The bank was not available. It is tried again at the next sync.",
+  };
+  function bankProblem(i) {
+    if (!i.error_code) return null;
+    const when = i.consent_expires_at && !Number.isNaN(Date.parse(i.consent_expires_at))
+      ? new Date(i.consent_expires_at).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : null;
+    const reason = BANK_REASONS[i.error_code] || (i.needs_reauth ? "The bank asked for a new sign-in." : "The last sync did not finish. It is tried again at the next sync.");
+    return el("div", { class: "muted small bank-problem" },
+      i.error_code === "PENDING_EXPIRATION" && when ? `The bank's permission for this connection runs out on ${when}.` : reason,
+      el("span", { class: "code", text: ` Code: ${i.error_code}` }));
+  }
+
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
     const [items, sessions, rules, accounts, choices, log, backups, logins, release, passkeyList, loanKinds] = await Promise.all([
@@ -3112,7 +3142,7 @@
             try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); refreshStatus(); reload(); }
             catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
           } })),
-        details);
+        bankProblem(i), details);
     }
 
     // Removing a bank is hidden until you press Edit, so it takes a deliberate extra click.
