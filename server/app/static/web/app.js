@@ -2929,6 +2929,26 @@
   const groupOf = (tab) => SETTINGS_GROUPS.find(([, , tabs]) => tabs.some(([key]) => key === tab)) || SETTINGS_GROUPS[0];
   let settingsTab = "banks";
 
+  // Why a bank is flagged, in plain words (what the bank or Plaid reported is kept in error_code).
+  const BANK_REASONS = {
+    ITEM_LOGIN_REQUIRED: "The bank no longer accepts the saved sign-in. This follows a password or two-step sign-in change, or the bank signing every connection out.",
+    PENDING_EXPIRATION: "The bank's permission for this connection is running out.",
+    PENDING_DISCONNECT: "The bank is about to disconnect this connection.",
+    USER_PERMISSION_REVOKED: "The permission for this app was removed at the bank.",
+    INSTITUTION_DOWN: "The bank's connection was down. It is tried again at the next sync.",
+    INSTITUTION_NOT_RESPONDING: "The bank did not answer. It is tried again at the next sync.",
+    INSTITUTION_NOT_AVAILABLE: "The bank was not available. It is tried again at the next sync.",
+  };
+  function bankProblem(i) {
+    if (!i.error_code) return null;
+    const when = i.consent_expires_at && !Number.isNaN(Date.parse(i.consent_expires_at))
+      ? new Date(i.consent_expires_at).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" }) : null;
+    const reason = BANK_REASONS[i.error_code] || (i.needs_reauth ? "The bank asked for a new sign-in." : "The last sync did not finish. It is tried again at the next sync.");
+    return el("div", { class: "muted small bank-problem" },
+      i.error_code === "PENDING_EXPIRATION" && when ? `The bank's permission for this connection runs out on ${when}.` : reason,
+      el("span", { class: "code", text: ` Code: ${i.error_code}` }));
+  }
+
   async function viewSettings(id, params = new URLSearchParams()) {
     if (SETTINGS_TABS.some(([key]) => key === params.get("tab"))) settingsTab = params.get("tab");
     const [items, sessions, rules, accounts, choices, log, backups, logins, release, passkeyList, loanKinds] = await Promise.all([
@@ -3112,7 +3132,7 @@
             try { await api(`/api/items/${encodeURIComponent(i.id)}`, { method: "DELETE" }); toast(`${name} removed.`); refreshStatus(); reload(); }
             catch (err) { if (err instanceof SignedOut) showLogin(); else toast(err.message, true); }
           } })),
-        details);
+        bankProblem(i), details);
     }
 
     // Removing a bank is hidden until you press Edit, so it takes a deliberate extra click.

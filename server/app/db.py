@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 log = logging.getLogger("homefinance.db")
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 SCHEMA = """
 CREATE TABLE users (
@@ -73,7 +73,8 @@ CREATE TABLE items (
   created_at TEXT NOT NULL,
   logo TEXT,
   color TEXT,
-  logo_checked INTEGER NOT NULL DEFAULT 0
+  logo_checked INTEGER NOT NULL DEFAULT 0,
+  consent_expires_at TEXT
 );
 CREATE TABLE accounts (
   id TEXT PRIMARY KEY,
@@ -440,6 +441,11 @@ ALTER TABLE investment_transactions ADD COLUMN mic TEXT;
     # How a loan is counted in the net worth card: 'mortgage' or 'other' by the owner's choice, NULL = go by the bank's label.
     18: """
 ALTER TABLE accounts ADD COLUMN loan_kind TEXT;
+""",
+
+    # When the bank's permission for a connection runs out, if the bank said (Plaid's PENDING_EXPIRATION warning).
+    19: """
+ALTER TABLE items ADD COLUMN consent_expires_at TEXT;
 """}
 
 

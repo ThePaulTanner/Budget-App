@@ -1631,6 +1631,7 @@ def create_api_app(services: Services) -> FastAPI:
                 "institution": r["institution"],
                 "error_code": r["error_code"],
                 "needs_reauth": bool(r["needs_reauth"]),
+                "consent_expires_at": r["consent_expires_at"],
                 "has_investments": bool(r["has_investments"]),
                 "last_synced_at": r["last_synced_at"],
                 "logo": r["logo"],
@@ -1701,7 +1702,7 @@ def create_api_app(services: Services) -> FastAPI:
             "INSERT INTO items(id, institution_id, institution, access_token, created_at) "
             "VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET access_token=excluded.access_token, "
             "institution=excluded.institution, institution_id=excluded.institution_id, "
-            "needs_reauth=0, error_code=NULL",
+            "needs_reauth=0, error_code=NULL, consent_expires_at=NULL",
             (item_id, institution_id, name, sealed, utcnow()),
         )
         store_institution(db, item_id, details)
@@ -1712,7 +1713,7 @@ def create_api_app(services: Services) -> FastAPI:
     def link_complete(body: CompleteBody, ctx: Auth):
         """After a reconnect (update mode) the bank keeps its id; clear the warning and sync."""
         if db.run(
-            "UPDATE items SET needs_reauth=0, error_code=NULL WHERE id=?", (body.item_id,)
+            "UPDATE items SET needs_reauth=0, error_code=NULL, consent_expires_at=NULL WHERE id=?", (body.item_id,)
         ) == 0:
             raise HTTPException(404, "bank not found")
         services.sync.request(body.item_id)

@@ -147,12 +147,12 @@ def handle_event(db: Database, manager: SyncManager, event: dict[str, Any]) -> N
     elif kind == "ITEM":
         error_code = (event.get("error") or {}).get("error_code")
         if code == "LOGIN_REPAIRED":
-            db.run("UPDATE items SET needs_reauth=0, error_code=NULL WHERE id=?", (item_id,))
+            db.run("UPDATE items SET needs_reauth=0, error_code=NULL, consent_expires_at=NULL WHERE id=?", (item_id,))
             manager.request(item_id)
         elif code in REAUTH_CODES or error_code == "ITEM_LOGIN_REQUIRED":
             db.run(
-                "UPDATE items SET needs_reauth=1, error_code=? WHERE id=?",
-                (error_code or code, item_id),
+                "UPDATE items SET needs_reauth=1, error_code=?, consent_expires_at=COALESCE(?, consent_expires_at) WHERE id=?",
+                (error_code or code, event.get("consent_expiration_time"), item_id),  # the bank's own expiry date, when it gave one
             )
 
 

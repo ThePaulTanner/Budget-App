@@ -991,3 +991,9 @@ def test_loans_can_be_given_a_kind_on_the_accounts_page_and_in_the_banks_tab():
     assert 'a.type === "loan" && loanKinds.length > 0 && loanKindControl(a, loanKinds)' in js  # in each bank's account table
     assert '["loans", "Loans"]' not in js  # it lives in Banks, not a tab of its own
     assert "(w.loans || []).map((l) => part(l.label, l.amount, true))" in js  # the Overview lists each kind
+
+
+def test_a_flagged_bank_says_why_in_plain_words():
+    js = (WEB_DIR / "app.js").read_text()
+    assert "ITEM_LOGIN_REQUIRED:" in js and "PENDING_EXPIRATION:" in js and "function bankProblem(i)" in js
+    assert "bankProblem(i), details);" in js  # on its own full-width line under the bank

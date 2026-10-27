@@ -526,7 +526,7 @@ def sync_item(
             sync_investment_transactions(db, plaid, token, item["id"], base)
         sync_liabilities(db, plaid, token, item["id"])
         db.run(
-            "UPDATE items SET last_synced_at=?, error_code=NULL, needs_reauth=0, "
+            "UPDATE items SET last_synced_at=?, error_code=NULL, needs_reauth=0, consent_expires_at=NULL, "
             "has_investments=? WHERE id=?",
             (utcnow(), 1 if has_investments else 0, item["id"]),
         )
