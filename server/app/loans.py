@@ -22,7 +22,6 @@ BANK_SUBTYPES = {
     "auto": "auto",
     "consumer": "personal",
     "line of credit": "line_of_credit",
-    "overdraft": "line_of_credit",
     "business": "business",
     "commercial": "business",
 }

@@ -433,7 +433,8 @@
   // The kinds a loan can be set to (the server owns the list). Asked for once.
   let loanTypeList = null;
   async function loanTypes() {
-    if (!loanTypeList) loanTypeList = await api("/api/loan-types").catch(() => []);
+    if (loanTypeList) return loanTypeList;
+    try { loanTypeList = await api("/api/loan-types"); } catch (err) { if (err instanceof SignedOut) throw err; return []; }  // a failed fetch is not remembered
     return loanTypeList;
   }
 
