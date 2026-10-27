@@ -85,6 +85,14 @@ def _norm_search(text: str | None) -> str:
     return " ".join((text or "").casefold().split())
 
 
+def plaid_logo(url: str | None) -> bool:
+    """True for a picture address on Plaid's own servers (https only), the one place the web page may load images from."""
+    if not url or not url.startswith("https://"):
+        return False
+    host = url[8:].split("/", 1)[0].lower()
+    return host.endswith(".plaid.com") and "@" not in host and ":" not in host
+
+
 _SEARCH_AMOUNT = re.compile(r"^([+\-\u2212])?\$?(\d[\d,]*\.?\d*|\.\d+)$")
 
 
@@ -1858,7 +1866,24 @@ def create_api_app(services: Services) -> FastAPI:
     def top_category(cats: dict[str, Decimal]) -> str | None:
         return max(cats, key=lambda c: abs(cats[c])) if cats else None
 
-    def merchant_json(row: Any, activity: dict[str, Any] | None, span: Any, alias_count: int) -> dict[str, Any]:
+    def merchant_logos(merchant_id: int | None = None) -> dict[int, str]:
+        """Each merchant's logo, taken from the bank's own data for its latest transaction that has one. Only
+        Plaid's image servers are passed on: they are the only place the web page may load pictures from."""
+        sql = (
+            "SELECT t.merchant_id, t.logo_url FROM transactions t JOIN accounts a ON a.id = t.account_id "
+            "WHERE a.hidden = 0 AND t.merchant_id IS NOT NULL AND t.logo_url IS NOT NULL"
+        )
+        params: tuple = ()
+        if merchant_id is not None:
+            sql += " AND t.merchant_id = ?"
+            params = (merchant_id,)
+        found: dict[int, str] = {}
+        for r in db.query(sql + " ORDER BY t.date DESC, t.id", params):
+            if r["merchant_id"] not in found and plaid_logo(r["logo_url"]):
+                found[r["merchant_id"]] = r["logo_url"]
+        return found
+
+    def merchant_json(row: Any, activity: dict[str, Any] | None, span: Any, alias_count: int, logo: str | None = None) -> dict[str, Any]:
         a = activity or {"count": 0, "spent": Decimal(0), "outflow": Decimal(0), "outflow_count": 0, "inflow": Decimal(0), "other": 0, "cats": {}}
         return {
             "id": row["id"],
@@ -1875,6 +1900,7 @@ def create_api_app(services: Services) -> FastAPI:
             "income": bool(row["is_income"]),
             "first_date": span["first"] if span else None,
             "last_date": span["last"] if span else None,
+            "logo_url": logo,
         }
 
     def merchant_spans() -> dict[int, Any]:
@@ -1918,9 +1944,10 @@ def create_api_app(services: Services) -> FastAPI:
         activity = merchant_activity(period_start(period))
         spans = merchant_spans()
         counts = {r["merchant_id"]: r["n"] for r in db.query("SELECT merchant_id, count(*) AS n FROM merchant_aliases GROUP BY merchant_id")}
+        logos = merchant_logos()
         needle = _norm_search(search)
         rows = [
-            merchant_json(r, activity.get(r["id"]), spans.get(r["id"]), counts.get(r["id"], 0))
+            merchant_json(r, activity.get(r["id"]), spans.get(r["id"]), counts.get(r["id"], 0), logos.get(r["id"]))
             for r in db.query("SELECT * FROM merchants")
             if not needle or needle in _norm_search(r["name"])
         ]
@@ -2058,7 +2085,7 @@ def create_api_app(services: Services) -> FastAPI:
             "WHERE t.merchant_id = ? AND a.hidden = 0 ORDER BY t.date DESC, t.id LIMIT 50",
             (merchant_id,),
         )
-        out = merchant_json(row, window, span, len(aliases))
+        out = merchant_json(row, window, span, len(aliases), merchant_logos(merchant_id).get(merchant_id))
         out["months"] = months
         out["lifetime"] = {
             "transactions": lifetime["count"] if lifetime else 0,
@@ -2114,7 +2141,7 @@ def create_api_app(services: Services) -> FastAPI:
             rules_mod.assign_rules(db)
         row = db.one("SELECT * FROM merchants WHERE id=?", (merchant_id,))
         count = db.one("SELECT count(*) AS n FROM merchant_aliases WHERE merchant_id=?", (merchant_id,))["n"]
-        return merchant_json(row, merchant_activity(None, merchant_id).get(merchant_id), merchant_spans().get(merchant_id), count)
+        return merchant_json(row, merchant_activity(None, merchant_id).get(merchant_id), merchant_spans().get(merchant_id), count, merchant_logos(merchant_id).get(merchant_id))
 
     @app.post("/api/merchants/{merchant_id}/merge")
     def merge_merchant(merchant_id: int, body: MergeBody, ctx: Auth):

@@ -13,6 +13,7 @@
   "income": false,
   "first_date": "2026-08-01",
   "last_date": "2026-10-01",
+  "logo_url": null,
   "months": 6,
   "lifetime": {
     "transactions": 3,

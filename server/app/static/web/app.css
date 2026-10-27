@@ -550,10 +550,11 @@ svg.cf-chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4
   .subtabs .seg button { white-space: nowrap; }
   .subtabs .seg button:nth-child(n + 3) { border-top: 1px solid var(--border); }
   .subtabs .seg button:nth-child(odd) { border-left: 0; }
-  .cf-tiles { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 8px; margin-left: -4px; padding: 0 4px 4px; }
-  .cf-tile { flex: 0 0 46%; scroll-snap-align: start; padding: 10px 12px; }
+  .cf-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }  /* every tile in view, two across; no sideways scrolling */
+  .cf-tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .cf-tile { padding: 10px 12px; }
   .cf-tile strong { font-size: 1.15rem; }
-  .cf-tile .cf-small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-tile .cf-small { white-space: normal; overflow-wrap: anywhere; }  /* the comparison line wraps rather than being cut off */
   .cf-tip { display: none !important; }
 }
 .version-line { margin: 16px 0 0; font-size: 0.85rem; text-align: center; }
@@ -1004,3 +1005,4 @@ svg.chart circle.mark { fill: var(--surface); stroke: var(--p-you); stroke-width
 .col-account .loan-kind { max-width: 100%; }
 .bank-problem { margin: -2px 0 8px; padding: 0 2px; font-size: .85rem; }
 .bank-problem .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; white-space: nowrap; }
+.icon .merchant-logo { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; background: #fff; }
