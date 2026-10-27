@@ -18,6 +18,7 @@ import json
 import logging
 import threading
 import time
+from datetime import datetime
 from typing import Any, Callable
 
 import jwt
@@ -132,6 +133,17 @@ class _RateLimit:
 REAUTH_CODES = {"PENDING_EXPIRATION", "PENDING_DISCONNECT", "USER_PERMISSION_REVOKED"}
 
 
+def expiry_time(value: Any) -> str | None:
+    """The bank's expiry date if it is a timestamp we can read, else nothing (so junk never reaches /api/items)."""
+    if not isinstance(value, str) or len(value) > 40:
+        return None
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return value
+
+
 def handle_event(db: Database, manager: SyncManager, event: dict[str, Any]) -> None:
     item_id = event.get("item_id")
     if not item_id or db.one("SELECT 1 FROM items WHERE id=?", (item_id,)) is None:
@@ -152,7 +164,7 @@ def handle_event(db: Database, manager: SyncManager, event: dict[str, Any]) -> N
         elif code in REAUTH_CODES or error_code == "ITEM_LOGIN_REQUIRED":
             db.run(
                 "UPDATE items SET needs_reauth=1, error_code=?, consent_expires_at=COALESCE(?, consent_expires_at) WHERE id=?",
-                (error_code or code, event.get("consent_expiration_time"), item_id),  # the bank's own expiry date, when it gave one
+                (error_code or code, expiry_time(event.get("consent_expiration_time")), item_id),  # the bank's own expiry date, when it gave one
             )
 
 

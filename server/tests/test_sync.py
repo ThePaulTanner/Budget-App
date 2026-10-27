@@ -396,3 +396,19 @@ def test_each_loan_counts_as_its_own_kind(services, plaid, client, auth):
     accounts = {a["id"]: a for a in client.get("/api/accounts", headers=auth).json()}
     assert accounts["loan_s"]["loan_type"] == "student" and accounts["loan_s"]["loan_kind"] is None
     assert accounts["loan_x"]["loan_type"] == "auto" and accounts["acc_chq"]["loan_type"] is None
+
+
+def test_a_good_sync_keeps_the_banks_expiry_warning_but_clears_a_past_failure(services, plaid):
+    item = add_item(services)
+    plaid.accounts = ACCOUNTS
+    plaid.pages = [page(added=[])]
+    services.db.run("UPDATE items SET needs_reauth=1, error_code='PENDING_EXPIRATION', consent_expires_at='2026-11-14T00:00:00Z'")
+    run(services, item)
+    row = services.db.one("SELECT needs_reauth, error_code, consent_expires_at, last_synced_at FROM items")
+    assert (row["needs_reauth"], row["error_code"], row["consent_expires_at"]) == (1, "PENDING_EXPIRATION", "2026-11-14T00:00:00Z")
+    assert row["last_synced_at"]  # it did sync
+    services.db.run("UPDATE items SET needs_reauth=1, error_code='ITEM_LOGIN_REQUIRED', consent_expires_at=NULL")
+    plaid.pages = [page(added=[], cursor="c2")]
+    run(services, item)
+    row = services.db.one("SELECT needs_reauth, error_code, consent_expires_at FROM items")
+    assert (row["needs_reauth"], row["error_code"], row["consent_expires_at"]) == (0, None, None)

@@ -155,3 +155,12 @@ def test_flood_is_rate_limited(hook):
     client, signer, services = hook
     statuses = {post(client, b"{}", None).status_code for _ in range(130)}
     assert 429 in statuses
+
+
+def test_an_unreadable_expiry_date_is_not_stored(hook):
+    client, signer, services = hook
+    warn = json.dumps({"webhook_type": "ITEM", "webhook_code": "PENDING_EXPIRATION", "item_id": "item_desj",
+                       "consent_expiration_time": "soon, maybe"}).encode()
+    post(client, warn, signer.sign(warn))
+    row = services.db.one("SELECT needs_reauth, consent_expires_at FROM items")
+    assert row["needs_reauth"] == 1 and row["consent_expires_at"] is None  # still flagged, just no date

@@ -525,9 +525,14 @@ def sync_item(
         if has_investments:
             sync_investment_transactions(db, plaid, token, item["id"], base)
         sync_liabilities(db, plaid, token, item["id"])
+        # A good sync clears a past problem, but not the bank's warning that its permission is about to run
+        # out: the connection works until then, and the warning (with its date) stays until it is reconnected.
         db.run(
-            "UPDATE items SET last_synced_at=?, error_code=NULL, needs_reauth=0, consent_expires_at=NULL, "
-            "has_investments=? WHERE id=?",
+            "UPDATE items SET last_synced_at=?, has_investments=?, "
+            "error_code = CASE WHEN error_code IN ('PENDING_EXPIRATION', 'PENDING_DISCONNECT') THEN error_code END, "
+            "needs_reauth = CASE WHEN error_code IN ('PENDING_EXPIRATION', 'PENDING_DISCONNECT') THEN needs_reauth ELSE 0 END, "
+            "consent_expires_at = CASE WHEN error_code IN ('PENDING_EXPIRATION', 'PENDING_DISCONNECT') THEN consent_expires_at END "
+            "WHERE id=?",
             (utcnow(), 1 if has_investments else 0, item["id"]),
         )
     except PlaidError as exc:
